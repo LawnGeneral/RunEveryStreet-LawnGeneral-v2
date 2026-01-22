@@ -10,7 +10,6 @@ var openlayersmap = new ol.Map({
   center: ol.proj.fromLonLat([-98.5795, 39.8283]), // center of US
   zoom: 4
 })
-	})
 });
 
 var canvas;
