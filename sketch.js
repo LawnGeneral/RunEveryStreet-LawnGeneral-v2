@@ -103,12 +103,14 @@ function setup() {
 setCanvasPointerEvents(true);
 }
 
-function draw() { //main loop called by the P5.js framework every frame
-	if (touches.length > 0) {
-		isTouchScreenDevice = true;
-	} // detect touch screen device such as mobile
-	clear();
-	drawMask(); //frame the active area on the map
+function draw() {
+ 		 if (touches.length > 0) isTouchScreenDevice = true;
+
+  const sz = openlayersmap.getSize();
+  		if (sz) resizeCanvas(sz[0], sz[1]);
+
+  clear();
+  drawMask();
 
 	if (mode != choosemapmode) {
 		if (showRoads) {
