@@ -1023,7 +1023,6 @@ function findPairs(oddNodes, matrix) {
     console.log(`Step 3: Created ${pairs.length} optimal pairs for backtracking.`);
     return pairs;
 }
-let totaledgedoublings = 0;
 
 function applyDoublings(pairs) {
     totaledgedoublings = 0;
