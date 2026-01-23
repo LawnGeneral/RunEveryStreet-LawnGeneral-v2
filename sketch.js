@@ -253,7 +253,7 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
   showMessage("Overpass failed (try smaller area). Click here to retry");
   mode = choosemapmode;
 });
-
+}
 function showNodes() {
   let closestnodetomousedist = Infinity;
 
