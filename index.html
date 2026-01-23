@@ -19,8 +19,7 @@
   width: 100%;
   position: fixed;
   left: 0;
-  top: 34px;        /* same header offset you use */
-  z-index: 0;
+  top: 0;        
 }
 
 	  a:link {
@@ -52,19 +51,9 @@
 			overflow: hidden;
 		}
 		canvas {
-  position: fixed;
-  left: 0;
-  top: 34px;        /* same header offset */
-  z-index: 1000;    /* below OL controls (9999), above map */
-  pointer-events: auto; /* trimming works unless you toggle it */
-}
-
-		/* Make sure the OpenLayers controls are always clickable above the p5 canvas */
-.ol-control, .ol-overlaycontainer-stopevent {
-  z-index: 9999 !important;
-  pointer-events: auto !important;
-}
-
+  		margin: auto;
+		}
+		
 	</style>
 </head>
 <body style="background-color:black;">
