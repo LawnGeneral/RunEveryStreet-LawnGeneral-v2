@@ -101,93 +101,135 @@ function draw() {
     clear();
     drawMask();
 
-    if (mode != choosemapmode) {
-        if (showRoads) showEdges();
+    // Skip all map logic if we are still on the "Choose Map" screen
+    if (mode === choosemapmode) return;
 
-    // --- SOLVER LOGIC ---
-if (mode == solveRESmode) {
+    // --- BASE MAP RENDERING ---
+    if (showRoads) showEdges();
+    if (!navMode) showNodes();
+
+    // --- 1. SOLVER ENGINE ---
+    if (mode === solveRESmode) {
+        handleSolverEngine();
+    }
+
+    // --- 2. ROUTE VISUALIZATION ---
+    renderRouteGraphics();
+
+    // --- 3. UI OVERLAYS & REPORTS ---
+    if (mode === downloadGPXmode) {
+        showReportOut();
+    }
+
+    renderUIOverlays();
+}
+
+/**
+ * Encapsulated Solver Logic
+ */
+function handleSolverEngine() {
+    // Adaptive performance adjustment
     iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
+
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
         let solutionfound = false;
+
         while (!solutionfound) { 
+            // Randomized Greedy Search
             shuffle(currentnode.edges, true);
             currentnode.edges.sort((a, b) => a.travels - b.travels); 
-            let edgewithleasttravels = currentnode.edges[0];
-            let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
             
-            let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
+            let chosenEdge = currentnode.edges[0];
+            let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
+            let extraDist = (chosenEdge.travels > 0) ? chosenEdge.distance : 0;
             
-            if (edgewithleasttravels.travels === 0) { 
-                remainingedges--; 
-            }
-            edgewithleasttravels.travels++;
+            // Track road coverage accurately
+            if (chosenEdge.travels === 0) remainingedges--; 
+            chosenEdge.travels++;
             
-            currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
+            currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
             currentnode = nextNode;
             
+            // Check for Completion (Eulerian Circuit Attempt)
             if (remainingedges === 0 && currentnode === startnode) { 
                 solutionfound = true;
-                displayRoute = new Route(null, currentroute);
+                displayRoute = new Route(null, currentroute); // Freeze for ghost display
 
                 if (currentroute.distance < bestdistance) { 
                     bestdistance = currentroute.distance;
                     bestroute = new Route(null, currentroute);
+                    
+                    // Critical: Lock in the road count for the Report Summary
+                    let countSet = new Set();
+                    edges.forEach(e => { if(e.travels > 0) countSet.add(e.wayid); });
+                    totaluniqueroads = countSet.size; 
+                    
                     lastRecordTime = millis(); 
-
                     efficiencyhistory.push(totaledgedistance / bestroute.distance);
                     distancehistory.push(bestroute.distance);
                 }
                 
+                // Reset search state for next iteration
                 currentnode = startnode;
                 remainingedges = edges.length;
                 currentroute = new Route(currentnode, null);
-                resetEdges();
+                resetEdges(); 
             }
         }
     }
 
-    // AUTO-STOP CHECK: Trigger the download here
+    // Auto-Stop Trigger
     if (millis() - lastRecordTime > autoStopThreshold) {
         mode = downloadGPXmode;
-        downloadGPX(); // <--- THIS TRIGGERS THE CLEAN DOWNLOAD
+        downloadGPX(); 
     }
 }
 
-        if (!navMode) showNodes();
+/**
+ * Handles all Route-related drawing
+ */
+function renderRouteGraphics() {
+    if (bestroute != null) {
+        // High-priority: Show the best valid route found so far
+        bestroute.show(); 
+    } else if (mode === solveRESmode && displayRoute != null) {
+        // While solving, show the last completed attempt as a faint "ghost"
+        push();
+        stroke(255, 120); 
+        strokeWeight(2);
+        displayRoute.show();
+        pop();
+    } else if (mode === solveRESmode && currentroute != null) {
+        // If no full solution exists yet, show the live "snake"
+        push();
+        stroke(200, 100);
+        strokeWeight(1);
+        currentroute.show();
+        pop();
+    }
+}
 
-        // --- ROUTE VISUALIZATION ---
-        if (bestroute != null) {
-            bestroute.show(); 
-        } else if (mode == solveRESmode && currentroute != null) {
-            push();
-            stroke(255, 100); 
-            strokeWeight(2);
-            currentroute.show();
-            pop();
-        }
+/**
+ * Handles Stats Boxes and Toolbars
+ */
+function renderUIOverlays() {
+    // Solver Active Stats
+    if (mode === solveRESmode && bestdistance !== Infinity) {
+        let timeLeft = ceil((autoStopThreshold - (millis() - lastRecordTime)) / 1000);
+        drawStatsBox(
+            "SOLVER ACTIVE", 
+            `Best Dist: ${bestdistance.toFixed(2)}km`, 
+            `Efficiency: ${(totaledgedistance / bestdistance * 100).toFixed(1)}%`,
+            `Auto-stop in: ${max(0, timeLeft)}s`
+        );
+    }
 
-        if (mode == downloadGPXmode) showReportOut();
-
-        // --- UI OVERLAYS ---
-
-        // 1. SOLVER STATS (Top Left)
-        if (mode == solveRESmode && bestdistance != Infinity) {
-            let timeLeft = ceil((autoStopThreshold - (millis() - lastRecordTime)) / 1000);
-            drawStatsBox(
-                "SOLVER ACTIVE", 
-                `Best Dist: ${bestdistance.toFixed(2)}km`, 
-                `Efficiency: ${(totaledgedistance / bestdistance * 100).toFixed(1)}%`,
-                `Auto-stop in: ${max(0, timeLeft)}s` // Added countdown line
-            );
-        }
-
-        // 2. LIVE ROAD MILEAGE (Top Left)
-        if (mode == trimmode || mode == selectnodemode) {
-            let liveDist = getLiveTotalDistance();
-            drawStatsBox("ROAD MILEAGE", `${liveDist.toFixed(2)}km`, "Trimming Mode", "");
-            drawToolbar();
-        }
+    // Trimming Mode Stats
+    if (mode === trimmode || mode === selectnodemode) {
+        let liveDist = getLiveTotalDistance();
+        drawStatsBox("ROAD MILEAGE", `${liveDist.toFixed(2)}km`, "Trimming Mode", "");
+        drawToolbar();
     }
 }
 // --- UI HELPER FUNCTIONS ---
@@ -539,12 +581,23 @@ function finalizeSession() {
   mode = downloadGPXmode;
   hideMessage();
   
-  // Calculate unique road IDs for the report
-  let uniqueways = new Set();
-  edges.forEach(e => uniqueways.add(e.wayid));
-  totaluniqueroads = uniqueways.size;
+  // Look at the successful BEST ROUTE to count roads
+  if (bestroute && bestroute.waypoints) {
+      // We calculate how many UNIQUE edges were part of this path
+      let uniqueEdges = new Set();
+      
+      // If your waypoints store the edge they came from, use that.
+      // Otherwise, we can count the edges that were marked as 'travels > 0'
+      for (let i = 0; i < edges.length; i++) {
+          if (edges[i].travels > 0) {
+              uniqueEdges.add(edges[i].wayid);
+          }
+      }
+      totaluniqueroads = uniqueEdges.size;
+  } else {
+      totaluniqueroads = 0;
+  }
 
-  // Trigger the clean download immediately
   downloadGPX(); 
 }
 
@@ -690,41 +743,68 @@ function drawProgressGraph() {
 }
 
 function showReportOut() {
+    // 1. Background Panel
+    push();
+    fill(30, 30, 30, 220); // Darker, more professional semi-transparent gray
+    noStroke();
+    rectMode(CENTER);
+    rect(width / 2, height / 2, 320, 520, 10); // Added rounded corners
+    
+    // 2. Title Section
+    strokeWeight(2);
+    stroke(255, 165, 0); // Orange accent line
+    line(width / 2 - 140, height / 2 - 200, width / 2 + 140, height / 2 - 200);
+    
+    noStroke();
+    fill(255);
+    textSize(28);
+    textAlign(CENTER, CENTER);
+    textStyle(BOLD);
+    text('Route Summary', width / 2, height / 2 - 225);
+    pop();
 
-	fill(250,255,0,0.6);
-	noStroke();
-	rect(width/2-150,height/2-250,300,500);
-	fill(250,255,0,0.15);
-	rect(width/2-147,height/2-247,300,500);
-	strokeWeight(1);
-	stroke(20,255,255,0.8);
-	line(width/2-150,height/2-200,width/2+150,height/2-200);
-	noStroke();
-	fill(0,0,255,1);
-	textSize(28);
-	textAlign(CENTER);
-	text('Route Summary',width/2,height/2-215);
-	fill(0,0,255,0.75);
-	textSize(16);
-	text('Total roads covered',width/2,height/2-170+0*95);
-	text('Total length of all roads',width/2,height/2-170+1*95);
-	text('Length of final route',width/2,height/2-170+2*95);
-	text('Efficiency',width/2,height/2-170+3*95);
+    // 3. Stats Labels and Values
+    let labels = ['Total roads covered', 'Total length of all roads', 'Length of final route', 'Efficiency'];
+    
+    // Ensure we don't divide by zero if bestroute is somehow missing
+    let finalDist = (bestroute && bestroute.distance > 0) ? bestroute.distance : 1;
+    let efficiency = round(100 * totaledgedistance / finalDist);
+    
+    let values = [
+        totaluniqueroads, 
+        nf(totaledgedistance, 0, 1) + "km", 
+        nf(finalDist, 0, 1) + "km", 
+        efficiency + "%"
+    ];
 
-	textSize(36);
-	fill(20,255,255,1);
-	text(totaluniqueroads,width/2,height/2-120+0*95);
-	text(nf(totaledgedistance, 0, 1) + "km",width/2,height/2-120+1*95);
-	text(nf(bestroute.distance, 0, 1) + "km",width/2,height/2-120+2*95);
-	text(round(100 * totaledgedistance / bestroute.distance) + "%",width/2,height/2-120+3*95);
+    for (let i = 0; i < 4; i++) {
+        let yPos = height / 2 - 150 + (i * 90);
+        
+        // Label
+        fill(200);
+        textSize(16);
+        textAlign(CENTER);
+        text(labels[i], width / 2, yPos);
+        
+        // Value
+        fill(255, 165, 0); // High-contrast Orange
+        textSize(42);
+        textStyle(BOLD);
+        text(values[i], width / 2, yPos + 45);
+    }
 
-	fill(20,255,100,0.75);
-	rect(width/2-140,height/2+200,280,40);
-	fill(0,0,255,1);
-	textSize(28);
-	text('Download Route',width/2,height/2+230);
+    // 4. Download Button
+    push();
+    fill(255, 165, 0); // Orange button
+    rectMode(CENTER);
+    rect(width / 2, height / 2 + 225, 280, 50, 5);
+    
+    fill(255);
+    textSize(24);
+    textStyle(BOLD);
+    text('Download Route', width / 2, height / 2 + 233);
+    pop();
 }
-
 function showStatus() {
 	if (startnode != null) {
 		let textx = 2;
