@@ -203,7 +203,7 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	OverpassURL = OverpassURL + encodeURI(overpassquery);
-	httpGet(OverpassURL, 'text', false, function (response) {
+	httpGet(OverpassURL, 'text', true, function (response) {
 		let OverpassResponse = response;
 		var parser = new DOMParser();
 		OSMxml = parser.parseFromString(OverpassResponse, "text/xml");
