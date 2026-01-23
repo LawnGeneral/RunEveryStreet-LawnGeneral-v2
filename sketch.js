@@ -104,10 +104,12 @@ setCanvasPointerEvents(true);
 }
 
 function draw() {
- 		 if (touches.length > 0) isTouchScreenDevice = true;
+  if (touches.length > 0) isTouchScreenDevice = true;
 
   const sz = openlayersmap.getSize();
-  		if (sz) resizeCanvas(sz[0], sz[1]);
+  if (sz) resizeCanvas(sz[0], sz[1]);
+
+  if (canvas) canvas.position(0, 34);
 
   clear();
   drawMask();
