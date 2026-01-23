@@ -173,6 +173,8 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	showMessage("Loading map data…");
 	canvas.position(0, 34); // start canvas just below logo image
 	bestroute = null;
+	totaledgedistance = 0;
+	showRoads = true;
 	totaluniqueroads=0;
 	var extent = ol.proj.transformExtent(openlayersmap.getView().calculateExtent(openlayersmap.getSize()), 'EPSG:3857', 'EPSG:4326'); //get the coordinates current view on the map
 	mapminlat = extent[1];
