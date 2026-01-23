@@ -59,10 +59,19 @@ var totaluniqueroads;
 
 function setup() {
 	if (navigator.geolocation) {
+		// This tries to grab your GPS location immediately
 		navigator.geolocation.getCurrentPosition(function (position) {
-			openlayersmap.getView().setCenter(ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]));
+			let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
+			openlayersmap.getView().setCenter(userCoords);
+			openlayersmap.getView().setZoom(15); // Zoom in close to your house
+		}, function(error) {
+			console.warn("Geolocation blocked or failed. Using default center.");
+		}, {
+			enableHighAccuracy: true,
+			timeout: 5000
 		});
 	}
+    // ... rest of your setup code
 	mapWidth = windowWidth;
 	mapHeight = windowHeight;
 	windowX = windowWidth;
