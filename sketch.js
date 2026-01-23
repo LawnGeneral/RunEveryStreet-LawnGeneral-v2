@@ -1,3 +1,5 @@
+let navMode = false; // false = Trimming, true = Panning/Zooming
+var deletedEdgesStack = [];
 var openlayersmap = new ol.Map({
 	target: 'map',
 	layers: [
@@ -131,7 +133,6 @@ function draw() { //main loop called by the P5.js framework every frame
 							}
 							efficiencyhistory.push(totaledgedistance / bestroute.distance);
 							distancehistory.push(bestroute.distance);
-
 						}
 						currentnode = startnode;
 						remainingedges = edges.length;
@@ -141,7 +142,12 @@ function draw() { //main loop called by the P5.js framework every frame
 				}
 			}
 		}
-		showNodes();
+
+		// Only show node/edge highlighting if we aren't busy panning the map
+		if (!navMode) {
+			showNodes();
+		}
+
 		if (bestroute != null) {
 			bestroute.show();
 		}
@@ -151,10 +157,40 @@ function draw() { //main loop called by the P5.js framework every frame
 		if (mode == downloadGPXmode){
 			showReportOut();
 		}
-		//showStatus();
+
+		// --- NEW: UI BUTTONS FOR NAVIGATION & UNDO ---
+		if (mode == trimmode || mode == selectnodemode) {
+			push();
+			colorMode(HSB); // Ensure we are using your project's color mode
+			
+			// 1. DRAW NAVIGATION TOGGLE (Top Right)
+			// Bright Green if Navigating, Orange/Red if Trimming
+			fill(navMode ? 120 : 15, 255, 255); 
+			stroke(0);
+			strokeWeight(2);
+			rect(width - 160, 10, 150, 40, 5);
+			
+			fill(0);
+			noStroke();
+			textAlign(CENTER, CENTER);
+			textSize(12);
+			textStyle(BOLD);
+			text(navMode ? "MODE: PAN/ZOOM" : "MODE: TRIM", width - 85, 30);
+			
+			// 2. DRAW UNDO BUTTON (To the left of Toggle)
+			fill(200, 20, 255); // Neutral grey/blue
+			stroke(0);
+			strokeWeight(2);
+			rect(width - 320, 10, 150, 40, 5);
+			
+			fill(0);
+			noStroke();
+			text("UNDO LAST TRIM", width - 245, 30);
+			
+			pop();
+		}
 	}
 }
-
 function getOverpassData() { 
     showMessage("Loading map data…");
     canvas.position(0, 34); 
@@ -359,63 +395,85 @@ function solveRES() {
 }
 
 function mousePressed() {
-	// Always ensure the canvas can receive clicks when user interacts with the UI
-	canvas.elt.style.pointerEvents = 'auto';
+  // Always ensure the canvas is "solid" when clicking, unless we are in Nav Mode
+  if (!navMode) {
+    canvas.elt.style.pointerEvents = 'auto';
+  }
 
-	// mode 3: Choose map mode (Initial button click to get data)
-	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-		getOverpassData();
-		return;
-	}
+  // 1. MODE: CHOOSE MAP (Initial Overpass Data Fetch)
+  if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+    getOverpassData();
+    return;
+  }
 
-	// mode 1: Select start node
-	if (mode == selectnodemode && mouseY < mapHeight) {
-		showNodes(); // find node closest to mouse
-		mode = trimmode;
-		showMessage('Click on roads to trim, then click here');
-		removeOrphans(); 
-		return;
-	}
+  // 2. MODE: SELECT START NODE (Choosing where the runner begins)
+  if (mode == selectnodemode && mouseY < mapHeight) {
+    showNodes(); 
+    mode = trimmode;
+    showMessage('Click roads to trim. Use the top-right button to Pan/Zoom.');
+    removeOrphans();
+    return;
+  }
 
-	// mode 4: Trim roads
-	if (mode == trimmode) {
-		if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // clicked button to start solving
-			mode = solveRESmode;
-			showMessage('Calculating… Click to stop when satisfied');
-			showNodes(); 
-			solveRES();
-			return;
-		} else { // clicked on a road to delete it
-			trimSelectedEdge();
-		}
-	}
+  // 3. MODE: TRIM ROADS (The most complex mode)
+  if (mode == trimmode) {
+    // A. Check if clicking the PAN/ZOOM Toggle (Top Right)
+    if (mouseX > width - 160 && mouseX < width - 10 && mouseY > 10 && mouseY < 50) {
+      navMode = !navMode; // Flip the switch
+      // If navMode is true, make canvas "invisible" so we can move the map
+      canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
+      return;
+    }
 
-	// mode 2: Solving (The "Stop" logic)
-	if (mode == solveRESmode) {
-		if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-			mode = downloadGPXmode;
-			hideMessage();
-			
-			// Calculate final stats for the report
-			let uniqueways = [];
-			for (let i = 0; i < edges.length; i++) {
-				if (!uniqueways.includes(edges[i].wayid)) {
-					uniqueways.push(edges[i].wayid);
-				}
-			}
-			totaluniqueroads = uniqueways.length;
-			return;
-		}
-	}
+    // B. Check if clicking the UNDO Button (Optional: if you want a button for it)
+    // For now, we'll keep the logic here if you decide to add a button at (width - 320)
+    if (mouseX > width - 320 && mouseX < width - 170 && mouseY > 10 && mouseY < 50) {
+      undoTrim();
+      return;
+    }
 
-	// mode 5: Download screen
-	if (mode == downloadGPXmode) {
-		// Detect click on the "Download Route" green rectangle
-		if (mouseY < height / 2 + 200 + 40 && mouseY > height / 2 + 200 && mouseX > width / 2 - 140 && mouseX < width / 2 - 140 + 280) {
-			bestroute.exportGPX();
-			return;
-		}
-	}
+    // C. Check if clicking the "START SOLVE" Button (Your existing bottom button)
+    if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+      mode = solveRESmode;
+      navMode = false; // Ensure we aren't in nav mode when solving starts
+      canvas.elt.style.pointerEvents = 'auto';
+      showMessage('Calculating… Click to stop when satisfied');
+      solveRES();
+      return;
+    }
+
+    // D. If NOT in Nav Mode, perform the actual road trim
+    if (!navMode) {
+      trimSelectedEdge();
+    }
+  }
+
+  // 4. MODE: SOLVING (The "Stop" logic)
+  if (mode == solveRESmode) {
+    if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+      mode = downloadGPXmode;
+      hideMessage();
+      
+      // Calculate final stats
+      let uniqueways = [];
+      for (let i = 0; i < edges.length; i++) {
+        if (!uniqueways.includes(edges[i].wayid)) {
+          uniqueways.push(edges[i].wayid);
+        }
+      }
+      totaluniqueroads = uniqueways.length;
+      return;
+    }
+  }
+
+  // 5. MODE: DOWNLOAD
+  if (mode == downloadGPXmode) {
+    if (mouseY < height / 2 + 200 + 40 && mouseY > height / 2 + 200 && 
+        mouseX > width / 2 - 140 && mouseX < width / 2 - 140 + 280) {
+      bestroute.exportGPX();
+      return;
+    }
+  }
 }
 
 // Reset the "glass wall" when mouse is released so the map stays zoomable in choosemapmode
@@ -514,17 +572,26 @@ function drawMask() {
 }
 
 function trimSelectedEdge() {
-	if (closestedgetomouse >= 0) {
-		let edgetodelete = edges[closestedgetomouse];
-		edges.splice(edges.findIndex((element) => element == edgetodelete), 1);
-		for (let i = 0; i < nodes.length; i++) { // remove references to the deleted edge from within each of the nodes
-			if (nodes[i].edges.includes(edgetodelete)) {
-				nodes[i].edges.splice(nodes[i].edges.findIndex((element) => element == edgetodelete), 1);
-			}
-		}
-		removeOrphans(); // deletes parts of the network that no longer can be reached.
-		closestedgetomouse = -1;
-	}
+    // Prevent trimming if we are currently in Nav Mode
+    if (navMode) return;
+
+    if (closestedgetomouse >= 0) {
+        let edgetodelete = edges[closestedgetomouse];
+
+        // --- NEW LINE: Save the edge to our history stack before deleting ---
+        deletedEdgesStack.push(edgetodelete);
+
+        edges.splice(edges.findIndex((element) => element == edgetodelete), 1);
+        
+        for (let i = 0; i < nodes.length; i++) { 
+            if (nodes[i].edges.includes(edgetodelete)) {
+                nodes[i].edges.splice(nodes[i].edges.findIndex((element) => element == edgetodelete), 1);
+            }
+        }
+        
+        removeOrphans(); 
+        closestedgetomouse = -1;
+    }
 }
 
 function drawProgressGraph() {
@@ -632,4 +699,29 @@ function keyReleased() {
         canvas.elt.style.pointerEvents = 'auto';
         cursor(ARROW);
     }
+}
+function undoTrim() {
+  if (deletedEdgesStack.length > 0) {
+    // 1. Take the most recently deleted road out of the memory bank
+    let restoredEdge = deletedEdgesStack.pop();
+    
+    // 2. Put it back into the main edges array so it draws again
+    edges.push(restoredEdge);
+    
+    // 3. Re-link the road to its start and end nodes
+    // This is crucial so the routing algorithm knows the road exists
+    restoredEdge.from.edges.push(restoredEdge);
+    restoredEdge.to.edges.push(restoredEdge);
+    
+    // 4. If the nodes were hidden because they had no roads, bring them back
+    if (!nodes.includes(restoredEdge.from)) nodes.push(restoredEdge.from);
+    if (!nodes.includes(restoredEdge.to)) nodes.push(restoredEdge.to);
+    
+    // 5. Refresh the connection logic
+    removeOrphans(); 
+    
+    console.log("Restored the last deleted road.");
+  } else {
+    console.log("Nothing to undo!");
+  }
 }
