@@ -129,59 +129,51 @@ function draw() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
+    // Dynamically adjust speed based on performance
+    iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
-        let solutionfound = false;
 
-    while (!solutionfound) { 
-            // 1. SORTING: Decides which way to turn
-            currentnode.edges.sort((a, b) => {
-                let capA = a.isDoubled ? 2 : 1;
-                let capB = b.isDoubled ? 2 : 1;
-                let remainingA = capA - a.travels;
-                let remainingB = capB - b.travels;
+        // 1. SORTING: Decides where to turn
+        currentnode.edges.sort((a, b) => {
+            let capA = a.isDoubled ? 2 : 1;
+            let capB = b.isDoubled ? 2 : 1;
+            let remainingA = capA - a.travels;
+            let remainingB = capB - b.travels;
 
-                if (remainingA !== remainingB) {
-                    return remainingB - remainingA; 
-                }
-                return a.travels - b.travels;
-            });
+            if (remainingA !== remainingB) return remainingB - remainingA; 
+            return a.travels - b.travels;
+        });
 
-            let chosenEdge = currentnode.edges[0];
-            let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
-            
-            // 2. TRACKING: Records the progress
-            let cap = chosenEdge.isDoubled ? 2 : 1;
-            if (chosenEdge.travels < cap) {
-                if (chosenEdge.travels === 0) remainingedges--; 
+        let chosenEdge = currentnode.edges[0];
+        let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
+        
+        // 2. TRACKING
+        let cap = chosenEdge.isDoubled ? 2 : 1;
+        if (chosenEdge.travels < cap && chosenEdge.travels === 0) {
+            remainingedges--; 
+        }
+        
+        let extraDist = (chosenEdge.travels >= 1) ? chosenEdge.distance : 0;
+        chosenEdge.travels++;
+        
+        currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
+        currentnode = nextNode;
+        
+        // 3. COMPLETION CHECK
+        if (remainingedges === 0 && currentnode === startnode) { 
+            if (currentroute.distance < bestdistance) {
+                bestdistance = currentroute.distance;
+                bestroute = currentroute; 
+                lastRecordTime = millis();
             }
-            
-            // Fixed Distance logic: if we've been here before, it's "extra"
-            let extraDist = (chosenEdge.travels >= 1) ? chosenEdge.distance : 0;
-            chosenEdge.travels++;
-            
-            currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
-            currentnode = nextNode;
-            
-            // 3. SAVING: If we are back at the start and finished all roads
-            if (remainingedges === 0 && currentnode === startnode) { 
-                solutionfound = true;
-                
-                // Compare this attempt to our all-time record
-                if (currentroute.distance < bestdistance) {
-                    bestdistance = currentroute.distance;
-                    bestroute = currentroute; 
-                    lastRecordTime = millis(); // Resets the 60s timer
-                }
 
-                // Reset for the next attempt so it can try to find an even better way
-                resetEdges();
-                currentnode = startnode;
-                remainingedges = edges.length + totaledgedoublings;
-                currentroute = new Route(currentnode, null);
-            }
+            // Prepare for the NEXT random attempt
+            resetEdges();
+            currentnode = startnode;
+            remainingedges = edges.length;
+            currentroute = new Route(currentnode, null);
         }
     }
 }
@@ -476,20 +468,19 @@ function solveRES() {
     removeOrphans();
     resetEdges();
     
-    // --- OPTIMAL PREP ---
+    // --- STEP 1-3: The Strategy ---
     let myOddNodes = getOddDegreeNodes(); 
     let myMatrix = buildOddNodeMatrix(myOddNodes); 
-    let optimalPairs = findPairs(myOddNodes, myMatrix); // <--- STEP 3
-    
-    // "Double" the edges between pairs
-    // This tells the solver: "You MUST walk these specific paths twice"
+    let optimalPairs = findPairs(myOddNodes, myMatrix); 
     applyDoublings(optimalPairs);
 
-    // --- RESET SOLVER STATE ---
+    // --- STEP 4: The Sync ---
     showRoads = false;
     currentnode = startnode;
-    // Update remaining edges to include the ones we just "doubled"
-    remainingedges = edges.length;
+    
+    // CHANGE THIS: Only count physical roads. 
+    // The "Doubled" roads are handled by the sorting logic, not the counter.
+    remainingedges = edges.length; 
     
     currentroute = new Route(currentnode, null);
     bestroute = new Route(currentnode, null);
