@@ -1023,19 +1023,16 @@ function findPairs(oddNodes, matrix) {
     console.log(`Step 3: Created ${pairs.length} optimal pairs for backtracking.`);
     return pairs;
 }
-
 function applyDoublings(pairs) {
-    totaledgedoublings = 0;
-    // Reset any previous doublings
+    totaledgedoublings = 0; // Notice: NO 'let' here. We are just resetting the existing variable.
     for (let e of edges) { e.isDoubled = false; }
 
     for (let pair of pairs) {
-        // Use Dijkstra to find the actual edges between the pair
         let pathEdges = getPathEdges(pair[0], pair[1]); 
         for (let edge of pathEdges) {
             edge.isDoubled = true;
             totaledgedoublings++;
         }
     }
-    console.log(`Step 3 Complete: Doubled ${totaledgedoublings} segments.`);
+    console.log(`Step 4: Strategy applied. Doubled ${totaledgedoublings} segments.`);
 }
