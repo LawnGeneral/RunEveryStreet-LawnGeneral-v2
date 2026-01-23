@@ -11,9 +11,28 @@ var openlayersmap = new ol.Map({
     zoom: 4
   })
 });
-// Force-enable zoom interactions (trackpad/mouse wheel + double click)
-openlayersmap.addInteraction(new ol.interaction.MouseWheelZoom());
-openlayersmap.addInteraction(new ol.interaction.DoubleClickZoom());
+// --- Force-enable zoom interactions (trackpad wheel + trackpad pinch) ---
+// Remove any existing wheel/pinch zoom interactions, then add fresh ones.
+openlayersmap.getInteractions().forEach(function (interaction) {
+  if (
+    interaction instanceof ol.interaction.MouseWheelZoom ||
+    interaction instanceof ol.interaction.PinchZoom
+  ) {
+    openlayersmap.removeInteraction(interaction);
+  }
+});
+
+// Add them back explicitly
+openlayersmap.addInteraction(new ol.interaction.MouseWheelZoom({ onFocusOnly: false }));
+openlayersmap.addInteraction(new ol.interaction.PinchZoom());
+
+// Give the map something focusable (helps in some browsers)
+const targetEl = openlayersmap.getTargetElement();
+if (targetEl) {
+  targetEl.tabIndex = 0;
+  targetEl.focus();
+}
+
 
 var canvas;
 var mapHeight;
