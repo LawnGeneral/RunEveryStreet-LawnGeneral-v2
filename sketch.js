@@ -590,3 +590,21 @@ function windowResized() {
     resizeCanvas(windowWidth, windowHeight - 34);
     openlayersmap.updateSize();
 }
+// Add this to the very end of sketch.js
+
+function keyPressed() {
+    // While holding Shift, the map becomes interactive again
+    if (keyCode === SHIFT) {
+        canvas.elt.style.pointerEvents = 'none';
+        // This changes the cursor to a hand so you know you're in "Map Mode"
+        cursor('grab'); 
+    }
+}
+
+function keyReleased() {
+    // Releasing Shift "locks" the map so you can click roads again
+    if (keyCode === SHIFT) {
+        canvas.elt.style.pointerEvents = 'auto';
+        cursor(ARROW);
+    }
+}
