@@ -11,6 +11,10 @@ var openlayersmap = new ol.Map({
     zoom: 4
   })
 });
+// Force-enable zoom interactions (trackpad/mouse wheel + double click)
+openlayersmap.addInteraction(new ol.interaction.MouseWheelZoom());
+openlayersmap.addInteraction(new ol.interaction.DoubleClickZoom());
+
 var canvas;
 var mapHeight;
 var windowX, windowY;
