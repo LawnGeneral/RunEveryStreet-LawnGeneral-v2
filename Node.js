@@ -1,25 +1,42 @@
 class Node {
-	constructor(nodeId_, lat_, lon_) {
-		this.nodeId = nodeId_;
-		this.lat = lat_;
-		this.lon = lon_;
-		this.pos = createVector(1, 1);
-		this.x = map(this.lon, mapminlon, mapmaxlon, 0, mapWidth);
-		this.y = map(this.lat, mapminlat, mapmaxlat, mapHeight, 0);
-		this.edges = [];
-	}
+  constructor(nodeId_, lat_, lon_) {
+    this.nodeId = nodeId_;
+    this.lat = lat_;
+    this.lon = lon_;
+    // We no longer calculate this.x and this.y here because they change on zoom
+    this.edges = [];
+  }
 
-	show() {
-		noStroke();
-		colorMode(HSB);
-		fill(0, 255, 255, 100);
-		ellipse(this.x, this.y, 2);
-	}
+  // Helper function to get the current screen position
+  getScreenPos() {
+    const coords = ol.proj.fromLonLat([parseFloat(this.lon), parseFloat(this.lat)]);
+    const pix = openlayersmap.getPixelFromCoordinate(coords);
+    if (pix) {
+      return {
+        x: pix[0],
+        y: pix[1] - 34 // Subtracting the 34px offset for your header
+      };
+    }
+    return null;
+  }
 
-	highlight() {
-		noStroke();
-		colorMode(HSB);
-		fill(0, 255, 255, 0.5);
-		ellipse(this.x, this.y, 15);
-	}
+  show() {
+    let pos = this.getScreenPos();
+    if (pos) {
+      noStroke();
+      colorMode(HSB);
+      fill(0, 255, 255, 100);
+      ellipse(pos.x, pos.y, 4); // Increased size slightly to make it visible
+    }
+  }
+
+  highlight() {
+    let pos = this.getScreenPos();
+    if (pos) {
+      noStroke();
+      colorMode(HSB);
+      fill(0, 255, 255, 0.5);
+      ellipse(pos.x, pos.y, 20); // Bigger highlight for easier selection
+    }
+  }
 }
