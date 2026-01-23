@@ -620,17 +620,15 @@ function windowResized() {
 // Add this to the very end of sketch.js
 
 function keyPressed() {
-    // While holding Shift, the map becomes interactive again
-    if (keyCode === SHIFT) {
+    // Switching to ALT to avoid the OpenLayers "Shift-Zoom-Box" conflict
+    if (keyCode === ALT) {
         canvas.elt.style.pointerEvents = 'none';
-        // This changes the cursor to a hand so you know you're in "Map Mode"
         cursor('grab'); 
     }
 }
 
 function keyReleased() {
-    // Releasing Shift "locks" the map so you can click roads again
-    if (keyCode === SHIFT) {
+    if (keyCode === ALT) {
         canvas.elt.style.pointerEvents = 'auto';
         cursor(ARROW);
     }
