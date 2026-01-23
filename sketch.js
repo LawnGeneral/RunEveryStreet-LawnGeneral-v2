@@ -349,7 +349,6 @@ function mousePressed() { // clicked on map to select a node
   return;
 }
 
-	}
 	if (mode == selectnodemode && mouseY < mapHeight) { // Select node mode, and clicked on map
 		showNodes(); //find node closest to mouse
 		mode = trimmode;
