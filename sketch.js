@@ -447,13 +447,11 @@ function solveRES() {
 }
 
 function mousePressed() {
-  // Ensure the canvas is "solid" by default so we can catch button clicks
-  if (!navMode) {
-    canvas.elt.style.pointerEvents = 'auto';
-  }
+  // Ensure the canvas can catch clicks unless we are explicitly in Navigation (Pan/Zoom) mode
+  canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
 
   // 1. MODE: CHOOSE MAP (Fetching Overpass Data)
-  if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+  if (mode == choosemapmode && isInside(mouseX, mouseY, btnTLx, btnTLy, btnBRx, btnBRy)) {
     getOverpassData();
     return;
   }
@@ -461,18 +459,16 @@ function mousePressed() {
   // 2. MODE: SELECT START NODE
   if (mode == selectnodemode) {
     // Check if clicking the PAN/ZOOM Toggle (Top Right)
-    if (mouseX > width - 160 && mouseX < width - 10 && mouseY > 10 && mouseY < 50) {
-      navMode = !navMode;
-      canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
+    if (isInside(mouseX, mouseY, width - 160, 10, width - 10, 50)) {
+      toggleNav();
       return;
     }
 
     // If NOT in navMode and clicking the map area, select the node
     if (!navMode && mouseY < mapHeight) {
-      showNodes(); // This finds the node closest to mouse and sets 'startnode'
-      mode = trimmode; // Move to the next stage
-      navMode = false; // Reset to trim mode so user can start editing immediately
-      canvas.elt.style.pointerEvents = 'auto';
+      showNodes(); // sets 'startnode'
+      mode = trimmode;
+      navMode = false;
       showMessage('Click roads to trim. Use the top-right button to Pan/Zoom.');
       removeOrphans();
       return;
@@ -482,62 +478,74 @@ function mousePressed() {
   // 3. MODE: TRIM ROADS
   if (mode == trimmode) {
     // A. PAN/ZOOM Toggle (Right-most)
-    if (mouseX > width - 160 && mouseX < width - 10 && mouseY > 10 && mouseY < 50) {
-      navMode = !navMode;
-      canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
+    if (isInside(mouseX, mouseY, width - 160, 10, width - 10, 50)) {
+      toggleNav();
       return;
     }
 
     // B. UNDO Button (Middle)
-    if (mouseX > width - 320 && mouseX < width - 170 && mouseY > 10 && mouseY < 50) {
+    if (isInside(mouseX, mouseY, width - 320, 10, width - 170, 50)) {
       undoTrim();
       return;
     }
 
     // C. START SOLVER Button (Left-most)
-    if (mouseX > width - 480 && mouseX < width - 330 && mouseY > 10 && mouseY < 50) {
+    if (isInside(mouseX, mouseY, width - 480, 10, width - 330, 50)) {
       mode = solveRESmode;
       navMode = false;
-      canvas.elt.style.pointerEvents = 'auto';
       showMessage('Calculating… Click to stop when satisfied');
       solveRES();
       return;
     }
 
-    // D. Perform Road Trim (Only if not in navMode and clicking map area)
+    // D. Road Trim Logic
     if (!navMode && mouseY < mapHeight) {
       trimSelectedEdge();
     }
   }
 
   // 4. MODE: SOLVING (Stop Logic)
-  // Note: Keeping your original coordinates here as this button usually appears 
-  // at the bottom during the solving phase.
-  if (mode == solveRESmode) {
-    if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-      mode = downloadGPXmode;
-      hideMessage();
-      
-      // Calculate final stats
-      let uniqueways = [];
-      for (let i = 0; i < edges.length; i++) {
-        if (!uniqueways.includes(edges[i].wayid)) {
-          uniqueways.push(edges[i].wayid);
-        }
-      }
-      totaluniqueroads = uniqueways.length;
-      return;
-    }
+  if (mode == solveRESmode && isInside(mouseX, mouseY, btnTLx, btnTLy, btnBRx, btnBRy)) {
+    finalizeSession();
+    return;
   }
 
-  // 5. MODE: DOWNLOAD
+  // 5. MODE: DOWNLOAD SUMMARY
   if (mode == downloadGPXmode) {
-    if (mouseY < height / 2 + 200 + 40 && mouseY > height / 2 + 200 && 
-        mouseX > width / 2 - 140 && mouseX < width / 2 - 140 + 280) {
-      bestroute.exportGPX();
+    // Large "Download Route" button at the bottom of the summary
+    if (isInside(mouseX, mouseY, width / 2 - 140, height / 2 + 200, width / 2 + 140, height / 2 + 240)) {
+      downloadGPX(); // Use the robust Blob-based downloader
       return;
     }
   }
+}
+
+/** * HELPER FUNCTIONS FOR CLEANER CODE
+ */
+
+// Centralized check for button clicks
+function isInside(mx, my, x1, y1, x2, y2) {
+  return mx > x1 && mx < x2 && my > y1 && my < y2;
+}
+
+// Logic for handling Pan/Zoom toggle
+function toggleNav() {
+  navMode = !navMode;
+  canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
+}
+
+// Logic to stop solver and calculate final stats
+function finalizeSession() {
+  mode = downloadGPXmode;
+  hideMessage();
+  
+  // Calculate unique road IDs for the report
+  let uniqueways = new Set();
+  edges.forEach(e => uniqueways.add(e.wayid));
+  totaluniqueroads = uniqueways.size;
+
+  // Trigger the clean download immediately
+  downloadGPX(); 
 }
 
 // Reset the "glass wall" when mouse is released so the map stays zoomable in choosemapmode
