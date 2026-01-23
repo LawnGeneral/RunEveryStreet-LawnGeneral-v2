@@ -77,6 +77,12 @@ var efficiencyhistory = [],
 var totalefficiencygains = 0;
 var isTouchScreenDevice = false;
 var totaluniqueroads;
+function setCanvasPointerEvents(enabled) {
+  const c = document.getElementsByTagName("canvas")[0];
+  if (!c) return;
+  c.style.pointerEvents = enabled ? "auto" : "none";
+}
+
 
 function setup() {
 	if (navigator.geolocation) { //if browser shares user GPS location, update map to center on it.
