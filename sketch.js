@@ -1,16 +1,47 @@
 var openlayersmap = new ol.Map({
-	target: 'map',
-	layers: [
-		new ol.layer.Tile({
-			source: new ol.source.OSM(),
-			opacity: 0.5
-		})
-	],
-	view: new ol.View({
-  center: ol.proj.fromLonLat([-98.5795, 39.8283]), // center of US
-  zoom: 4
-})
+  target: 'map',
+  layers: [
+    new ol.layer.Tile({
+      source: new ol.source.OSM(),
+      opacity: 0.5
+    })
+  ],
+  view: new ol.View({
+    center: ol.proj.fromLonLat([-98.5795, 39.8283]), // center of US
+    zoom: 4
+  })
 });
+
+// ===== Step 2: Polygon drawing setup =====
+var polygonSource = new ol.source.Vector();
+var polygonLayer = new ol.layer.Vector({ source: polygonSource });
+openlayersmap.addLayer(polygonLayer);
+
+var drawInteraction = null;
+var selectedPolygon = null;
+
+function startPolygonDraw() {
+  polygonSource.clear();
+  selectedPolygon = null;
+
+  if (drawInteraction) openlayersmap.removeInteraction(drawInteraction);
+
+  drawInteraction = new ol.interaction.Draw({
+    source: polygonSource,
+    type: "Polygon"
+  });
+
+  drawInteraction.on("drawend", function (evt) {
+    selectedPolygon = evt.feature.getGeometry().clone();
+    openlayersmap.removeInteraction(drawInteraction);
+    drawInteraction = null;
+    console.log("Polygon drawn:", selectedPolygon);
+  });
+
+  openlayersmap.addInteraction(drawInteraction);
+  console.log("Draw mode ON: click to add points, double-click to finish");
+}
+
 
 var canvas;
 var mapHeight;
@@ -33,6 +64,7 @@ var startnode, currentnode;
 var selectnodemode = 1,
 	solveRESmode = 2,
 	choosemapmode = 3,
+	drawpolygonmode = 6,
 	trimmode = 4,
 	downloadGPXmode = 5;
 var mode;
@@ -310,9 +342,13 @@ function solveRES() {
 }
 
 function mousePressed() { // clicked on map to select a node
-	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // Was in Choose map mode and clicked on button
-		getOverpassData();
-		return;
+	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+  mode = drawpolygonmode;
+  startPolygonDraw();
+  showMessage("Draw a polygon, double-click to finish");
+  return;
+}
+
 	}
 	if (mode == selectnodemode && mouseY < mapHeight) { // Select node mode, and clicked on map
 		showNodes(); //find node closest to mouse
