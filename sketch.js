@@ -133,6 +133,7 @@ function draw() { //main loop called by the P5.js framework every frame
 							}
 							efficiencyhistory.push(totaledgedistance / bestroute.distance);
 							distancehistory.push(bestroute.distance);
+
 						}
 						currentnode = startnode;
 						remainingedges = edges.length;
@@ -158,13 +159,13 @@ function draw() { //main loop called by the P5.js framework every frame
 			showReportOut();
 		}
 
-		// --- NEW: UI BUTTONS FOR NAVIGATION & UNDO ---
+		// --- EDITING TOOLBAR LOGIC ---
 		if (mode == trimmode || mode == selectnodemode) {
 			push();
-			colorMode(HSB); // Ensure we are using your project's color mode
+			colorMode(HSB); 
 			
-			// 1. DRAW NAVIGATION TOGGLE (Top Right)
-			// Bright Green if Navigating, Orange/Red if Trimming
+			// 1. ALWAYS DRAW NAVIGATION TOGGLE (Top Right)
+			// Green = Panning is ON | Orange = Trimming/Selecting is ON
 			fill(navMode ? 120 : 15, 255, 255); 
 			stroke(0);
 			strokeWeight(2);
@@ -175,17 +176,19 @@ function draw() { //main loop called by the P5.js framework every frame
 			textAlign(CENTER, CENTER);
 			textSize(12);
 			textStyle(BOLD);
-			text(navMode ? "MODE: PAN/ZOOM" : "MODE: TRIM", width - 85, 30);
+			text(navMode ? "MODE: PAN/ZOOM" : "MODE: INTERACT", width - 85, 30);
 			
-			// 2. DRAW UNDO BUTTON (To the left of Toggle)
-			fill(200, 20, 255); // Neutral grey/blue
-			stroke(0);
-			strokeWeight(2);
-			rect(width - 320, 10, 150, 40, 5);
-			
-			fill(0);
-			noStroke();
-			text("UNDO LAST TRIM", width - 245, 30);
+			// 2. ONLY DRAW UNDO BUTTON IF IN TRIM MODE
+			if (mode == trimmode) {
+				fill(200, 20, 255); // Neutral blue-grey
+				stroke(0);
+				strokeWeight(2);
+				rect(width - 320, 10, 150, 40, 5);
+				
+				fill(0);
+				noStroke();
+				text("UNDO LAST TRIM", width - 245, 30);
+			}
 			
 			pop();
 		}
@@ -395,60 +398,70 @@ function solveRES() {
 }
 
 function mousePressed() {
-  // Always ensure the canvas is "solid" when clicking, unless we are in Nav Mode
+  // Ensure the canvas is "solid" by default so we can catch button clicks
   if (!navMode) {
     canvas.elt.style.pointerEvents = 'auto';
   }
 
-  // 1. MODE: CHOOSE MAP (Initial Overpass Data Fetch)
+  // 1. MODE: CHOOSE MAP (Fetching Overpass Data)
   if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
     getOverpassData();
     return;
   }
 
-  // 2. MODE: SELECT START NODE (Choosing where the runner begins)
-  if (mode == selectnodemode && mouseY < mapHeight) {
-    showNodes(); 
-    mode = trimmode;
-    showMessage('Click roads to trim. Use the top-right button to Pan/Zoom.');
-    removeOrphans();
-    return;
-  }
-
-  // 3. MODE: TRIM ROADS (The most complex mode)
-  if (mode == trimmode) {
-    // A. Check if clicking the PAN/ZOOM Toggle (Top Right)
+  // 2. MODE: SELECT START NODE
+  if (mode == selectnodemode) {
+    // Check if clicking the PAN/ZOOM Toggle (Top Right)
     if (mouseX > width - 160 && mouseX < width - 10 && mouseY > 10 && mouseY < 50) {
-      navMode = !navMode; // Flip the switch
-      // If navMode is true, make canvas "invisible" so we can move the map
+      navMode = !navMode;
       canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
       return;
     }
 
-    // B. Check if clicking the UNDO Button (Optional: if you want a button for it)
-    // For now, we'll keep the logic here if you decide to add a button at (width - 320)
+    // If NOT in navMode and clicking the map area, select the node
+    if (!navMode && mouseY < mapHeight) {
+      showNodes(); // This finds the node closest to mouse and sets 'startnode'
+      mode = trimmode; // Move to the next stage
+      navMode = false; // Reset to trim mode so user can start editing immediately
+      canvas.elt.style.pointerEvents = 'auto';
+      showMessage('Click roads to trim. Use the top-right button to Pan/Zoom.');
+      removeOrphans();
+      return;
+    }
+  }
+
+  // 3. MODE: TRIM ROADS
+  if (mode == trimmode) {
+    // A. PAN/ZOOM Toggle
+    if (mouseX > width - 160 && mouseX < width - 10 && mouseY > 10 && mouseY < 50) {
+      navMode = !navMode;
+      canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
+      return;
+    }
+
+    // B. UNDO Button (Only works in trim mode)
     if (mouseX > width - 320 && mouseX < width - 170 && mouseY > 10 && mouseY < 50) {
       undoTrim();
       return;
     }
 
-    // C. Check if clicking the "START SOLVE" Button (Your existing bottom button)
+    // C. START SOLVE Button (Bottom center button)
     if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
       mode = solveRESmode;
-      navMode = false; // Ensure we aren't in nav mode when solving starts
+      navMode = false;
       canvas.elt.style.pointerEvents = 'auto';
       showMessage('Calculating… Click to stop when satisfied');
       solveRES();
       return;
     }
 
-    // D. If NOT in Nav Mode, perform the actual road trim
+    // D. Perform Road Trim (Only if not in navMode)
     if (!navMode) {
       trimSelectedEdge();
     }
   }
 
-  // 4. MODE: SOLVING (The "Stop" logic)
+  // 4. MODE: SOLVING (Stop Logic)
   if (mode == solveRESmode) {
     if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
       mode = downloadGPXmode;
