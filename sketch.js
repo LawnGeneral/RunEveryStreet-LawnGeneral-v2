@@ -1,3 +1,4 @@
+let totaledgedoublings = 0;
 let lastRecordTime = 0; 
 let autoStopThreshold = 60000; // 60 seconds
 let navMode = false; // false = Trimming, true = Panning/Zooming
@@ -128,61 +129,60 @@ function draw() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    // Adaptive performance adjustment
     iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
         let solutionfound = false;
 
-        while (!solutionfound) { 
-            // Randomized Greedy Search
-            shuffle(currentnode.edges, true);
-            currentnode.edges.sort((a, b) => a.travels - b.travels); 
-            
+    while (!solutionfound) { 
+            // 1. SORTING: Decides which way to turn
+            currentnode.edges.sort((a, b) => {
+                let capA = a.isDoubled ? 2 : 1;
+                let capB = b.isDoubled ? 2 : 1;
+                let remainingA = capA - a.travels;
+                let remainingB = capB - b.travels;
+
+                if (remainingA !== remainingB) {
+                    return remainingB - remainingA; 
+                }
+                return a.travels - b.travels;
+            });
+
             let chosenEdge = currentnode.edges[0];
             let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
-            let extraDist = (chosenEdge.travels > 0) ? chosenEdge.distance : 0;
             
-            // Track road coverage accurately
-            if (chosenEdge.travels === 0) remainingedges--; 
+            // 2. TRACKING: Records the progress
+            let cap = chosenEdge.isDoubled ? 2 : 1;
+            if (chosenEdge.travels < cap) {
+                if (chosenEdge.travels === 0) remainingedges--; 
+            }
+            
+            // Fixed Distance logic: if we've been here before, it's "extra"
+            let extraDist = (chosenEdge.travels >= 1) ? chosenEdge.distance : 0;
             chosenEdge.travels++;
             
             currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
             currentnode = nextNode;
             
-            // Check for Completion (Eulerian Circuit Attempt)
+            // 3. SAVING: If we are back at the start and finished all roads
             if (remainingedges === 0 && currentnode === startnode) { 
                 solutionfound = true;
-                displayRoute = new Route(null, currentroute); // Freeze for ghost display
-
-                if (currentroute.distance < bestdistance) { 
-                    bestdistance = currentroute.distance;
-                    bestroute = new Route(null, currentroute);
-                    
-                    // Critical: Lock in the road count for the Report Summary
-                    let countSet = new Set();
-                    edges.forEach(e => { if(e.travels > 0) countSet.add(e.wayid); });
-                    totaluniqueroads = countSet.size; 
-                    
-                    lastRecordTime = millis(); 
-                    efficiencyhistory.push(totaledgedistance / bestroute.distance);
-                    distancehistory.push(bestroute.distance);
-                }
                 
-                // Reset search state for next iteration
+                // Compare this attempt to our all-time record
+                if (currentroute.distance < bestdistance) {
+                    bestdistance = currentroute.distance;
+                    bestroute = currentroute; 
+                    lastRecordTime = millis(); // Resets the 60s timer
+                }
+
+                // Reset for the next attempt so it can try to find an even better way
+                resetEdges();
                 currentnode = startnode;
-                remainingedges = edges.length;
+                remainingedges = edges.length + totaledgedoublings;
                 currentroute = new Route(currentnode, null);
-                resetEdges(); 
             }
         }
-    }
-
-    // Auto-Stop Trigger
-    if (millis() - lastRecordTime > autoStopThreshold) {
-        mode = downloadGPXmode;
-        downloadGPX(); 
     }
 }
 
@@ -433,11 +433,12 @@ function showEdges() {
 }
 
 function resetEdges() {
-	for (let i = 0; i < edges.length; i++) {
-		edges[i].travels = 0;
-	}
+    for (let i = 0; i < edges.length; i++) {
+        edges[i].travels = 0;
+        // Note: we do NOT reset isDoubled here because that's 
+        // part of our "Master Plan" calculated in solveRES()
+    }
 }
-
 function removeOrphans() { // remove unreachable nodes and edges
 	resetEdges();
 	currentnode = startnode;
@@ -475,29 +476,27 @@ function solveRES() {
     removeOrphans();
     resetEdges();
     
-    // --- THE OPTIMAL PREP (Steps 1 & 2) ---
-    let myOddNodes = getOddDegreeNodes(); // Find the problem junctions
-    let myMatrix = buildOddNodeMatrix(myOddNodes); // Map the distance between them
+    // --- OPTIMAL PREP ---
+    let myOddNodes = getOddDegreeNodes(); 
+    let myMatrix = buildOddNodeMatrix(myOddNodes); 
+    let optimalPairs = findPairs(myOddNodes, myMatrix); // <--- STEP 3
     
-    // For now, we just log these. In Step 3, we will use 'myMatrix' 
-    // to find the perfect pairs.
-    console.log("Optimal data is ready for Step 3 matching.");
+    // "Double" the edges between pairs
+    // This tells the solver: "You MUST walk these specific paths twice"
+    applyDoublings(optimalPairs);
 
-    // --- EXISTING SOLVER SETUP ---
+    // --- RESET SOLVER STATE ---
     showRoads = false;
     currentnode = startnode;
+    // Update remaining edges to include the ones we just "doubled"
     remainingedges = edges.length;
+    
     currentroute = new Route(currentnode, null);
     bestroute = new Route(currentnode, null);
     bestdistance = Infinity;
     iterations = 0;
-    iterationsperframe = 1;
-    starttime = millis();
     lastRecordTime = millis();
-    efficiencyhistory = [];
-    distancehistory = [];
 }
-
 function mousePressed() {
   // Ensure the canvas can catch clicks unless we are explicitly in Navigation (Pan/Zoom) mode
   canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
@@ -943,38 +942,43 @@ function getOddDegreeNodes() {
   return oddNodes;
 }
 function dijkstra(startNode) {
-  let distances = new Map();
-  let pq = []; // Simple Priority Queue [node, distance]
+    let distances = new Map();
+    let parents = new Map(); // Track the way back
+    let pq = [];
 
-  // Initialize all nodes to Infinity distance
-  for (let node of nodes) {
-    distances.set(node, Infinity);
-  }
-  
-  distances.set(startNode, 0);
-  pq.push([startNode, 0]);
+    for (let node of nodes) { distances.set(node, Infinity); }
+    distances.set(startNode, 0);
+    pq.push([startNode, 0]);
 
-  while (pq.length > 0) {
-    // Sort to always pick the node with the shortest known distance
-    pq.sort((a, b) => a[1] - b[1]);
-    let [u, distU] = pq.shift();
+    while (pq.length > 0) {
+        pq.sort((a, b) => a[1] - b[1]);
+        let [u, distU] = pq.shift();
+        if (distU > distances.get(u)) continue;
 
-    if (distU > distances.get(u)) continue;
-
-    // Look at all roads connected to this intersection
-    for (let edge of u.edges) {
-      let v = edge.OtherNodeofEdge(u);
-      let weight = edge.distance;
-      let alt = distU + weight;
-
-      // If we found a shorter way to get to node 'v', update it
-      if (alt < distances.get(v)) {
-        distances.set(v, alt);
-        pq.push([v, alt]);
-      }
+        for (let edge of u.edges) {
+            let v = edge.OtherNodeofEdge(u);
+            let alt = distU + edge.distance;
+            if (alt < distances.get(v)) {
+                distances.set(v, alt);
+                parents.set(v, {node: u, edge: edge}); // Save the edge used
+                pq.push([v, alt]);
+            }
+        }
     }
-  }
-  return distances; 
+    return { distances, parents };
+}
+
+function getPathEdges(startNode, endNode) {
+    let { parents } = dijkstra(startNode);
+    let path = [];
+    let curr = endNode;
+    while (curr !== startNode) {
+        let step = parents.get(curr);
+        if (!step) break;
+        path.push(step.edge);
+        curr = step.node;
+    }
+    return path;
 }
 function buildOddNodeMatrix(oddNodesList) {
     let matrix = [];
@@ -989,4 +993,50 @@ function buildOddNodeMatrix(oddNodesList) {
     }
     console.log("Step 2 Complete: Distance matrix built for matching.");
     return matrix;
+}
+function findPairs(oddNodes, matrix) {
+    let unmatched = new Set();
+    for (let i = 0; i < oddNodes.length; i++) unmatched.add(i);
+    
+    let pairs = [];
+
+    while (unmatched.size > 1) {
+        let i = unmatched.values().next().value; // Pick first available
+        unmatched.delete(i);
+
+        let closestDist = Infinity;
+        let closestJ = -1;
+
+        // Find the closest available partner
+        for (let j of unmatched) {
+            if (matrix[i][j] < closestDist) {
+                closestDist = matrix[i][j];
+                closestJ = j;
+            }
+        }
+
+        if (closestJ !== -1) {
+            pairs.push([oddNodes[i], oddNodes[closestJ]]);
+            unmatched.delete(closestJ);
+        }
+    }
+    console.log(`Step 3: Created ${pairs.length} optimal pairs for backtracking.`);
+    return pairs;
+}
+let totaledgedoublings = 0;
+
+function applyDoublings(pairs) {
+    totaledgedoublings = 0;
+    // Reset any previous doublings
+    for (let e of edges) { e.isDoubled = false; }
+
+    for (let pair of pairs) {
+        // Use Dijkstra to find the actual edges between the pair
+        let pathEdges = getPathEdges(pair[0], pair[1]); 
+        for (let edge of pathEdges) {
+            edge.isDoubled = true;
+            totaledgedoublings++;
+        }
+    }
+    console.log(`Step 3 Complete: Doubled ${totaledgedoublings} segments.`);
 }
