@@ -129,7 +129,7 @@ function draw() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    // Dynamically adjust speed based on performance
+    // This line adjusts speed based on your computer's performance
     iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
@@ -147,9 +147,11 @@ function handleSolverEngine() {
         });
 
         let chosenEdge = currentnode.edges[0];
+        if (!chosenEdge) return; 
+
         let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
         
-        // 2. TRACKING
+        // 2. TRACKING: Progress toward finishing
         let cap = chosenEdge.isDoubled ? 2 : 1;
         if (chosenEdge.travels < cap && chosenEdge.travels === 0) {
             remainingedges--; 
@@ -161,7 +163,7 @@ function handleSolverEngine() {
         currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
         currentnode = nextNode;
         
-        // 3. COMPLETION CHECK
+        // 3. COMPLETION: Only triggers when back at start AND all roads hit
         if (remainingedges === 0 && currentnode === startnode) { 
             if (currentroute.distance < bestdistance) {
                 bestdistance = currentroute.distance;
@@ -169,10 +171,10 @@ function handleSolverEngine() {
                 lastRecordTime = millis();
             }
 
-            // Prepare for the NEXT random attempt
+            // Reset for the NEXT attempt
             resetEdges();
             currentnode = startnode;
-            remainingedges = edges.length;
+            remainingedges = edges.length; 
             currentroute = new Route(currentnode, null);
         }
     }
