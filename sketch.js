@@ -1,38 +1,16 @@
 var openlayersmap = new ol.Map({
-  target: 'olmap',
-  layers: [
-    new ol.layer.Tile({
-      source: new ol.source.OSM(),
-      opacity: 0.5
-    })
-  ],
-  view: new ol.View({
-    center: ol.proj.fromLonLat([-98.5795, 39.8283]), // center of US
-    zoom: 4
-  })
+	target: 'map',
+	layers: [
+		new ol.layer.Tile({
+			source: new ol.source.OSM(),
+			opacity: 0.5
+		})
+	],
+	view: new ol.View({
+		center: ol.proj.fromLonLat([5.95,47.26]),
+		zoom: 12
+	})
 });
-// --- Force-enable zoom interactions (trackpad wheel + trackpad pinch) ---
-// Remove any existing wheel/pinch zoom interactions, then add fresh ones.
-openlayersmap.getInteractions().forEach(function (interaction) {
-  if (
-    interaction instanceof ol.interaction.MouseWheelZoom ||
-    interaction instanceof ol.interaction.PinchZoom
-  ) {
-    openlayersmap.removeInteraction(interaction);
-  }
-});
-
-// Add them back explicitly
-openlayersmap.addInteraction(new ol.interaction.MouseWheelZoom({ onFocusOnly: false, useAnchor: true }));
-openlayersmap.addInteraction(new ol.interaction.PinchZoom());
-
-// Give the map something focusable (helps in some browsers)
-const targetEl = openlayersmap.getTargetElement();
-if (targetEl) {
-  targetEl.tabIndex = 0;
-  targetEl.focus();
-}
-
 
 var canvas;
 var mapHeight;
@@ -76,12 +54,6 @@ var efficiencyhistory = [],
 var totalefficiencygains = 0;
 var isTouchScreenDevice = false;
 var totaluniqueroads;
-function setCanvasPointerEvents(enabled) {
-  const c = document.getElementsByTagName("canvas")[0];
-  if (!c) return;
-  c.style.pointerEvents = enabled ? "auto" : "none";
-}
-
 
 function setup() {
 	if (navigator.geolocation) { //if browser shares user GPS location, update map to center on it.
@@ -99,20 +71,15 @@ function setup() {
 	iterationsperframe = 1;
 	margin = 0.1; // don't pull data in the extreme edges of the map
 	showMessage("Zoom to selected area, then click here");
-	// Start in EDIT mode so clicks work
-setCanvasPointerEvents(true);
+
 }
 
-function draw() {
-  if (touches.length > 0) isTouchScreenDevice = true;
-
-  const sz = openlayersmap.getSize();
-  if (sz) resizeCanvas(sz[0], sz[1] - 34);
-
-  if (canvas) canvas.position(0, 34);
-
-  clear();
-  drawMask();
+function draw() { //main loop called by the P5.js framework every frame
+	if (touches.length > 0) {
+		isTouchScreenDevice = true;
+	} // detect touch screen device such as mobile
+	clear();
+	drawMask(); //frame the active area on the map
 
 	if (mode != choosemapmode) {
 		if (showRoads) {
@@ -173,8 +140,6 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	showMessage("Loading map data…");
 	canvas.position(0, 34); // start canvas just below logo image
 	bestroute = null;
-	totaledgedistance = 0;
-	showRoads = true;
 	totaluniqueroads=0;
 	var extent = ol.proj.transformExtent(openlayersmap.getView().calculateExtent(openlayersmap.getSize()), 'EPSG:3857', 'EPSG:4326'); //get the coordinates current view on the map
 	mapminlat = extent[1];
@@ -185,109 +150,77 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	dataminlon = extent[0] + (extent[2] - extent[0]) * margin;
 	datamaxlat = extent[3] - (extent[3] - extent[1]) * margin;
 	datamaxlon = extent[2] - (extent[2] - extent[0]) * margin;
-	let OverpassURL = "https://overpass.kumi.systems/api/interpreter?data=";
-	let overpassquery =
-  "(" +
-  "way({{bbox}})" +
-  "['highway']" +
-  "['name']" + // require street name (CityStrides-style)
-  "['highway'!~'^(bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|escape|footway|motorway|motorway_link|path|platform|proposed|raceway|razed|rest_area|services|steps|trunk|trunk_link|via_ferrata)$']" +
-  "['access'!~'^(no|customers|permit|private)$']" +
-  "['indoor'!~'^(area|column|corridor|door|level|room|wall|yes)$']" +
-  "['service'!~'^(drive-through|driveway|parking_aisle)$']" +
-  "['expressway'!~'^(yes)$']" +
-  "['fee'!~'^(yes)$']" +
-  "['foot'!~'^(no)$']" +
-  "['motorroad'!~'^(yes)$']" +
-  "['area'!~'^(yes)$']" +
-  "['public_transport'!~'^(platform)$']" +
-  "['toll'!~'^(yes)$'];" +
-  "node(w)({{bbox}});" +
-  ");out;";
-
+	let OverpassURL = "https://overpass-api.de/api/interpreter?data=";
+	let overpassquery = "(way({{bbox}})['highway']['highway' !~ 'trunk']['highway' !~ 'motorway']['highway' !~ 'motorway_link']['highway' !~ 'raceway']['highway' !~ 'proposed']['highway' !~ 'construction']['highway' !~ 'service']['highway' !~ 'elevator']['footway' !~ 'crossing']['footway' !~ 'sidewalk']['foot' !~ 'no']['access' !~ 'private']['access' !~ 'no'];node(w)({{bbox}}););out;";
 
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	OverpassURL = OverpassURL + encodeURI(overpassquery);
-	httpGet(OverpassURL, 'text', true, function (response) {
-  let OverpassResponse = response;
-  var parser = new DOMParser();
-  OSMxml = parser.parseFromString(OverpassResponse, "text/xml");
-  var XMLnodes = OSMxml.getElementsByTagName("node")
-  var XMLways = OSMxml.getElementsByTagName("way")
-  numnodes = XMLnodes.length;
-  numways = XMLways.length;
-  for (let i = 0; i < numnodes; i++) {
-    var lat = XMLnodes[i].getAttribute('lat');
-    var lon = XMLnodes[i].getAttribute('lon');
-    minlat = min(minlat, lat);
-    maxlat = max(maxlat, lat);
-    minlon = min(minlon, lon);
-    maxlon = max(maxlon, lon);
-  }
-  nodes = [];
-  edges = [];
-  for (let i = 0; i < numnodes; i++) {
-    var lat = XMLnodes[i].getAttribute('lat');
-    var lon = XMLnodes[i].getAttribute('lon');
-    var nodeid = XMLnodes[i].getAttribute('id');
-    let node = new Node(nodeid, lat, lon);
-    nodes.push(node);
-  }
-  //parse ways into edges
-  for (let i = 0; i < numways; i++) {
-    let wayid = XMLways[i].getAttribute('id');
-    let nodesinsideway = XMLways[i].getElementsByTagName('nd');
-    for (let j = 0; j < nodesinsideway.length - 1; j++) {
-      fromnode = getNodebyId(nodesinsideway[j].getAttribute("ref"));
-      tonode = getNodebyId(nodesinsideway[j + 1].getAttribute("ref"));
-      if (fromnode != null & tonode != null) {
-        let newEdge = new Edge(fromnode, tonode, wayid);
-        edges.push(newEdge);
-        totaledgedistance += newEdge.distance;
-      }
-    }
-  }
-  mode = selectnodemode;
-  showMessage("Click on start of route");
-redraw();
-}, function (err) {
-  console.error("Overpass failed:", err);
-  showMessage("Overpass failed (try smaller area). Click here to retry");
-  mode = choosemapmode;
-});
+	httpGet(OverpassURL, 'text', false, function (response) {
+		let OverpassResponse = response;
+		var parser = new DOMParser();
+		OSMxml = parser.parseFromString(OverpassResponse, "text/xml");
+		var XMLnodes = OSMxml.getElementsByTagName("node")
+		var XMLways = OSMxml.getElementsByTagName("way")
+		numnodes = XMLnodes.length;
+		numways = XMLways.length;
+		for (let i = 0; i < numnodes; i++) {
+			var lat = XMLnodes[i].getAttribute('lat');
+			var lon = XMLnodes[i].getAttribute('lon');
+			minlat = min(minlat, lat);
+			maxlat = max(maxlat, lat);
+			minlon = min(minlon, lon);
+			maxlon = max(maxlon, lon);
+		}
+		nodes = [];
+		edges = [];
+		for (let i = 0; i < numnodes; i++) {
+			var lat = XMLnodes[i].getAttribute('lat');
+			var lon = XMLnodes[i].getAttribute('lon');
+			var nodeid = XMLnodes[i].getAttribute('id');
+			let node = new Node(nodeid, lat, lon);
+			nodes.push(node);
+		}
+		//parse ways into edges
+		for (let i = 0; i < numways; i++) {
+			let wayid = XMLways[i].getAttribute('id');
+			let nodesinsideway = XMLways[i].getElementsByTagName('nd');
+			for (let j = 0; j < nodesinsideway.length - 1; j++) {
+				fromnode = getNodebyId(nodesinsideway[j].getAttribute("ref"));
+				tonode = getNodebyId(nodesinsideway[j + 1].getAttribute("ref"));
+				if (fromnode != null & tonode != null) {
+					let newEdge = new Edge(fromnode, tonode, wayid);
+					edges.push(newEdge);
+					totaledgedistance += newEdge.distance;
+				}
+			}
+		}
+		mode = selectnodemode;
+		showMessage("Click on start of route");
+	});
 }
+
 function showNodes() {
-  let closestnodetomousedist = Infinity;
-
-  for (let i = 0; i < nodes.length; i++) {
-    if (showRoads) {
-      nodes[i].show();
-    }
-
-    if (mode == selectnodemode) {
-      const px = openlayersmap.getPixelFromCoordinate(
-        ol.proj.fromLonLat([nodes[i].lon, nodes[i].lat])
-      );
-      if (!px) continue;
-
-      const disttoMouse = dist(px[0], px[1], mouseX, mouseY);
-      if (disttoMouse < closestnodetomousedist) {
-        closestnodetomousedist = disttoMouse;
-        closestnodetomouse = i;
-      }
-    }
-  }
-
-  if (mode == selectnodemode) {
-    startnode = nodes[closestnodetomouse];
-  }
-
-  if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
-    startnode.highlight();
-  }
+	let closestnodetomousedist = Infinity;
+	for (let i = 0; i < nodes.length; i++) {
+		if (showRoads) {
+			nodes[i].show();
+		}
+		if (mode == selectnodemode) {
+			disttoMouse = dist(nodes[i].x, nodes[i].y, mouseX, mouseY);
+			if (disttoMouse < closestnodetomousedist) {
+				closestnodetomousedist = disttoMouse;
+				closestnodetomouse = i;
+			}
+		}
+	}
+	if (mode == selectnodemode) {
+		startnode = nodes[closestnodetomouse];
+	}
+	if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
+		startnode.highlight();
+	}
 }
-
 
 function showEdges() {
 	let closestedgetomousedist = Infinity;
@@ -359,11 +292,10 @@ function solveRES() {
 }
 
 function mousePressed() { // clicked on map to select a node
-	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-  getOverpassData();
-  return;
-}
-
+	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // Was in Choose map mode and clicked on button
+		getOverpassData();
+		return;
+	}
 	if (mode == selectnodemode && mouseY < mapHeight) { // Select node mode, and clicked on map
 		showNodes(); //find node closest to mouse
 		mode = trimmode;
@@ -580,4 +512,3 @@ function showStatus() {
 		}
 	}
 }
-
