@@ -1,3 +1,5 @@
+let lastRecordTime = 0; 
+let autoStopThreshold = 60000; // 60 seconds
 let navMode = false; // false = Trimming, true = Panning/Zooming
 var deletedEdgesStack = [];
 var openlayersmap = new ol.Map({
@@ -128,6 +130,10 @@ function draw() {
                         if (currentroute.distance < bestdistance) { 
                             bestdistance = currentroute.distance;
                             bestroute = new Route(null, currentroute);
+                            
+                            // RESET PLATEAU TIMER: We found a better route!
+                            lastRecordTime = millis(); 
+
                             efficiencyhistory.push(totaledgedistance / bestroute.distance);
                             distancehistory.push(bestroute.distance);
                         }
@@ -138,15 +144,19 @@ function draw() {
                     }
                 }
             }
+
+            // AUTO-STOP CHECK: If it's been 60 seconds since the last record
+            if (millis() - lastRecordTime > autoStopThreshold) {
+                mode = downloadGPXmode;
+            }
         }
 
         if (!navMode) showNodes();
 
         // --- ROUTE VISUALIZATION ---
         if (bestroute != null) {
-            bestroute.show(); // Show the solid best route
+            bestroute.show(); 
         } else if (mode == solveRESmode && currentroute != null) {
-            // Show "Ghost" route while searching for the first valid loop
             push();
             stroke(255, 100); 
             strokeWeight(2);
@@ -158,29 +168,32 @@ function draw() {
 
         // --- UI OVERLAYS ---
 
-        // 1. SOLVER STATS (Top Left - Only while solving)
+        // 1. SOLVER STATS (Top Left)
         if (mode == solveRESmode && bestdistance != Infinity) {
-            drawStatsBox("SOLVER ACTIVE", `Best Dist: ${bestdistance.toFixed(2)}km`, `Efficiency: ${(totaledgedistance / bestdistance * 100).toFixed(1)}%`);
+            let timeLeft = ceil((autoStopThreshold - (millis() - lastRecordTime)) / 1000);
+            drawStatsBox(
+                "SOLVER ACTIVE", 
+                `Best Dist: ${bestdistance.toFixed(2)}km`, 
+                `Efficiency: ${(totaledgedistance / bestdistance * 100).toFixed(1)}%`,
+                `Auto-stop in: ${max(0, timeLeft)}s` // Added countdown line
+            );
         }
 
-        // 2. LIVE ROAD MILEAGE (Top Left - Only while trimming/selecting)
+        // 2. LIVE ROAD MILEAGE (Top Left)
         if (mode == trimmode || mode == selectnodemode) {
             let liveDist = getLiveTotalDistance();
-            drawStatsBox("ROAD MILEAGE", `${liveDist.toFixed(2)}km`, "Trimming Mode");
-
-            // 3. EDITING TOOLBAR (Top Right)
+            drawStatsBox("ROAD MILEAGE", `${liveDist.toFixed(2)}km`, "Trimming Mode", "");
             drawToolbar();
         }
     }
 }
-
 // --- UI HELPER FUNCTIONS ---
 
-function drawStatsBox(title, line1, line2) {
+function drawStatsBox(title, line1, line2, line3) {
     push();
     fill(0, 180);
     noStroke();
-    rect(10, 10, 200, 75, 5);
+    rect(10, 10, 210, 95, 5); // Increased height to 95
     fill(255);
     textAlign(LEFT, TOP);
     textSize(14);
@@ -189,6 +202,7 @@ function drawStatsBox(title, line1, line2) {
     textStyle(NORMAL);
     text(line1, 20, 42);
     text(line2, 20, 58);
+    text(line3, 20, 74); // The countdown line
     pop();
 }
 
@@ -414,21 +428,17 @@ function floodfill(node, stepssofar) {
 
 function solveRES() {
     removeOrphans();
-    resetEdges(); // Clear any previous travel counts from the roads
+    resetEdges();
     showRoads = false;
-    
-    currentnode = startnode; // Ensure we start where you clicked
+    currentnode = startnode;
     remainingedges = edges.length;
-    
     currentroute = new Route(currentnode, null);
     bestroute = new Route(currentnode, null);
-    
     bestdistance = Infinity;
     iterations = 0;
     iterationsperframe = 1;
     starttime = millis();
-    
-    // Clear history for the new run
+    lastRecordTime = millis(); // Reset the plateau timer
     efficiencyhistory = [];
     distancehistory = [];
 }
