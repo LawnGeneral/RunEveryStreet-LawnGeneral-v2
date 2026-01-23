@@ -23,7 +23,7 @@ openlayersmap.getInteractions().forEach(function (interaction) {
 });
 
 // Add them back explicitly
-openlayersmap.addInteraction(new ol.interaction.MouseWheelZoom({ onFocusOnly: false }));
+openlayersmap.addInteraction(new ol.interaction.MouseWheelZoom({ onFocusOnly: false, useAnchor: true }));
 openlayersmap.addInteraction(new ol.interaction.PinchZoom());
 
 // Give the map something focusable (helps in some browsers)
