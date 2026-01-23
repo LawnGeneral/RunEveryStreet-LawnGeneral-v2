@@ -250,6 +250,7 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
   }
   mode = selectnodemode;
   showMessage("Click on start of route");
+redraw();
 }, function (err) {
   console.error("Overpass failed:", err);
   showMessage("Overpass failed (try smaller area). Click here to retry");
