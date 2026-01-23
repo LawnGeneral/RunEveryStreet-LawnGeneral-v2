@@ -165,21 +165,20 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	OverpassURL = OverpassURL + encodeURI(overpassquery);
-	httpGet(OverpassURL, 'text', false, function (response) {
-		let OverpassResponse = response;
-		var parser = new DOMParser();
-		OSMxml = parser.parseFromString(OverpassResponse, "text/xml");
-		var XMLnodes = OSMxml.getElementsByTagName("node")
-		var XMLways = OSMxml.getElementsByTagName("way")
-		numnodes = XMLnodes.length;
-		numways = XMLways.length;
-		for (let i = 0; i < numnodes; i++) {
-			var lat = XMLnodes[i].getAttribute('lat');
-			var lon = XMLnodes[i].getAttribute('lon');
-			minlat = min(minlat, lat);
-			maxlat = max(maxlat, lat);
-			minlon = min(minlon, lon);
-			maxlon = max(maxlon, lon);
+	httpGet(OverpassURL + encodeURIComponent(query), 'text', true, function(response) {
+    var parser = new DOMParser();
+    let xml = parser.parseFromString(response, "text/xml");
+    let xmlWays = xml.getElementsByTagName("way");
+    
+    // SAFETY CHECK: If no named roads are found, don't freeze!
+    if (xmlWays.length === 0) {
+        showMessage("No named roads found here. Try zooming out.");
+        setTimeout(() => { 
+            mode = choosemapmode; 
+            showMessage("Zoom to selected area, then click here");
+        }, 3000);
+        return;
+    }
 		}
 		nodes = [];
 		edges = [];
