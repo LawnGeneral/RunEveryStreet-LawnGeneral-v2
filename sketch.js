@@ -181,7 +181,7 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	dataminlon = extent[0] + (extent[2] - extent[0]) * margin;
 	datamaxlat = extent[3] - (extent[3] - extent[1]) * margin;
 	datamaxlon = extent[2] - (extent[2] - extent[0]) * margin;
-	let OverpassURL = "https://overpass-api.de/api/interpreter?data=";
+	let OverpassURL = "https://overpass.kumi.systems/api/interpreter?data=";
 	let overpassquery =
   "(" +
   "way({{bbox}})" +
@@ -206,48 +206,51 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	OverpassURL = OverpassURL + encodeURI(overpassquery);
 	httpGet(OverpassURL, 'text', true, function (response) {
-		let OverpassResponse = response;
-		var parser = new DOMParser();
-		OSMxml = parser.parseFromString(OverpassResponse, "text/xml");
-		var XMLnodes = OSMxml.getElementsByTagName("node")
-		var XMLways = OSMxml.getElementsByTagName("way")
-		numnodes = XMLnodes.length;
-		numways = XMLways.length;
-		for (let i = 0; i < numnodes; i++) {
-			var lat = XMLnodes[i].getAttribute('lat');
-			var lon = XMLnodes[i].getAttribute('lon');
-			minlat = min(minlat, lat);
-			maxlat = max(maxlat, lat);
-			minlon = min(minlon, lon);
-			maxlon = max(maxlon, lon);
-		}
-		nodes = [];
-		edges = [];
-		for (let i = 0; i < numnodes; i++) {
-			var lat = XMLnodes[i].getAttribute('lat');
-			var lon = XMLnodes[i].getAttribute('lon');
-			var nodeid = XMLnodes[i].getAttribute('id');
-			let node = new Node(nodeid, lat, lon);
-			nodes.push(node);
-		}
-		//parse ways into edges
-		for (let i = 0; i < numways; i++) {
-			let wayid = XMLways[i].getAttribute('id');
-			let nodesinsideway = XMLways[i].getElementsByTagName('nd');
-			for (let j = 0; j < nodesinsideway.length - 1; j++) {
-				fromnode = getNodebyId(nodesinsideway[j].getAttribute("ref"));
-				tonode = getNodebyId(nodesinsideway[j + 1].getAttribute("ref"));
-				if (fromnode != null & tonode != null) {
-					let newEdge = new Edge(fromnode, tonode, wayid);
-					edges.push(newEdge);
-					totaledgedistance += newEdge.distance;
-				}
-			}
-		}
-		mode = selectnodemode;
-		showMessage("Click on start of route");
-	});
-}
+  let OverpassResponse = response;
+  var parser = new DOMParser();
+  OSMxml = parser.parseFromString(OverpassResponse, "text/xml");
+  var XMLnodes = OSMxml.getElementsByTagName("node")
+  var XMLways = OSMxml.getElementsByTagName("way")
+  numnodes = XMLnodes.length;
+  numways = XMLways.length;
+  for (let i = 0; i < numnodes; i++) {
+    var lat = XMLnodes[i].getAttribute('lat');
+    var lon = XMLnodes[i].getAttribute('lon');
+    minlat = min(minlat, lat);
+    maxlat = max(maxlat, lat);
+    minlon = min(minlon, lon);
+    maxlon = max(maxlon, lon);
+  }
+  nodes = [];
+  edges = [];
+  for (let i = 0; i < numnodes; i++) {
+    var lat = XMLnodes[i].getAttribute('lat');
+    var lon = XMLnodes[i].getAttribute('lon');
+    var nodeid = XMLnodes[i].getAttribute('id');
+    let node = new Node(nodeid, lat, lon);
+    nodes.push(node);
+  }
+  //parse ways into edges
+  for (let i = 0; i < numways; i++) {
+    let wayid = XMLways[i].getAttribute('id');
+    let nodesinsideway = XMLways[i].getElementsByTagName('nd');
+    for (let j = 0; j < nodesinsideway.length - 1; j++) {
+      fromnode = getNodebyId(nodesinsideway[j].getAttribute("ref"));
+      tonode = getNodebyId(nodesinsideway[j + 1].getAttribute("ref"));
+      if (fromnode != null & tonode != null) {
+        let newEdge = new Edge(fromnode, tonode, wayid);
+        edges.push(newEdge);
+        totaledgedistance += newEdge.distance;
+      }
+    }
+  }
+  mode = selectnodemode;
+  showMessage("Click on start of route");
+}, function (err) {
+  console.error("Overpass failed:", err);
+  showMessage("Overpass failed (try smaller area). Click here to retry");
+  mode = choosemapmode;
+});
 
 function showNodes() {
   let closestnodetomousedist = Infinity;
