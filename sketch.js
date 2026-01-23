@@ -359,43 +359,70 @@ function solveRES() {
 }
 
 function mousePressed() {
-    // TEMPORARY: If clicking the header area/button, allow p5 to catch it
-    if (mouseY < 60) {
-        canvas.elt.style.pointerEvents = 'auto';
-    }
+	// Always ensure the canvas can receive clicks when user interacts with the UI
+	canvas.elt.style.pointerEvents = 'auto';
 
-    // mode 3: Choose map mode (Initial button click)
-    if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-        canvas.elt.style.pointerEvents = 'auto';
-        getOverpassData();
-        return;
-    }
+	// mode 3: Choose map mode (Initial button click to get data)
+	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+		getOverpassData();
+		return;
+	}
 
-    // mode 1: Select start node
-    if (mode == selectnodemode && mouseY < mapHeight) {
-        canvas.elt.style.pointerEvents = 'auto';
-        showNodes(); 
-        mode = trimmode;
-        showMessage('Click on roads to trim, then click here');
-        removeOrphans();
-        return;
-    }
+	// mode 1: Select start node
+	if (mode == selectnodemode && mouseY < mapHeight) {
+		showNodes(); // find node closest to mouse
+		mode = trimmode;
+		showMessage('Click on roads to trim, then click here');
+		removeOrphans(); 
+		return;
+	}
 
-    // mode 4: Trim roads
-    if (mode == trimmode) {
-        canvas.elt.style.pointerEvents = 'auto';
-        if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-            mode = solveRESmode;
-            showMessage('Calculating… Click to stop when satisfied');
-            showNodes();
-            solveRES();
-            return;
-        } else {
-            trimSelectedEdge();
-        }
-    }
+	// mode 4: Trim roads
+	if (mode == trimmode) {
+		if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // clicked button to start solving
+			mode = solveRESmode;
+			showMessage('Calculating… Click to stop when satisfied');
+			showNodes(); 
+			solveRES();
+			return;
+		} else { // clicked on a road to delete it
+			trimSelectedEdge();
+		}
+	}
 
-    // ... (rest of your solveRESmode and downloadGPXmode logic)
+	// mode 2: Solving (The "Stop" logic)
+	if (mode == solveRESmode) {
+		if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+			mode = downloadGPXmode;
+			hideMessage();
+			
+			// Calculate final stats for the report
+			let uniqueways = [];
+			for (let i = 0; i < edges.length; i++) {
+				if (!uniqueways.includes(edges[i].wayid)) {
+					uniqueways.push(edges[i].wayid);
+				}
+			}
+			totaluniqueroads = uniqueways.length;
+			return;
+		}
+	}
+
+	// mode 5: Download screen
+	if (mode == downloadGPXmode) {
+		// Detect click on the "Download Route" green rectangle
+		if (mouseY < height / 2 + 200 + 40 && mouseY > height / 2 + 200 && mouseX > width / 2 - 140 && mouseX < width / 2 - 140 + 280) {
+			bestroute.exportGPX();
+			return;
+		}
+	}
+}
+
+// Reset the "glass wall" when mouse is released so the map stays zoomable in choosemapmode
+function mouseReleased() {
+    if (mode == choosemapmode) {
+        canvas.elt.style.pointerEvents = 'none';
+    }
 }
 
 // Ensure pointerEvents reset when moving mouse so zoom works
