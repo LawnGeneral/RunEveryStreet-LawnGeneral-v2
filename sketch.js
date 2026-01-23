@@ -919,3 +919,16 @@ function downloadGPX() {
   link.click();
   document.body.removeChild(link);
 }
+function getOddDegreeNodes() {
+  let oddNodes = [];
+  
+  for (let i = 0; i < nodes.length; i++) {
+    // If the number of edges is 1, 3, 5, etc., it's an odd node
+    if (nodes[i].edges.length % 2 !== 0) {
+      oddNodes.push(nodes[i]);
+    }
+  }
+  
+  console.log("Step 1 Complete: Found " + oddNodes.length + " odd-degree nodes.");
+  return oddNodes;
+}
