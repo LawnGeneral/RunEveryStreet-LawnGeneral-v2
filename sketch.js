@@ -154,10 +154,9 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	let overpassquery = `
   [out:xml][timeout:25];
   (
-    way["highway"]( {{bbox}} )
-    ["highway"!~"^(motorway|motorway_link|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|escape|footway|path|platform|proposed|raceway|razed|rest_area|services|steps|via_ferrata)$"]
-    ["access"!~"^(no|customers|permit|private)$"]
-    ["service"!~"^(drive-through|driveway|parking_aisle|alley)$"]
+    way["highway"]["name"]({{bbox}})
+    ["highway"!~"^(motorway|motorway_link|service|bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|escape|footway|path|platform|proposed|raceway|razed|rest_area|services|steps|via_ferrata)$"]
+    ["access"!~"^(no|private)$"]
     ["area"!~"yes"];
   );
   (._;>;);
