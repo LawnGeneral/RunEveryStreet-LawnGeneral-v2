@@ -397,15 +397,24 @@ function floodfill(node, stepssofar) {
 }
 
 function solveRES() {
-	removeOrphans();
-	showRoads = false;
-	remainingedges = edges.length;
-	currentroute = new Route(currentnode, null);
-	bestroute = new Route(currentnode, null);
-	bestdistance = Infinity;
-	iterations = 0;
-	iterationsperframe = 1;
-	starttime = millis();
+    removeOrphans();
+    resetEdges(); // Clear any previous travel counts from the roads
+    showRoads = false;
+    
+    currentnode = startnode; // Ensure we start where you clicked
+    remainingedges = edges.length;
+    
+    currentroute = new Route(currentnode, null);
+    bestroute = new Route(currentnode, null);
+    
+    bestdistance = Infinity;
+    iterations = 0;
+    iterationsperframe = 1;
+    starttime = millis();
+    
+    // Clear history for the new run
+    efficiencyhistory = [];
+    distancehistory = [];
 }
 
 function mousePressed() {
