@@ -55,7 +55,6 @@ var startnode, currentnode;
 var selectnodemode = 1,
 	solveRESmode = 2,
 	choosemapmode = 3,
-	drawpolygonmode = 6,
 	trimmode = 4,
 	downloadGPXmode = 5;
 var mode;
@@ -100,11 +99,8 @@ function setup() {
 	iterationsperframe = 1;
 	margin = 0.1; // don't pull data in the extreme edges of the map
 	showMessage("Zoom to selected area, then click here");
-	// Allow map zoom/pan with trackpad (don't let the canvas capture scroll)
-	const c = document.getElementsByTagName("canvas")[0];
-	if (c) c.style.pointerEvents = "none";
-
-
+	// Start in EDIT mode so clicks work
+setCanvasPointerEvents(true);
 }
 
 function draw() { //main loop called by the P5.js framework every frame
