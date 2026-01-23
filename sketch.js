@@ -107,34 +107,42 @@ function draw() { //main loop called by the P5.js framework every frame
 			showEdges(); //draw connections between nodes
 		}
 		if (mode == solveRESmode) {
-			iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); // dynamically adapt iterations per frame to hit 5fps
+			iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
 			for (let it = 0; it < iterationsperframe; it++) {
 				iterations++;
 				let solutionfound = false;
-				while (!solutionfound) { //run randomly down least roads until all roads have been run
+				while (!solutionfound) { 
 					shuffle(currentnode.edges, true);
-					currentnode.edges.sort((a, b) => a.travels - b.travels); // sort edges around node by number of times traveled, and travel down least.
+					currentnode.edges.sort((a, b) => a.travels - b.travels); 
 					let edgewithleasttravels = currentnode.edges[0];
 					let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
+					
+					// Track doubling for efficiency calculation
+					let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
+					
 					edgewithleasttravels.travels++;
-					currentroute.addWaypoint(nextNode, edgewithleasttravels.distance);
+					currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
 					currentnode = nextNode;
-					if (edgewithleasttravels.travels == 1) { // then first time traveled on this edge
-						remainingedges--; //fewer edges that have not been travelled
+					
+					if (edgewithleasttravels.travels == 1) { 
+						remainingedges--; 
 					}
-					if (remainingedges == 0) { //once all edges have been traveled, the route is complete. Work out total distance and see if this route is the best so far.
+					
+					// --- UPDATED RETURN-TO-START LOGIC ---
+					if (remainingedges == 0 && currentnode == startnode) { 
 						solutionfound = true;
-						currentroute.distance += calcdistance(currentnode.lat, currentnode.lon, startnode.lat, startnode.lon);
-						if (currentroute.distance < bestdistance) { // this latest route is now record
-							bestroute = new Route(null, currentroute);
+						
+						if (currentroute.distance < bestdistance) { 
 							bestdistance = currentroute.distance;
+							bestroute = new Route(null, currentroute);
+							
 							if (efficiencyhistory.length > 1) {
 								totalefficiencygains += totaledgedistance / bestroute.distance - efficiencyhistory[efficiencyhistory.length - 1];
 							}
 							efficiencyhistory.push(totaledgedistance / bestroute.distance);
 							distancehistory.push(bestroute.distance);
-
 						}
+						
 						currentnode = startnode;
 						remainingedges = edges.length;
 						currentroute = new Route(currentnode, null);
@@ -144,63 +152,63 @@ function draw() { //main loop called by the P5.js framework every frame
 			}
 		}
 
-		// Only show node/edge highlighting if we aren't busy panning the map
 		if (!navMode) {
 			showNodes();
 		}
 
+		// Keep the best route visible on the map at all times
 		if (bestroute != null) {
 			bestroute.show();
 		}
-		if (mode == solveRESmode) {
-			drawProgressGraph();
-		}
+
+		// Removed drawProgressGraph() to clean up the UI
+
 		if (mode == downloadGPXmode){
 			showReportOut();
 		}
 
-		// --- EDITING TOOLBAR LOGIC ---
+		// --- LIVE STATS OVERLAY (Top Left) ---
+		if (mode == solveRESmode && bestdistance != Infinity) {
+			push();
+			fill(0, 180); // Semi-transparent black
+			noStroke();
+			rect(10, 10, 200, 70, 5);
+			fill(255);
+			textAlign(LEFT, TOP);
+			textSize(14);
+			textStyle(BOLD);
+			text("SOLVER ACTIVE", 20, 20);
+			textStyle(NORMAL);
+			let eff = (totaledgedistance / bestdistance * 100).toFixed(1);
+			text(`Best Dist: ${bestdistance.toFixed(2)}km`, 20, 40);
+			text(`Efficiency: ${eff}%`, 20, 55);
+			pop();
+		}
+
+		// --- EDITING TOOLBAR LOGIC (Top Right) ---
 		if (mode == trimmode || mode == selectnodemode) {
 			push();
 			colorMode(HSB); 
-			
-			// 1. NAVIGATION TOGGLE (Right-most)
-			// Green = Panning is ON | Orange = Trimming/Selecting is ON
 			fill(navMode ? 120 : 15, 255, 255); 
 			stroke(0);
 			strokeWeight(2);
 			rect(width - 160, 10, 150, 40, 5);
-			
-			fill(0);
-			noStroke();
-			textAlign(CENTER, CENTER);
-			textSize(12);
-			textStyle(BOLD);
+			fill(0); noStroke(); textAlign(CENTER, CENTER); textSize(12); textStyle(BOLD);
 			text(navMode ? "MODE: PAN/ZOOM" : "MODE: INTERACT", width - 85, 30);
 			
-			// These buttons only show up AFTER a start node is selected
 			if (mode == trimmode) {
-				// 2. UNDO BUTTON (Middle)
-				fill(200, 20, 255); // Neutral blue-grey
-				stroke(0);
-				strokeWeight(2);
+				fill(200, 20, 255); 
+				stroke(0); strokeWeight(2);
 				rect(width - 320, 10, 150, 40, 5);
-				
-				fill(0);
-				noStroke();
+				fill(0); noStroke();
 				text("UNDO LAST TRIM", width - 245, 30);
 
-				// 3. START SOLVER BUTTON (Left-most)
-				fill(120, 255, 255); // Solid Bright Green
-				stroke(0);
-				strokeWeight(2);
+				fill(120, 255, 255); 
+				stroke(0); strokeWeight(2);
 				rect(width - 480, 10, 150, 40, 5);
-				
-				fill(0);
-				noStroke();
+				fill(0); noStroke();
 				text("START SOLVER", width - 405, 30);
 			}
-			
 			pop();
 		}
 	}
