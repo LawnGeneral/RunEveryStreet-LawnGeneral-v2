@@ -164,7 +164,7 @@ function draw() { //main loop called by the P5.js framework every frame
 			push();
 			colorMode(HSB); 
 			
-			// 1. ALWAYS DRAW NAVIGATION TOGGLE (Top Right)
+			// 1. NAVIGATION TOGGLE (Right-most)
 			// Green = Panning is ON | Orange = Trimming/Selecting is ON
 			fill(navMode ? 120 : 15, 255, 255); 
 			stroke(0);
@@ -178,8 +178,9 @@ function draw() { //main loop called by the P5.js framework every frame
 			textStyle(BOLD);
 			text(navMode ? "MODE: PAN/ZOOM" : "MODE: INTERACT", width - 85, 30);
 			
-			// 2. ONLY DRAW UNDO BUTTON IF IN TRIM MODE
+			// These buttons only show up AFTER a start node is selected
 			if (mode == trimmode) {
+				// 2. UNDO BUTTON (Middle)
 				fill(200, 20, 255); // Neutral blue-grey
 				stroke(0);
 				strokeWeight(2);
@@ -188,6 +189,16 @@ function draw() { //main loop called by the P5.js framework every frame
 				fill(0);
 				noStroke();
 				text("UNDO LAST TRIM", width - 245, 30);
+
+				// 3. START SOLVER BUTTON (Left-most)
+				fill(120, 255, 255); // Solid Bright Green
+				stroke(0);
+				strokeWeight(2);
+				rect(width - 480, 10, 150, 40, 5);
+				
+				fill(0);
+				noStroke();
+				text("START SOLVER", width - 405, 30);
 			}
 			
 			pop();
@@ -432,21 +443,21 @@ function mousePressed() {
 
   // 3. MODE: TRIM ROADS
   if (mode == trimmode) {
-    // A. PAN/ZOOM Toggle
+    // A. PAN/ZOOM Toggle (Right-most)
     if (mouseX > width - 160 && mouseX < width - 10 && mouseY > 10 && mouseY < 50) {
       navMode = !navMode;
       canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
       return;
     }
 
-    // B. UNDO Button (Only works in trim mode)
+    // B. UNDO Button (Middle)
     if (mouseX > width - 320 && mouseX < width - 170 && mouseY > 10 && mouseY < 50) {
       undoTrim();
       return;
     }
 
-    // C. START SOLVE Button (Bottom center button)
-    if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+    // C. START SOLVER Button (Left-most)
+    if (mouseX > width - 480 && mouseX < width - 330 && mouseY > 10 && mouseY < 50) {
       mode = solveRESmode;
       navMode = false;
       canvas.elt.style.pointerEvents = 'auto';
@@ -455,13 +466,15 @@ function mousePressed() {
       return;
     }
 
-    // D. Perform Road Trim (Only if not in navMode)
-    if (!navMode) {
+    // D. Perform Road Trim (Only if not in navMode and clicking map area)
+    if (!navMode && mouseY < mapHeight) {
       trimSelectedEdge();
     }
   }
 
   // 4. MODE: SOLVING (Stop Logic)
+  // Note: Keeping your original coordinates here as this button usually appears 
+  // at the bottom during the solving phase.
   if (mode == solveRESmode) {
     if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
       mode = downloadGPXmode;
