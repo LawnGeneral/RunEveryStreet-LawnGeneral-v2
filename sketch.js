@@ -219,26 +219,36 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 }
 
 function showNodes() {
-	let closestnodetomousedist = Infinity;
-	for (let i = 0; i < nodes.length; i++) {
-		if (showRoads) {
-			nodes[i].show();
-		}
-		if (mode == selectnodemode) {
-			disttoMouse = dist(nodes[i].x, nodes[i].y, mouseX, mouseY);
-			if (disttoMouse < closestnodetomousedist) {
-				closestnodetomousedist = disttoMouse;
-				closestnodetomouse = i;
-			}
-		}
-	}
-	if (mode == selectnodemode) {
-		startnode = nodes[closestnodetomouse];
-	}
-	if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
-		startnode.highlight();
-	}
+  let closestnodetomousedist = Infinity;
+
+  for (let i = 0; i < nodes.length; i++) {
+    if (showRoads) {
+      nodes[i].show();
+    }
+
+    if (mode == selectnodemode) {
+      const px = openlayersmap.getPixelFromCoordinate(
+        ol.proj.fromLonLat([nodes[i].lon, nodes[i].lat])
+      );
+      if (!px) continue;
+
+      const disttoMouse = dist(px[0], px[1], mouseX, mouseY);
+      if (disttoMouse < closestnodetomousedist) {
+        closestnodetomousedist = disttoMouse;
+        closestnodetomouse = i;
+      }
+    }
+  }
+
+  if (mode == selectnodemode) {
+    startnode = nodes[closestnodetomouse];
+  }
+
+  if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
+    startnode.highlight();
+  }
 }
+
 
 function showEdges() {
 	let closestedgetomousedist = Infinity;
