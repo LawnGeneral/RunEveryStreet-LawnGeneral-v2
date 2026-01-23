@@ -94,125 +94,133 @@ function setup() {
 		redraw(); 
 	});
 }
+function draw() {
+    if (touches.length > 0) isTouchScreenDevice = true;
+    clear();
+    drawMask();
 
-function draw() { //main loop called by the P5.js framework every frame
-	if (touches.length > 0) {
-		isTouchScreenDevice = true;
-	} // detect touch screen device such as mobile
-	clear();
-	drawMask(); //frame the active area on the map
+    if (mode != choosemapmode) {
+        if (showRoads) showEdges();
 
-	if (mode != choosemapmode) {
-		if (showRoads) {
-			showEdges(); //draw connections between nodes
-		}
-		if (mode == solveRESmode) {
-			iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
-			for (let it = 0; it < iterationsperframe; it++) {
-				iterations++;
-				let solutionfound = false;
-				while (!solutionfound) { 
-					shuffle(currentnode.edges, true);
-					currentnode.edges.sort((a, b) => a.travels - b.travels); 
-					let edgewithleasttravels = currentnode.edges[0];
-					let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
-					
-					// Track doubling for efficiency calculation
-					let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
-					
-					edgewithleasttravels.travels++;
-					currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
-					currentnode = nextNode;
-					
-					if (edgewithleasttravels.travels == 1) { 
-						remainingedges--; 
-					}
-					
-					// --- UPDATED RETURN-TO-START LOGIC ---
-					if (remainingedges == 0 && currentnode == startnode) { 
-						solutionfound = true;
-						
-						if (currentroute.distance < bestdistance) { 
-							bestdistance = currentroute.distance;
-							bestroute = new Route(null, currentroute);
-							
-							if (efficiencyhistory.length > 1) {
-								totalefficiencygains += totaledgedistance / bestroute.distance - efficiencyhistory[efficiencyhistory.length - 1];
-							}
-							efficiencyhistory.push(totaledgedistance / bestroute.distance);
-							distancehistory.push(bestroute.distance);
-						}
-						
-						currentnode = startnode;
-						remainingedges = edges.length;
-						currentroute = new Route(currentnode, null);
-						resetEdges();
-					}
-				}
-			}
-		}
+        // --- SOLVER LOGIC ---
+        if (mode == solveRESmode) {
+            iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
+            for (let it = 0; it < iterationsperframe; it++) {
+                iterations++;
+                let solutionfound = false;
+                while (!solutionfound) { 
+                    shuffle(currentnode.edges, true);
+                    currentnode.edges.sort((a, b) => a.travels - b.travels); 
+                    let edgewithleasttravels = currentnode.edges[0];
+                    let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
+                    
+                    let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
+                    
+                    edgewithleasttravels.travels++;
+                    currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
+                    currentnode = nextNode;
+                    
+                    if (edgewithleasttravels.travels == 1) remainingedges--; 
+                    
+                    // RETURN-TO-START LOGIC
+                    if (remainingedges == 0 && currentnode == startnode) { 
+                        solutionfound = true;
+                        if (currentroute.distance < bestdistance) { 
+                            bestdistance = currentroute.distance;
+                            bestroute = new Route(null, currentroute);
+                            efficiencyhistory.push(totaledgedistance / bestroute.distance);
+                            distancehistory.push(bestroute.distance);
+                        }
+                        currentnode = startnode;
+                        remainingedges = edges.length;
+                        currentroute = new Route(currentnode, null);
+                        resetEdges();
+                    }
+                }
+            }
+        }
 
-		if (!navMode) {
-			showNodes();
-		}
+        if (!navMode) showNodes();
 
-		// Keep the best route visible on the map at all times
-		if (bestroute != null) {
-			bestroute.show();
-		}
+        // --- ROUTE VISUALIZATION ---
+        if (bestroute != null) {
+            bestroute.show(); // Show the solid best route
+        } else if (mode == solveRESmode && currentroute != null) {
+            // Show "Ghost" route while searching for the first valid loop
+            push();
+            stroke(255, 100); 
+            strokeWeight(2);
+            currentroute.show();
+            pop();
+        }
 
-		// Removed drawProgressGraph() to clean up the UI
+        if (mode == downloadGPXmode) showReportOut();
 
-		if (mode == downloadGPXmode){
-			showReportOut();
-		}
+        // --- UI OVERLAYS ---
 
-		// --- LIVE STATS OVERLAY (Top Left) ---
-		if (mode == solveRESmode && bestdistance != Infinity) {
-			push();
-			fill(0, 180); // Semi-transparent black
-			noStroke();
-			rect(10, 10, 200, 70, 5);
-			fill(255);
-			textAlign(LEFT, TOP);
-			textSize(14);
-			textStyle(BOLD);
-			text("SOLVER ACTIVE", 20, 20);
-			textStyle(NORMAL);
-			let eff = (totaledgedistance / bestdistance * 100).toFixed(1);
-			text(`Best Dist: ${bestdistance.toFixed(2)}km`, 20, 40);
-			text(`Efficiency: ${eff}%`, 20, 55);
-			pop();
-		}
+        // 1. SOLVER STATS (Top Left - Only while solving)
+        if (mode == solveRESmode && bestdistance != Infinity) {
+            drawStatsBox("SOLVER ACTIVE", `Best Dist: ${bestdistance.toFixed(2)}km`, `Efficiency: ${(totaledgedistance / bestdistance * 100).toFixed(1)}%`);
+        }
 
-		// --- EDITING TOOLBAR LOGIC (Top Right) ---
-		if (mode == trimmode || mode == selectnodemode) {
-			push();
-			colorMode(HSB); 
-			fill(navMode ? 120 : 15, 255, 255); 
-			stroke(0);
-			strokeWeight(2);
-			rect(width - 160, 10, 150, 40, 5);
-			fill(0); noStroke(); textAlign(CENTER, CENTER); textSize(12); textStyle(BOLD);
-			text(navMode ? "MODE: PAN/ZOOM" : "MODE: INTERACT", width - 85, 30);
-			
-			if (mode == trimmode) {
-				fill(200, 20, 255); 
-				stroke(0); strokeWeight(2);
-				rect(width - 320, 10, 150, 40, 5);
-				fill(0); noStroke();
-				text("UNDO LAST TRIM", width - 245, 30);
+        // 2. LIVE ROAD MILEAGE (Top Left - Only while trimming/selecting)
+        if (mode == trimmode || mode == selectnodemode) {
+            let liveDist = getLiveTotalDistance();
+            drawStatsBox("ROAD MILEAGE", `${liveDist.toFixed(2)}km`, "Trimming Mode");
 
-				fill(120, 255, 255); 
-				stroke(0); strokeWeight(2);
-				rect(width - 480, 10, 150, 40, 5);
-				fill(0); noStroke();
-				text("START SOLVER", width - 405, 30);
-			}
-			pop();
-		}
-	}
+            // 3. EDITING TOOLBAR (Top Right)
+            drawToolbar();
+        }
+    }
 }
+
+// --- UI HELPER FUNCTIONS ---
+
+function drawStatsBox(title, line1, line2) {
+    push();
+    fill(0, 180);
+    noStroke();
+    rect(10, 10, 200, 75, 5);
+    fill(255);
+    textAlign(LEFT, TOP);
+    textSize(14);
+    textStyle(BOLD);
+    text(title, 20, 20);
+    textStyle(NORMAL);
+    text(line1, 20, 42);
+    text(line2, 20, 58);
+    pop();
+}
+
+function drawToolbar() {
+    push();
+    colorMode(HSB); 
+    
+    // Nav Toggle
+    fill(navMode ? 120 : 15, 255, 255); 
+    stroke(0); strokeWeight(2);
+    rect(width - 160, 10, 150, 40, 5);
+    fill(0); noStroke(); textAlign(CENTER, CENTER); textSize(12); textStyle(BOLD);
+    text(navMode ? "MODE: PAN/ZOOM" : "MODE: INTERACT", width - 85, 30);
+    
+    if (mode == trimmode) {
+        // Undo
+        fill(200, 20, 255); 
+        stroke(0); strokeWeight(2);
+        rect(width - 320, 10, 150, 40, 5);
+        fill(0); noStroke();
+        text("UNDO LAST TRIM", width - 245, 30);
+
+        // Start
+        fill(120, 255, 255); 
+        stroke(0); strokeWeight(2);
+        rect(width - 480, 10, 150, 40, 5);
+        fill(0); noStroke();
+        text("START SOLVER", width - 405, 30);
+    }
+    pop();
+}
+
 function getOverpassData() { 
     showMessage("Loading map data…");
     canvas.position(0, 34); 
@@ -767,4 +775,13 @@ function undoTrim() {
   } else {
     console.log("Nothing to undo!");
   }
+}
+function getLiveTotalDistance() {
+    let total = 0;
+    for (let i = 0; i < edges.length; i++) {
+        // Only count edges that are currently active/visible
+        total += edges[i].distance;
+    }
+    // Returns distance (assumed to be in km based on your screenshot)
+    return total;
 }
