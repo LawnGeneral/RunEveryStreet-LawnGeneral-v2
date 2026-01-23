@@ -104,65 +104,55 @@ function draw() {
     if (mode != choosemapmode) {
         if (showRoads) showEdges();
 
-        // --- SOLVER LOGIC ---
-        if (mode == solveRESmode) {
-            iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
-            for (let it = 0; it < iterationsperframe; it++) {
-                iterations++;
-                let solutionfound = false;
-                while (!solutionfound) { 
-    // 1. Pick the best next move
-    shuffle(currentnode.edges, true);
-    currentnode.edges.sort((a, b) => a.travels - b.travels); 
-    let edgewithleasttravels = currentnode.edges[0];
-    let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
-    
-    // 2. Calculate distance penalty for doubling back
-    let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
-    
-    // 3. Update road counters correctly (Check BEFORE incrementing)
-    if (edgewithleasttravels.travels === 0) { 
-        remainingedges--; 
-    }
-    edgewithleasttravels.travels++;
-    
-    // 4. Update the path data
-    currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
-    currentnode = nextNode;
-    
-    // 5. Check if we've covered all roads AND returned to start
-    if (remainingedges === 0 && currentnode === startnode) { 
-        solutionfound = true;
-        
-        // Update the "Display Route" so the user can see it on screen
-        displayRoute = new Route(null, currentroute);
-
-        if (currentroute.distance < bestdistance) { 
-            bestdistance = currentroute.distance;
-            // Create a deep copy for the final record
-            bestroute = new Route(null, currentroute);
+    // --- SOLVER LOGIC ---
+if (mode == solveRESmode) {
+    iterationsperframe = max(0.01, iterationsperframe - 1 * (5 - frameRate())); 
+    for (let it = 0; it < iterationsperframe; it++) {
+        iterations++;
+        let solutionfound = false;
+        while (!solutionfound) { 
+            shuffle(currentnode.edges, true);
+            currentnode.edges.sort((a, b) => a.travels - b.travels); 
+            let edgewithleasttravels = currentnode.edges[0];
+            let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
             
-            // Found an improvement! Reset the 60s plateau timer
-            lastRecordTime = millis(); 
+            let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
+            
+            if (edgewithleasttravels.travels === 0) { 
+                remainingedges--; 
+            }
+            edgewithleasttravels.travels++;
+            
+            currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
+            currentnode = nextNode;
+            
+            if (remainingedges === 0 && currentnode === startnode) { 
+                solutionfound = true;
+                displayRoute = new Route(null, currentroute);
 
-            efficiencyhistory.push(totaledgedistance / bestroute.distance);
-            distancehistory.push(bestroute.distance);
+                if (currentroute.distance < bestdistance) { 
+                    bestdistance = currentroute.distance;
+                    bestroute = new Route(null, currentroute);
+                    lastRecordTime = millis(); 
+
+                    efficiencyhistory.push(totaledgedistance / bestroute.distance);
+                    distancehistory.push(bestroute.distance);
+                }
+                
+                currentnode = startnode;
+                remainingedges = edges.length;
+                currentroute = new Route(currentnode, null);
+                resetEdges();
+            }
         }
-        
-        // 6. Reset for the next random iteration
-        currentnode = startnode;
-        remainingedges = edges.length;
-        currentroute = new Route(currentnode, null);
-        resetEdges();
+    }
+
+    // AUTO-STOP CHECK: Trigger the download here
+    if (millis() - lastRecordTime > autoStopThreshold) {
+        mode = downloadGPXmode;
+        downloadGPX(); // <--- THIS TRIGGERS THE CLEAN DOWNLOAD
     }
 }
-            }
-
-            // AUTO-STOP CHECK: If it's been 60 seconds since the last record
-            if (millis() - lastRecordTime > autoStopThreshold) {
-                mode = downloadGPXmode;
-            }
-        }
 
         if (!navMode) showNodes();
 
@@ -807,4 +797,37 @@ function getLiveTotalDistance() {
     }
     // Returns distance (assumed to be in km based on your screenshot)
     return total;
+}
+function downloadGPX() {
+  if (!bestroute || !bestroute.waypoints || bestroute.waypoints.length === 0) {
+    console.error("No route data found to download.");
+    return;
+  }
+
+  let gpxHeader = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                  '<gpx version="1.1" creator="GeminiRoute" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+                  '  <trk><name>Every Single Street</name><trkseg>\n';
+  
+  let gpxFooter = '  </trkseg></trk>\n</gpx>';
+  let gpxBody = "";
+
+  // Build waypoints from your bestroute data 
+  for (let i = 0; i < bestroute.waypoints.length; i++) {
+    let p = bestroute.waypoints[i];
+    // Use the current time to ensure the GPX file is valid for apps 
+    let timeStr = new Date(Date.now() + i * 1000).toISOString(); 
+    gpxBody += `    <trkpt lat="${p.lat}" lon="${p.lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+  }
+
+  let fullContent = gpxHeader + gpxBody + gpxFooter;
+
+  // This forces the browser to recognize the file as GPX, not TXT
+  let blob = new Blob([fullContent], { type: 'application/gpx+xml' });
+  let url = URL.createObjectURL(blob);
+  let link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", "route.gpx"); // Explicitly sets the extension
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
