@@ -11,38 +11,6 @@ var openlayersmap = new ol.Map({
     zoom: 4
   })
 });
-
-// ===== Step 2: Polygon drawing setup =====
-var polygonSource = new ol.source.Vector();
-var polygonLayer = new ol.layer.Vector({ source: polygonSource });
-openlayersmap.addLayer(polygonLayer);
-
-var drawInteraction = null;
-var selectedPolygon = null;
-
-function startPolygonDraw() {
-  polygonSource.clear();
-  selectedPolygon = null;
-
-  if (drawInteraction) openlayersmap.removeInteraction(drawInteraction);
-
-  drawInteraction = new ol.interaction.Draw({
-    source: polygonSource,
-    type: "Polygon"
-  });
-
-  drawInteraction.on("drawend", function (evt) {
-    selectedPolygon = evt.feature.getGeometry().clone();
-    openlayersmap.removeInteraction(drawInteraction);
-    drawInteraction = null;
-    console.log("Polygon drawn:", selectedPolygon);
-  });
-
-  openlayersmap.addInteraction(drawInteraction);
-  console.log("Draw mode ON: click to add points, double-click to finish");
-}
-
-
 var canvas;
 var mapHeight;
 var windowX, windowY;
@@ -343,9 +311,7 @@ function solveRES() {
 
 function mousePressed() { // clicked on map to select a node
 	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
-  mode = drawpolygonmode;
-  startPolygonDraw();
-  showMessage("Draw a polygon, double-click to finish");
+  getOverpassData();
   return;
 }
 
