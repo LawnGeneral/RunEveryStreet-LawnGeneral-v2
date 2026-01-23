@@ -7,18 +7,19 @@ class Node {
     this.edges = [];
   }
 
-  // Helper function to get the current screen position
+// Helper function to get the current screen position
   getScreenPos() {
     const coords = ol.proj.fromLonLat([parseFloat(this.lon), parseFloat(this.lat)]);
     const pix = openlayersmap.getPixelFromCoordinate(coords);
     if (pix) {
       return {
         x: pix[0],
-        y: pix[1] - 34 // Subtracting the 34px offset for your header
+        y: pix[1] // Removed the - 34 to align with the basemap
       };
     }
     return null;
   }
+ 
 
   show() {
     let pos = this.getScreenPos();
