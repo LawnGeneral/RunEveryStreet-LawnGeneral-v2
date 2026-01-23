@@ -250,25 +250,32 @@ out;`;
 }
 
 function showNodes() {
-	let closestnodetomousedist = Infinity;
-	for (let i = 0; i < nodes.length; i++) {
-		if (showRoads) {
-			nodes[i].show();
-		}
-		if (mode == selectnodemode) {
-			disttoMouse = dist(nodes[i].x, nodes[i].y, mouseX, mouseY);
-			if (disttoMouse < closestnodetomousedist) {
-				closestnodetomousedist = disttoMouse;
-				closestnodetomouse = i;
-			}
-		}
-	}
-	if (mode == selectnodemode) {
-		startnode = nodes[closestnodetomouse];
-	}
-	if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
-		startnode.highlight();
-	}
+    let closestnodetomousedist = Infinity;
+    for (let i = 0; i < nodes.length; i++) {
+        let pos = nodes[i].getScreenPos(); // Use the dynamic position
+        if (!pos) continue;
+
+        if (showRoads) {
+            nodes[i].show();
+        }
+        
+        if (mode == selectnodemode) {
+            // Calculate distance based on current screen pixels
+            let disttoMouse = dist(pos.x, pos.y, mouseX, mouseY);
+            if (disttoMouse < closestnodetomousedist) {
+                closestnodetomousedist = disttoMouse;
+                closestnodetomouse = i;
+            }
+        }
+    }
+    
+    if (mode == selectnodemode && closestnodetomouse !== -1) {
+        startnode = nodes[closestnodetomouse];
+    }
+    
+    if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
+        startnode.highlight();
+    }
 }
 
 function showEdges() {
@@ -340,47 +347,52 @@ function solveRES() {
 	starttime = millis();
 }
 
-function mousePressed() { // clicked on map to select a node
-	if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // Was in Choose map mode and clicked on button
-		getOverpassData();
-		return;
-	}
-	if (mode == selectnodemode && mouseY < mapHeight) { // Select node mode, and clicked on map
-		showNodes(); //find node closest to mouse
-		mode = trimmode;
-		showMessage('Click on roads to trim, then click here');
-		removeOrphans(); // deletes parts of the network that cannot be reached from start
-		return;
-	}
-	if (mode == trimmode) {
-		showEdges(); // find closest edge
-		if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // clicked on button
-			mode = solveRESmode;
-			showMessage('Calculating… Click to stop when satisfied');
-			showNodes(); // recalculate closest node
-			solveRES();
-			return;
-		} else { // clicked on edge to remove it
-			trimSelectedEdge();
-		}
-	}
-	if (mode == solveRESmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) { // Was busy solving and user clicked on button
-		mode = downloadGPXmode;
-		hideMessage();
-		//calculate total unique roads (ways):
-		let uniqueways=[];
-		for (let i = 0; i < edges.length; i++) {
-			if (!uniqueways.includes(edges[i].wayid)) {
-				uniqueways.push(edges[i].wayid);
-			}
-		}
-		totaluniqueroads=uniqueways.length;
-		return;
-	}
-	if (mode == downloadGPXmode && mouseY < height/2+200+40 && mouseY > height/2+200 && mouseX > width/2-140 && mouseX < width/2-140+280) { // Clicked Download Route rect(width/2-140,height/2+200,280,40);
-		bestroute.exportGPX();
-		return;
-	}
+function mousePressed() {
+    // TEMPORARY: If clicking the header area/button, allow p5 to catch it
+    if (mouseY < 60) {
+        canvas.elt.style.pointerEvents = 'auto';
+    }
+
+    // mode 3: Choose map mode (Initial button click)
+    if (mode == choosemapmode && mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+        canvas.elt.style.pointerEvents = 'auto';
+        getOverpassData();
+        return;
+    }
+
+    // mode 1: Select start node
+    if (mode == selectnodemode && mouseY < mapHeight) {
+        canvas.elt.style.pointerEvents = 'auto';
+        showNodes(); 
+        mode = trimmode;
+        showMessage('Click on roads to trim, then click here');
+        removeOrphans();
+        return;
+    }
+
+    // mode 4: Trim roads
+    if (mode == trimmode) {
+        canvas.elt.style.pointerEvents = 'auto';
+        if (mouseY < btnBRy && mouseY > btnTLy && mouseX > btnTLx && mouseX < btnBRx) {
+            mode = solveRESmode;
+            showMessage('Calculating… Click to stop when satisfied');
+            showNodes();
+            solveRES();
+            return;
+        } else {
+            trimSelectedEdge();
+        }
+    }
+
+    // ... (rest of your solveRESmode and downloadGPXmode logic)
+}
+
+// Ensure pointerEvents reset when moving mouse so zoom works
+function mouseReleased() {
+    // If we are just in "browsing" mode, let clicks pass back to the map
+    if (mode == choosemapmode) {
+        canvas.elt.style.pointerEvents = 'none';
+    }
 }
 
 function positionMap(minlon_, minlat_, maxlon_, maxlat_) {
@@ -560,4 +572,10 @@ function showStatus() {
 			text("isTouchScreenDevice: " + isTouchScreenDevice, textx, texty + 200);
 		}
 	}
+}
+function windowResized() {
+    mapWidth = windowWidth;
+    mapHeight = windowHeight;
+    resizeCanvas(windowWidth, windowHeight - 34);
+    openlayersmap.updateSize();
 }
