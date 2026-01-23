@@ -577,4 +577,4 @@ function showStatus() {
 		}
 	}
 }
-}
+
