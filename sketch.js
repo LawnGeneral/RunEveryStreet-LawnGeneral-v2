@@ -111,38 +111,51 @@ function draw() {
                 iterations++;
                 let solutionfound = false;
                 while (!solutionfound) { 
-                    shuffle(currentnode.edges, true);
-                    currentnode.edges.sort((a, b) => a.travels - b.travels); 
-                    let edgewithleasttravels = currentnode.edges[0];
-                    let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
-                    
-                    let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
-                    
-                    edgewithleasttravels.travels++;
-                    currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
-                    currentnode = nextNode;
-                    
-                    if (edgewithleasttravels.travels == 1) remainingedges--; 
-                    
-                    // RETURN-TO-START LOGIC
-                    if (remainingedges == 0 && currentnode == startnode) { 
-                        solutionfound = true;
-                        if (currentroute.distance < bestdistance) { 
-                            bestdistance = currentroute.distance;
-                            bestroute = new Route(null, currentroute);
-                            
-                            // RESET PLATEAU TIMER: We found a better route!
-                            lastRecordTime = millis(); 
+    // 1. Pick the best next move
+    shuffle(currentnode.edges, true);
+    currentnode.edges.sort((a, b) => a.travels - b.travels); 
+    let edgewithleasttravels = currentnode.edges[0];
+    let nextNode = edgewithleasttravels.OtherNodeofEdge(currentnode);
+    
+    // 2. Calculate distance penalty for doubling back
+    let extraDist = (edgewithleasttravels.travels > 0) ? edgewithleasttravels.distance : 0;
+    
+    // 3. Update road counters correctly (Check BEFORE incrementing)
+    if (edgewithleasttravels.travels === 0) { 
+        remainingedges--; 
+    }
+    edgewithleasttravels.travels++;
+    
+    // 4. Update the path data
+    currentroute.addWaypoint(nextNode, edgewithleasttravels.distance, extraDist);
+    currentnode = nextNode;
+    
+    // 5. Check if we've covered all roads AND returned to start
+    if (remainingedges === 0 && currentnode === startnode) { 
+        solutionfound = true;
+        
+        // Update the "Display Route" so the user can see it on screen
+        displayRoute = new Route(null, currentroute);
 
-                            efficiencyhistory.push(totaledgedistance / bestroute.distance);
-                            distancehistory.push(bestroute.distance);
-                        }
-                        currentnode = startnode;
-                        remainingedges = edges.length;
-                        currentroute = new Route(currentnode, null);
-                        resetEdges();
-                    }
-                }
+        if (currentroute.distance < bestdistance) { 
+            bestdistance = currentroute.distance;
+            // Create a deep copy for the final record
+            bestroute = new Route(null, currentroute);
+            
+            // Found an improvement! Reset the 60s plateau timer
+            lastRecordTime = millis(); 
+
+            efficiencyhistory.push(totaledgedistance / bestroute.distance);
+            distancehistory.push(bestroute.distance);
+        }
+        
+        // 6. Reset for the next random iteration
+        currentnode = startnode;
+        remainingedges = edges.length;
+        currentroute = new Route(currentnode, null);
+        resetEdges();
+    }
+}
             }
 
             // AUTO-STOP CHECK: If it's been 60 seconds since the last record
