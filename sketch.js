@@ -151,7 +151,22 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
 	datamaxlat = extent[3] - (extent[3] - extent[1]) * margin;
 	datamaxlon = extent[2] - (extent[2] - extent[0]) * margin;
 	let OverpassURL = "https://overpass-api.de/api/interpreter?data=";
-	let overpassquery = "(way({{bbox}})['highway']['highway' !~ 'trunk']['highway' !~ 'motorway']['highway' !~ 'motorway_link']['highway' !~ 'raceway']['highway' !~ 'proposed']['highway' !~ 'construction']['highway' !~ 'service']['highway' !~ 'elevator']['footway' !~ 'crossing']['footway' !~ 'sidewalk']['foot' !~ 'no']['access' !~ 'private']['access' !~ 'no'];node(w)({{bbox}}););out;";
+	let overpassquery =
+  "(" +
+  "way({{bbox}})" +
+  "['highway']" +
+  "['name']" + // Keep this: helps filter out unnamed driveways
+  // Exclude non-runnable or "junk" types
+  "['highway'!~'^(bridleway|bus_guideway|busway|construction|corridor|cycleway|elevator|escape|footway|motorway|motorway_link|path|platform|proposed|raceway|razed|rest_area|services|steps|trunk|trunk_link|via_ferrata)$']" +
+  // Exclude service roads unless they are designated as 'residential' or similar
+  "['service'!~'^(drive-through|driveway|parking_aisle|alley|emergency_access)$']" +
+  "['access'!~'^(no|customers|permit|private)$']" +
+  "['indoor'!~'^(area|column|corridor|door|level|room|wall|yes)$']" +
+  "['foot'!~'^(no)$']" +
+  "['area'!~'^(yes)$']" +
+  ");" +
+  "(._;>;);" + // Recurse to get nodes
+  "out;";
 
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
 	overpassquery = overpassquery.replace("{{bbox}}", dataminlat + "," + dataminlon + "," + datamaxlat + "," + datamaxlon);
