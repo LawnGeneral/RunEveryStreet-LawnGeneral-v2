@@ -56,7 +56,7 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-	if (navigator.geolocation) { //if browser shares user GPS location, update map to center on it.
+	if (navigator.geolocation) {
 		navigator.geolocation.getCurrentPosition(function (position) {
 			openlayersmap.getView().setCenter(ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]));
 		});
@@ -64,14 +64,22 @@ function setup() {
 	mapWidth = windowWidth;
 	mapHeight = windowHeight;
 	windowX = windowWidth;
-	windowY = mapHeight //; + 250;
+	windowY = mapHeight;
 	canvas = createCanvas(windowX, windowY - 34);
 	colorMode(HSB);
 	mode = choosemapmode;
 	iterationsperframe = 1;
-	margin = 0.1; // don't pull data in the extreme edges of the map
+	margin = 0.05; // Slightly smaller margin so you see more of what you zoomed into
 	showMessage("Zoom to selected area, then click here");
 
+	// --- THE FIX ---
+	// 1. Allow mouse events to pass through the canvas to the map by default
+	canvas.elt.style.pointerEvents = 'none'; 
+
+	// 2. Tell the map to redraw p5 roads every time you zoom or pan
+	openlayersmap.on('postrender', function() {
+		redraw(); 
+	});
 }
 
 function draw() { //main loop called by the P5.js framework every frame
