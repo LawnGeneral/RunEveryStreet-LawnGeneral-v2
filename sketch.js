@@ -179,8 +179,8 @@ function getOverpassData() { //load nodes and edge map data in XML format from O
         }, 3000);
         return;
     }
-		}
-		nodes = [];
+	
+			nodes = [];
 		edges = [];
 		for (let i = 0; i < numnodes; i++) {
 			var lat = XMLnodes[i].getAttribute('lat');
