@@ -474,6 +474,16 @@ function floodfill(node, stepssofar) {
 function solveRES() {
     removeOrphans();
     resetEdges();
+    
+    // --- THE OPTIMAL PREP (Steps 1 & 2) ---
+    let myOddNodes = getOddDegreeNodes(); // Find the problem junctions
+    let myMatrix = buildOddNodeMatrix(myOddNodes); // Map the distance between them
+    
+    // For now, we just log these. In Step 3, we will use 'myMatrix' 
+    // to find the perfect pairs.
+    console.log("Optimal data is ready for Step 3 matching.");
+
+    // --- EXISTING SOLVER SETUP ---
     showRoads = false;
     currentnode = startnode;
     remainingedges = edges.length;
@@ -483,7 +493,7 @@ function solveRES() {
     iterations = 0;
     iterationsperframe = 1;
     starttime = millis();
-    lastRecordTime = millis(); // Reset the plateau timer
+    lastRecordTime = millis();
     efficiencyhistory = [];
     distancehistory = [];
 }
@@ -931,4 +941,52 @@ function getOddDegreeNodes() {
   
   console.log("Step 1 Complete: Found " + oddNodes.length + " odd-degree nodes.");
   return oddNodes;
+}
+function dijkstra(startNode) {
+  let distances = new Map();
+  let pq = []; // Simple Priority Queue [node, distance]
+
+  // Initialize all nodes to Infinity distance
+  for (let node of nodes) {
+    distances.set(node, Infinity);
+  }
+  
+  distances.set(startNode, 0);
+  pq.push([startNode, 0]);
+
+  while (pq.length > 0) {
+    // Sort to always pick the node with the shortest known distance
+    pq.sort((a, b) => a[1] - b[1]);
+    let [u, distU] = pq.shift();
+
+    if (distU > distances.get(u)) continue;
+
+    // Look at all roads connected to this intersection
+    for (let edge of u.edges) {
+      let v = edge.OtherNodeofEdge(u);
+      let weight = edge.distance;
+      let alt = distU + weight;
+
+      // If we found a shorter way to get to node 'v', update it
+      if (alt < distances.get(v)) {
+        distances.set(v, alt);
+        pq.push([v, alt]);
+      }
+    }
+  }
+  return distances; 
+}
+function buildOddNodeMatrix(oddNodesList) {
+    let matrix = [];
+    for (let i = 0; i < oddNodesList.length; i++) {
+        // Run Dijkstra from this odd node to find distances to everyone else
+        let allDistances = dijkstra(oddNodesList[i]); 
+        matrix[i] = [];
+        for (let j = 0; j < oddNodesList.length; j++) {
+            // Fill the row with distances to the other odd nodes
+            matrix[i][j] = allDistances.get(oddNodesList[j]);
+        }
+    }
+    console.log("Step 2 Complete: Distance matrix built for matching.");
+    return matrix;
 }
