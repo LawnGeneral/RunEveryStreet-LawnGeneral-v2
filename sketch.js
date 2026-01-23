@@ -7,8 +7,10 @@ var openlayersmap = new ol.Map({
 		})
 	],
 	view: new ol.View({
-		center: ol.proj.fromLonLat([5.95,47.26]),
-		zoom: 12
+		// REPLACE THESE NUMBERS with your local Longitude and Latitude
+		// Format: [Longitude, Latitude]
+		center: ol.proj.fromLonLat([-76.88, 40.27]), 
+		zoom: 14 // Increased zoom so you are closer to the streets
 	})
 });
 
