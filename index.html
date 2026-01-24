@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/ol@v7.1.0/dist/ol.js"></script>
 
   <style>
-    /* Force the document to truly be viewport-sized */
+    /* Force the document to be viewport-sized */
     html, body {
       margin: 0;
       padding: 0;
@@ -25,7 +25,7 @@
     }
 
     body {
-      position: relative; /* IMPORTANT: prevents weird fixed/flex sizing quirks */
+      position: relative;
       background-color: black;
       font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif;
     }
@@ -44,18 +44,33 @@
       z-index: 1000;
       height: 40px;
       box-sizing: border-box;
+      gap: 12px;
     }
 
     .nav-links {
       display: flex;
       gap: 20px;
       font-size: 13px;
+      align-items: center;
     }
 
     a:link, a:visited { color: white; text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    /* Map fills the entire viewport under the header */
+    /* Header toggle button (ALWAYS clickable) */
+    #mode-toggle {
+      background: #222;
+      color: white;
+      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-weight: bold;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #mode-toggle:hover { background: #333; }
+
+    /* Map fills viewport under the header */
     #map {
       position: fixed;
       top: 40px;
@@ -66,18 +81,17 @@
       z-index: 1;
     }
 
-  /* ONLY style the p5 canvas (do NOT affect OpenLayers canvases) */
-canvas.p5Canvas, #defaultCanvas0 {
-  position: fixed !important;
-  top: 40px !important;                  /* match header height */
-  left: 0 !important;
-  width: 100% !important;
-  height: calc(100vh - 40px) !important; /* match #map height */
-  z-index: 5;
-  display: block;
-  pointer-events: none;                  /* JS will flip this when editing */
-}
-
+    /* ONLY style the p5 canvas (do NOT affect OpenLayers canvases) */
+    canvas.p5Canvas, #defaultCanvas0 {
+      position: fixed !important;
+      top: 40px !important;                  /* match header height */
+      left: 0 !important;
+      width: 100% !important;
+      height: calc(100vh - 40px) !important; /* match #map height */
+      z-index: 5;
+      display: block;
+      pointer-events: none;                  /* JS will flip this when editing */
+    }
 
     #ui-panel {
       position: fixed;
@@ -109,6 +123,10 @@ canvas.p5Canvas, #defaultCanvas0 {
 <body>
   <div class="header-bar">
     <img src="assets/logosmalllit.png" alt="Logo" style="height: 25px;" />
+
+    <!-- Always-clickable mode toggle -->
+    <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
+
     <div class="nav-links">
       <a href="https://codeberg.org/lejun/RunEveryStreet/" target="_blank">Source Code</a>
       <a href=".">Restart</a>
