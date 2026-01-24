@@ -894,8 +894,37 @@ function solveRES() {
     console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
 }
 
-
 function mousePressed() {
+    // 0) If the Route Summary modal is up, ONLY handle its button click
+    if (mode === downloadGPXmode) {
+        // These must match showReportOut()
+        let boxW = 400;
+        let boxH = 450;
+        let x = width / 2 - boxW / 2;
+        let y = height / 2 - boxH / 2;
+
+        // Button geometry from showReportOut()
+        let btnW = 300;
+        let btnH = 50;
+        let btnX = width / 2 - btnW / 2;
+        let btnY = y + 350;
+
+        if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+            // USER CHOICE: only download when clicked
+            if (typeof downloadGPX === "function") {
+                downloadGPX();
+                showMessage("Downloading GPX...");
+            } else {
+                console.error("downloadGPX() not found.");
+                showMessage("Download failed: missing downloadGPX()");
+            }
+            return;
+        }
+
+        // Click outside button: do nothing (keeps modal open)
+        return;
+    }
+
     // 1) UI GUARD: Don't click through the top toolbar area
     if (mouseY < 60) return;
 
@@ -916,27 +945,22 @@ function mousePressed() {
             navMode = false;
             solverRunning = false;
 
-            // Pause rendering/CPU
             noLoop();
 
-            // Show export/summary modal
             mode = downloadGPXmode;
             showMessage("Solver Paused — review & export when ready.");
 
-            // Force one redraw so the modal appears immediately
             redraw();
             openlayersmap.render();
             return;
         }
 
         // --- START / RESUME SOLVER ---
-        // If we've never initialized the solver, initialize it.
-        // If we were paused in solve mode, just resume.
         if (mode !== solveRESmode || !currentroute || !currentnode || remainingedges === undefined) {
             navMode = true;
             solverRunning = true;
             mode = solveRESmode;
-            solveRES(); // solveRES() should call loop()
+            solveRES(); // should call loop()
             showMessage("Solver Running...");
             return;
         } else {
@@ -1054,9 +1078,9 @@ function mousePressed() {
 
         return;
     }
-
-    // 6) If the modal is up, clicks are handled in showReportOut() (button)
 }
+
+
 
 
 
