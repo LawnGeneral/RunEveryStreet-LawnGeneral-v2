@@ -514,8 +514,8 @@ function drawToolbar() {
 function getOverpassData() {
     showMessage("Loading map data...");
 
-    // Keep canvas aligned with map
-    canvas.position(0, 0);
+    // Keep canvas aligned with map (below header)
+    canvas.position(0, HEADER_H);
 
     // Reset global state
     bestroute = null;
@@ -648,6 +648,7 @@ out;
         }
     );
 }
+
 
 
 function showNodes() {
