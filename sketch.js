@@ -1516,3 +1516,24 @@ function handleTrimming() {
         showMessage("Road removed. Use Undo if needed.");
     }
 }
+// --- VISUALIZATION HELPERS ---
+
+function drawStartNodeHighlight() {
+    if (startnode) {
+        // This converts the GPS coordinates of the node to screen pixels
+        let pos = getScreenPosition(startnode); 
+        
+        push();
+        // Set the style: a green circle with a white border
+        stroke(255);
+        strokeWeight(2);
+        fill(0, 255, 0); 
+        ellipse(pos.x, pos.y, 14, 14);
+        
+        // Optional: A soft outer glow to make it pop
+        noFill();
+        stroke(0, 255, 0, 100);
+        ellipse(pos.x, pos.y, 22, 22);
+        pop();
+    }
+}
