@@ -1597,31 +1597,58 @@ function triggerIngest() {
 }
 
 function handleTrimming() {
-    // closestedgetomouse is the index found by showEdges()
-    if (closestedgetomouse >= 0 && closestedgetomouse < edges.length) {
+    // Only act if we have a valid closest edge index
+    if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) return;
 
-        // 1. Remove the edge from the main array
-        let removedEdge = edges.splice(closestedgetomouse, 1)[0];
+    // 1) Remove the edge from the master list
+    const removedEdge = edges.splice(closestedgetomouse, 1)[0];
+    if (!removedEdge) return;
 
-        // 2. Add it to the Undo Stack
-        deletedEdgesStack.push(removedEdge);
+    // 2) Push to undo stack
+    deletedEdgesStack.push(removedEdge);
 
-        // 3. Update distance counters
-        totaledgedistance -= removedEdge.distance;
-        totalRoadsDist = totaledgedistance;
-        totaluniqueroads = edges.length;
-
-        // 4. Reset the hover index
-        closestedgetomouse = -1;
-
-        console.log("Road removed. New total distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
-        showMessage("Road removed. Use Undo if needed.");
-
-        // 5. FORCE VISUAL UPDATE (because you use noLoop())
-        redraw();                 // refresh p5 immediately
-        openlayersmap.render();   // triggers OpenLayers render cycle (postrender -> redraw)
+    // 3) Unlink from node adjacency lists (IMPORTANT)
+    // This keeps graph state consistent and prevents "phantom" connectivity.
+    if (removedEdge.from && Array.isArray(removedEdge.from.edges)) {
+        const idx = removedEdge.from.edges.indexOf(removedEdge);
+        if (idx !== -1) removedEdge.from.edges.splice(idx, 1);
     }
+    if (removedEdge.to && Array.isArray(removedEdge.to.edges)) {
+        const idx = removedEdge.to.edges.indexOf(removedEdge);
+        if (idx !== -1) removedEdge.to.edges.splice(idx, 1);
+    }
+
+    // 4) Local orphan-node cleanup (FAST)
+    // If a node has no remaining edges, remove it from nodes[] so it stops drawing.
+    // Never remove the start node even if it becomes isolated.
+    const maybeRemoveNode = (n) => {
+        if (!n) return;
+        if (startnode && n === startnode) return;
+        if (!n.edges || n.edges.length > 0) return;
+
+        const ni = nodes.indexOf(n);
+        if (ni !== -1) nodes.splice(ni, 1);
+    };
+
+    maybeRemoveNode(removedEdge.from);
+    maybeRemoveNode(removedEdge.to);
+
+    // 5) Update counters
+    totaledgedistance -= removedEdge.distance;
+    totalRoadsDist = totaledgedistance;
+    totaluniqueroads = edges.length;
+
+    // 6) Reset hover index so we don't "ghost delete"
+    closestedgetomouse = -1;
+
+    console.log("Road removed. New total distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
+    showMessage("Road removed. Use Undo if needed.");
+
+    // 7) FORCE VISUAL UPDATE (because you use noLoop())
+    redraw();
+    openlayersmap.render();
 }
+
 
 
 
