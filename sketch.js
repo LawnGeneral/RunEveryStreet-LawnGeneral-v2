@@ -80,13 +80,17 @@ function setup() {
 	}
 
 	// 2. Canvas & Sizing Setup
+	// We use windowHeight - 40 to match the 40px header in your index.html
 	mapWidth = windowWidth;
-	mapHeight = windowHeight;
+	mapHeight = windowHeight - 40;
 	windowX = windowWidth;
 	windowY = mapHeight;
 	
-	// Create the canvas. Note: windowY - 34 accounts for your header/footer height
-	canvas = createCanvas(windowX, windowY - 34);
+	canvas = createCanvas(windowX, windowY);
+	
+	// Ensure the canvas sits exactly at the start of the map (below the 40px header)
+	canvas.position(0, 40);
+	
 	colorMode(HSB);
 	
 	// 3. Application State
@@ -94,24 +98,22 @@ function setup() {
 	iterationsperframe = 1;
 	margin = 0.05; 
 	
-	// Display the initial instruction message
-	showMessage("Zoom to selected area, then click here");
+	// We comment this out because your Red Button is the new instruction
+	// showMessage("Zoom to selected area, then click here");
 
 	// --- THE ESSENTIAL INTERACTION FIXES ---
 	
 	// A. Re-enable Pointer Events: 
-	// This makes sure your clicks actually HIT the canvas so mousePressed() can run.
 	canvas.elt.style.pointerEvents = 'auto'; 
 
 	// B. Map-Canvas Sync:
-	// This tells the map to force p5.js to redraw the roads whenever you pan or zoom.
 	openlayersmap.on('postrender', function() {
 		redraw(); 
 	});
 
 	// C. Smart Interaction Toggling:
-	// When you start dragging the map, we disable the canvas so the map moves smoothly.
-	// When you stop moving, we re-enable the canvas so you can click roads/buttons.
+	// This allows you to drag the map (pointerEvents off) 
+	// and then click roads when you stop (pointerEvents on).
 	openlayersmap.on('movestart', function() {
 		canvas.elt.style.pointerEvents = 'none';
 	});
