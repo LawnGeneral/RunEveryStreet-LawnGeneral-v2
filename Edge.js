@@ -6,30 +6,71 @@ class Edge {
         this.travels = 0;
         this.isDoubled = false; 
 
-        // calculate distance using the Haversine formula (meters)
-        this.distance = this.calculateRealDistance(this.from, this.to);
+        // --- Integrated Distance Calculation ---
+        if (this.from && this.to) {
+            const R = 6371000; // Earth's radius in meters
+            const dLat = (this.to.lat - this.from.lat) * Math.PI / 180;
+            const dLon = (this.to.lon - this.from.lon) * Math.PI / 180;
+            const a = 
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(this.from.lat * Math.PI / 180) * Math.cos(this.to.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            this.distance = R * c; 
+        } else {
+            this.distance = 0;
+        }
 
-        if (!this.from.edges.includes(this)) {
+        // Add this edge to the nodes' adjacency lists
+        if (this.from && !this.from.edges.includes(this)) {
             this.from.edges.push(this);
         }
-        if (!this.to.edges.includes(this)) {
+        if (this.to && !this.to.edges.includes(this)) {
             this.to.edges.push(this);
         }
     }
 
-    // New helper method to ensure distance is NEVER zero
-    calculateRealDistance(nodeA, nodeB) {
-        const R = 6371000; // Radius of the Earth in meters
-        const dLat = (nodeB.lat - nodeA.lat) * Math.PI / 180;
-        const dLon = (nodeB.lon - nodeA.lon) * Math.PI / 180;
-        const a = 
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(nodeA.lat * Math.PI / 180) * Math.cos(nodeB.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const d = R * c; 
-        
-        return d > 0 ? d : 0.1; // Fallback to 0.1m so it's never exactly zero
+    show() {
+        let p1 = this.from ? this.from.getScreenPos() : null;
+        let p2 = this.to ? this.to.getScreenPos() : null;
+
+        if (p1 && p1.x !== undefined && p2 && p2.x !== undefined) {
+            push();
+            colorMode(HSB); // Ensure we are in HSB for the stroke colors
+            if (this.isDoubled) {
+                stroke(300, 255, 255, 0.9); // Purple/Magenta
+                strokeWeight(6); 
+            } else {
+                stroke(180, 255, 255, 0.8); // Cyan
+                strokeWeight(min(10, (this.travels + 1) * 2));
+            }
+            line(p1.x, p1.y, p2.x, p2.y);
+            pop();
+        }
     }
-    
-    // ... rest of your show() and highlight() methods ...
+
+    highlight() {
+        let p1 = this.from ? this.from.getScreenPos() : null;
+        let p2 = this.to ? this.to.getScreenPos() : null;
+
+        if (p1 && p2) {
+            push();
+            strokeWeight(8); 
+            stroke(20, 255, 255, 1); // Orange/Red highlight
+            line(p1.x, p1.y, p2.x, p2.y);
+            pop();
+        }
+    }
+
+    OtherNodeofEdge(node) {
+        return (node === this.from) ? this.to : this.from;
+    }
+
+    distanceToPoint(x, y) {
+        let p1 = this.from ? this.from.getScreenPos() : null;
+        let p2 = this.to ? this.to.getScreenPos() : null;
+        if (p1 && p2) {
+            return dist(x, y, (p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
+        }
+        return Infinity;
+    }
 }
