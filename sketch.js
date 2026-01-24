@@ -122,36 +122,36 @@ function setMode(newMode) {
 function draw() {
     if (touches.length > 0) isTouchScreenDevice = true;
 
-    // Standard p5 cleanup to keep the background transparent
-    clear(); 
+    // Keep the canvas transparent over the OpenLayers map
+    clear();
 
     // 1. RENDER MAP DATA
     if (edges.length > 0 && showRoads) {
         showEdges();
     }
-    
-    // FIX: Only run full node detection/hover during selection mode.
-    // Once we have a start node, we switch to a simplified "highlight" 
-    // so the mouse stops hunting for new nodes.
-    if (mode === selectnodemode) {
-        showNodes(); // This calculates hovers and draws all red dots
+
+    // 2. NODES / START HIGHLIGHT
+    // Show nodes in BOTH selection and trimming modes.
+    // Hover detection only runs when mode === selectnodemode (inside showNodes()).
+    if (mode === selectnodemode || mode === trimmodemode) {
+        showNodes();
     } else if (startnode) {
-        drawStartNodeHighlight(); // Just draw the ONE green dot we picked
+        drawStartNodeHighlight();
     }
 
-    // 2. THE SOLVER ENGINE
-  if (mode === solveRESmode && solverRunning) {
-    handleSolverEngine();
-}
+    // 3. THE SOLVER ENGINE
+    // (If you renamed navMode -> solverRunning, use solverRunning here instead)
+    if (mode === solveRESmode && navMode) {
+        handleSolverEngine();
+    }
 
-
-    // 3. THE PATHS
+    // 4. THE PATHS
     renderRouteGraphics();
 
-    // 4. THE INTERFACE (Always draw last)
+    // 5. THE INTERFACE (Always draw last)
     renderUIOverlays();
 
-    // 5. MODAL OVERLAYS
+    // 6. MODAL OVERLAYS
     if (mode === solveRESmode) {
         drawSolverStats();
     }
@@ -160,6 +160,8 @@ function draw() {
         showReportOut();
     }
 }
+
+
 
 /**
  * Helper function to keep the draw() loop clean.
