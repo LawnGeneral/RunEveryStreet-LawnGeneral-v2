@@ -1,3 +1,6 @@
+let solverRunning = false;   // replaces navMode for solver logic
+let mapInteractive = true;  // controls whether map receives mouse events
+
 let currentroute = null;
 let totalRoadsDist = 0; 
 let totaledgedoublings = 0;
@@ -137,9 +140,10 @@ function draw() {
     }
 
     // 2. THE SOLVER ENGINE
-    if (mode === solveRESmode && navMode) {
-        handleSolverEngine();
-    }
+  if (mode === solveRESmode && solverRunning) {
+    handleSolverEngine();
+}
+
 
     // 3. THE PATHS
     renderRouteGraphics();
@@ -776,51 +780,59 @@ function solveRES() {
         showMessage("Error: No start node selected.");
         return;
     }
-    
+
+    // Make sure solver is NOT running while we prep
+    solverRunning = false;
+
+    // (Optional but helpful) lock the map while solving/prepping
+    // so clicks don't accidentally pan/zoom when you're trying to edit
+    // mapInteractive = false;
+    // canvas.elt.style.pointerEvents = mapInteractive ? 'none' : 'auto';
+
     removeOrphans();
     resetEdges();
-    
-    // 2. The Strategy (The "Genius" Math)
-    // This part assumes getOddDegreeNodes, buildOddNodeMatrix, and findPairs exist.
-    let myOddNodes = getOddDegreeNodes(); 
-    let myMatrix = buildOddNodeMatrix(myOddNodes); 
-    let optimalPairs = findPairs(myOddNodes, myMatrix); 
-    applyDoublings(optimalPairs); 
+
+    // 2. The Strategy (Odd nodes -> distance matrix -> pairing -> apply doubling)
+    let myOddNodes = getOddDegreeNodes();
+    let myMatrix = buildOddNodeMatrix(myOddNodes);
+    let optimalPairs = findPairs(myOddNodes, myMatrix);
+    applyDoublings(optimalPairs);
 
     // 3. UI and State
-    // We set the mode so draw() and handleSolverEngine() engage
-    setMode(solveRESmode); 
-    navMode = true; // Auto-start the engine immediately
-    
+    // Engage solver mode
+    setMode(solveRESmode);
+
+    // Start the solver engine
+    solverRunning = true;
+
     // 4. Distance Synchronization
     totalRoadsDist = 0;
     let validRoadsCount = 0;
 
     for (let e of edges) {
-        // Ensure distance is a valid number
         let d = parseFloat(e.distance) || 0;
-        
         if (d > 0) {
-            totalRoadsDist += d; 
+            totalRoadsDist += d;
             validRoadsCount++;
         }
     }
 
-    remainingedges = validRoadsCount; 
-    
+    remainingedges = validRoadsCount;
+
     // 5. Solver Initialization
     currentnode = startnode;
     currentroute = new Route(currentnode, null);
-    
+
     // Reset best records
     bestdistance = Infinity;
-    bestroute = null; 
+    bestroute = null;
     iterations = 0;
     lastRecordTime = millis();
-    
+
     console.log("--- SOLVER READY ---");
     console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
 }
+
 function mousePressed() {
     // 1. UI GUARD: Don't click map through the toolbar
     if (mouseY < 60) return; 
