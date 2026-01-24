@@ -384,30 +384,14 @@ function renderUIOverlays() {
 // Helper to draw the Start/Stop button at the bottom
 function drawSolverToggleButton() {
     push();
-    colorMode(RGB); // Ensure we're in RGB for red/green logic
-    
+    colorMode(RGB);
+
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
     let btnY = height - 60;
 
-    // 1. CLICK DETECTION
-    // Check if mouse is within bounds AND just clicked
-    if (mouseIsPressed && mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-        // Toggle the navigation/solving state
-        navMode = !navMode;
-        
-        // If starting, ensure we are in the correct mode
-        if (navMode) {
-            setMode(solveRESmode); 
-        }
-        
-        // Small delay to prevent "double clicking" due to frame rate
-        mouseIsPressed = false; 
-    }
-
-    // 2. RENDERING
-    // Red if running (Stop), Green if ready (Start)
+    // Render only (NO click logic here)
     fill(navMode ? color(255, 50, 50) : color(50, 200, 50));
     stroke(255);
     strokeWeight(2);
@@ -418,9 +402,11 @@ function drawSolverToggleButton() {
     textAlign(CENTER, CENTER);
     textSize(14);
     textStyle(BOLD);
-    text(navMode ? "STOP SOLVER" : "START SOLVER", btnX + btnW/2, btnY + btnH/2);
+    text(navMode ? "STOP SOLVER" : "START SOLVER", btnX + btnW / 2, btnY + btnH / 2);
+
     pop();
 }
+
 // --- UI HELPER FUNCTIONS ---
 
 function drawStatsBox(title, line1, line2, line3) {
@@ -882,34 +868,49 @@ function solveRES() {
 
 
 function mousePressed() {
-    // 0) HARD GATE: If we're in PAN/ZOOM mode, canvas clicks should do NOTHING.
-    if (mapPanZoomMode) return;
-
-    // 1) UI GUARD: Don't click through the toolbar area
+    // 1) UI GUARD: Don't click through the top toolbar area
     if (mouseY < 60) return;
 
-    // 2) ACTION BUTTON (Bottom Left)
+    // 2) START/STOP BUTTON (Bottom Left) — should work in ANY mode
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
     let btnY = height - 60;
 
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-        if (startnode) {
-            if (mode === solveRESmode) {
-                navMode = !navMode;
-                showMessage(navMode ? "Solver Running..." : "Solver Paused");
-            } else {
-                mode = solveRESmode;
-                solveRES();
-            }
-        } else {
+        if (!startnode) {
             showMessage("Click a red node to set Start first!");
+            return;
         }
+
+        // If solver already initialized, this toggles running/paused
+        if (mode === solveRESmode && currentroute && currentnode && remainingedges !== undefined) {
+            navMode = !navMode;
+
+            if (navMode) {
+                showMessage("Solver Running...");
+                loop();
+            } else {
+                showMessage("Solver Paused");
+                noLoop();
+                redraw();
+            }
+
+            return;
+        }
+
+        // Otherwise, initialize and start solver
+        navMode = true;
+        mode = solveRESmode;
+        solveRES();   // solveRES() will call loop()
+        showMessage("Solver Running...");
         return;
     }
 
-    // 3) NODE PICKING (CLICK-BASED)
+    // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
+    if (mapPanZoomMode) return;
+
+    // 4) NODE PICKING (CLICK-BASED)
     if (mode === selectnodemode) {
         const R = 18;
         const R2 = R * R;
@@ -943,10 +944,9 @@ function mousePressed() {
                 currentroute = new Route(startnode, null);
             }
 
-            console.log("Start Node Set:", startnode.nodeId);
             showMessage("Start Locked! Toggle PAN/ZOOM to move, or TRIM/EDIT to trim roads.");
-
             mode = trimmodemode;
+
             redraw();
             openlayersmap.render();
         } else {
@@ -955,35 +955,24 @@ function mousePressed() {
         return;
     }
 
-    // 4) TRIMMING LOGIC (PIXEL-SPACE PICK)
+    // 5) TRIMMING (PIXEL-SPACE PICK)
     if (mode === trimmodemode) {
-        // point-to-segment distance squared in pixels
         function pointSegDist2(px, py, ax, ay, bx, by) {
-            const abx = bx - ax;
-            const aby = by - ay;
-            const apx = px - ax;
-            const apy = py - ay;
-
+            const abx = bx - ax, aby = by - ay;
+            const apx = px - ax, apy = py - ay;
             const abLen2 = abx * abx + aby * aby;
             if (abLen2 === 0) {
-                // A and B are the same point
-                const dx = px - ax;
-                const dy = py - ay;
+                const dx = px - ax, dy = py - ay;
                 return dx * dx + dy * dy;
             }
-
             let t = (apx * abx + apy * aby) / abLen2;
             t = Math.max(0, Math.min(1, t));
-
             const cx = ax + t * abx;
             const cy = ay + t * aby;
-
-            const dx = px - cx;
-            const dy = py - cy;
+            const dx = px - cx, dy = py - cy;
             return dx * dx + dy * dy;
         }
 
-        // How close (in pixels) the click must be to a road segment
         const PICK_PX = 22;
         const PICK_PX2 = PICK_PX * PICK_PX;
 
@@ -994,15 +983,12 @@ function mousePressed() {
             const e = edges[i];
             if (!e || !e.from || !e.to) continue;
 
-            // Convert endpoints to pixel coordinates
             const aCoord = ol.proj.fromLonLat([e.from.lon, e.from.lat]);
             const bCoord = ol.proj.fromLonLat([e.to.lon, e.to.lat]);
-
             const aPix = openlayersmap.getPixelFromCoordinate(aCoord);
             const bPix = openlayersmap.getPixelFromCoordinate(bCoord);
             if (!aPix || !bPix) continue;
 
-            // Quick reject if totally off-screen (optional small padding)
             const pad = 30;
             const minX = Math.min(aPix[0], bPix[0]) - pad;
             const maxX = Math.max(aPix[0], bPix[0]) + pad;
@@ -1022,12 +1008,12 @@ function mousePressed() {
             handleTrimming();
         } else {
             showMessage("Click closer to the road line (or zoom in a bit).");
-            console.log("Trim miss (pixel)", { bestPx: Math.sqrt(bestD2), PICK_PX });
         }
 
         return;
     }
 }
+
 
 
 
