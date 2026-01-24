@@ -154,23 +154,24 @@ function drawSolverStats() {
     fill(255);
     textSize(15);
     textAlign(LEFT, TOP);
-    textFont('monospace'); // Use a fixed-width font for clean alignment
+    textFont('monospace');
 
-    // Calculation: (Total Map Distance / Best Hiker Distance)
-    // If bestdistance is Infinity, efficiency is 0.
-    let efficiency = (bestdistance === Infinity) ? 0 : (totalRoadsDist / bestdistance) * 100;
+    // --- MATH CHECK ---
+    // Both totalRoadsDist and bestdistance are now in meters (e.g., 3838)
+    // Efficiency calculation is safe because the units match!
+    let efficiency = (bestdistance === Infinity || bestdistance === 0) ? 0 : (totalRoadsDist / bestdistance) * 100;
 
     text(`ITERATIONS  : ${iterations}`, 30, 35);
     text(`TO VISIT    : ${remainingedges} roads`, 30, 55);
     
+    // Convert meters to km for display only
     let kmDisplay = (bestdistance === Infinity) ? "0.00" : (bestdistance / 1000).toFixed(2);
     text(`BEST ROUTE  : ${kmDisplay} km`, 30, 75);
 
     // Color code the efficiency for feedback
-    // >85% is excellent (Green), >70% is okay (Yellow), <70% needs work (Red)
-    if (efficiency > 85) fill(0, 255, 120); 
-    else if (efficiency > 70) fill(255, 230, 0);
-    else fill(255, 100, 100);
+    if (efficiency > 85) fill(0, 255, 120);      // Green
+    else if (efficiency > 70) fill(255, 230, 0); // Yellow
+    else fill(255, 100, 100);                    // Red
 
     textSize(18);
     textStyle(BOLD);
@@ -559,7 +560,7 @@ function solveRES() {
         let d = parseFloat(e.distance) || parseFloat(e.dist) || parseFloat(e.len) || 0;
         
         if (d > 0) {
-            totalRoadsDist += d;
+            totalRoadsDist += d; // Keep this as raw meters!
             validRoadsCount++;
             e.distance = d; // Force it to the correct property for the solver
         }
