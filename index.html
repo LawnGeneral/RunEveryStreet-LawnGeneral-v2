@@ -48,20 +48,20 @@
         }
 
         /* Status Banner for Instructions */
-        #status-banner {
-            position: fixed;
-            top: 50px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 14px;
-            z-index: 100;
-            pointer-events: none; /* User clicks through this to the map */
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
+       #status-banner {
+    position: fixed;
+    bottom: 20px; /* Changed from 'top' to 'bottom' */
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(56, 7, 2, 0.9); /* Matching your dark red theme */
+    color: white;
+    padding: 10px 25px;
+    border-radius: 5px;
+    font-size: 14px;
+    z-index: 1000;
+    pointer-events: none; /* This ensures it DOES NOT block your clicks */
+    border: 1px solid #7a0f05;
+}
 
         a:link, a:visited { color: white; text-decoration: none; }
         a:hover { text-decoration: underline; }
