@@ -607,15 +607,16 @@ out;`;
 function showNodes() {
     if (!nodes || nodes.length === 0) return;
 
-    // Reset the global hover variable
+    // 1. Setup
     closestnodetomouse = -1;
-    let closestDist = 20; // Only select if within 20 pixels
+    let closestDist = 15; // Tightened from 20 to 15 to prevent "swarming"
+    let winningNode = null;
+    let winningPix = null;
 
-    // Ensure we are in RGB mode for these colors
     push();
     colorMode(RGB);
 
-    // 1. DRAW START NODE (Green) - Do this first so it's under the hover logic
+    // 2. DRAW START NODE (Green) 
     if (startnode) {
         const sPix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([startnode.lon, startnode.lat]));
         if (sPix) {
@@ -626,40 +627,51 @@ function showNodes() {
         }
     }
 
-    // 2. DRAW REGULAR NODES (Red)
-    // PERFORMANCE FIX: Only draw nodes when in specific modes to save CPU
-    if (mode === selectnodemode || mode === trimmodemode) {
+    // 3. DRAW REGULAR NODES & FIND WINNER
+    // We only do this in selection mode to stop the "sticky" behavior in other modes
+    if (mode === selectnodemode) {
         for (let i = 0; i < nodes.length; i++) {
             let n = nodes[i];
-            
-            // Convert GPS to Screen Pixels
             const pix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([n.lon, n.lat]));
             if (!pix) continue;
 
             let x = pix[0];
             let y = pix[1];
 
-            // Only draw if the node is actually inside the canvas view
+            // Only process nodes on screen
             if (x < 0 || x > width || y < 0 || y > height) continue;
 
-            fill(255, 0, 0, 150); // Added slight transparency
+            // Draw the basic red dot
+            fill(255, 0, 0, 100); 
             noStroke();
             ellipse(x, y, 6, 6);
             
-            // 3. HOVER LOGIC (Find the node under the mouse)
+            // HOVER LOGIC: Find the single closest node
             let d = dist(x, y, mouseX, mouseY);
             if (d < closestDist) {
-                closestDist = d;
-                closestnodetomouse = n; // Store the actual node, not just the index
-                
-                // Draw a highlight ring around the hovered node
-                noFill();
-                stroke(255, 255, 0);
-                strokeWeight(2);
-                ellipse(x, y, 12, 12);
+                closestDist = d; // New "high score" to beat
+                winningNode = n; // This is our current champion
+                winningPix = [x, y];
             }
         }
     }
+
+    // 4. DRAW ONLY ONE HIGHLIGHT (The Winner)
+    if (winningNode && winningPix) {
+        closestnodetomouse = winningNode; 
+        
+        noFill();
+        stroke(255, 255, 0); // Yellow
+        strokeWeight(3);
+        ellipse(winningPix[0], winningPix[1], 14, 14);
+        
+        // Optional: Add a label so you know what you're clicking
+        fill(255);
+        noStroke();
+        textSize(10);
+        text("Set Start", winningPix[0] + 10, winningPix[1]);
+    }
+
     pop();
 }
 
