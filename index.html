@@ -29,7 +29,7 @@
             z-index: 1;
         }
 
-        /* Top Header Navigation */
+        /* Top Header Area */
         .header-bar {
             background-color: #380702;
             display: flex;
@@ -47,21 +47,31 @@
             font-size: 13px;
         }
 
-        /* Status Banner for Instructions */
-       #status-banner {
-    position: fixed;
-    bottom: 20px; /* Changed from 'top' to 'bottom' */
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(56, 7, 2, 0.9); /* Matching your dark red theme */
-    color: white;
-    padding: 10px 25px;
-    border-radius: 5px;
-    font-size: 14px;
-    z-index: 1000;
-    pointer-events: none; /* This ensures it DOES NOT block your clicks */
-    border: 1px solid #7a0f05;
-}
+        /* The UI Panel for the Button */
+        #ui-panel {
+            position: fixed;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10000;
+            text-align: center;
+        }
+
+        #ingest-btn {
+            padding: 12px 30px;
+            background: #7a0f05;
+            color: white;
+            border: 2px solid #ffffff;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        #ingest-btn:hover {
+            background: #a31407;
+        }
 
         a:link, a:visited { color: white; text-decoration: none; }
         a:hover { text-decoration: underline; }
@@ -79,8 +89,10 @@
         </div>
     </div>
 
-    <div id="status-banner">
-        Zoom to selected area, then click a road to start
+    <div id="ui-panel">
+        <button id="ingest-btn" onclick="triggerIngest()">
+            ZOOM IN, THEN CLICK HERE TO LOAD ROADS
+        </button>
     </div>
 
     <div id="map" class="map"></div>
