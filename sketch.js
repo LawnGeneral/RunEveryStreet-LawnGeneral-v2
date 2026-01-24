@@ -828,10 +828,11 @@ function solveRES() {
     console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
 }
 function mousePressed() {
-    // 1. UI GUARD: Don't click the map if clicking the top toolbar
+    // 1. UI GUARD: Don't click map through the toolbar
     if (mouseY < 60) return; 
 
-    // 2. ACTION BUTTON (Bottom Left - Start/Toggle Solver)
+    // 2. ACTION BUTTON (Bottom Left)
+    // Using fixed values that match your drawing function exactly
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
@@ -840,11 +841,11 @@ function mousePressed() {
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
         if (startnode) {
             if (mode === solveRESmode) {
-                // If already solving, this button toggles movement
-                navMode = !navMode;
+                navMode = !navMode; // Toggle movement
                 showMessage(navMode ? "Solver Running..." : "Solver Paused");
             } else {
-                // If not in solve mode yet, start the math and switch modes
+                // IMPORTANT: Ensure we are in solveRESmode when we start
+                mode = solveRESmode;
                 solveRES(); 
             }
         } else {
@@ -853,29 +854,30 @@ function mousePressed() {
         return; 
     }
 
-  // 3. SELECTION LOGIC
-if (mode === selectnodemode) {
-    if (closestnodetomouse && closestnodetomouse !== -1) {
-        // Lock in the start node
-        startnode = closestnodetomouse;
-        currentnode = startnode;
-        currentroute = new Route(startnode, null);
-        
-        console.log("Start Node Set:", startnode.nodeId);
-        showMessage("Start Node Locked! Now trim roads or click START.");
+    // 3. SELECTION LOGIC (Node Picking)
+    if (mode === selectnodemode) {
+        // Validation: must be an object and not our default -1
+        if (closestnodetomouse && typeof closestnodetomouse === 'object') {
+            startnode = closestnodetomouse;
+            currentnode = startnode;
+            
+            // Initialize route
+            if (typeof Route === "function") {
+                currentroute = new Route(startnode, null);
+            }
+            
+            console.log("Start Node Set:", startnode.nodeId);
+            showMessage("Start Locked! Click roads to trim or click START.");
 
-        // THE FIX: Immediately change the mode so selection logic stops running
-        mode = trimmodemode; 
-        
-        // Optional: Reset this so the hover highlight disappears
-        closestnodetomouse = -1; 
+            // STATE TRANSITION: Stop selecting nodes, start trimming
+            mode = trimmodemode; 
+            closestnodetomouse = -1; 
+        }
+        return;
     }
-    return;
-}
 
-    // 4. TRIMMING LOGIC (Deleting unwanted roads)
+    // 4. TRIMMING LOGIC (Edge Deletion)
     if (mode === trimmodemode) {
-        // We use the index found in showEdges()
         if (closestedgetomouse !== -1) {
             handleTrimming(); 
         }
