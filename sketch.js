@@ -841,26 +841,25 @@ function mousePressed() {
         return; 
     }
 
-    // 3. SELECTION LOGIC (Setting the Start Node)
-    if (mode === selectnodemode) {
-        // Ensure closestnodetomouse is a valid object, not -1 or null
-        if (closestnodetomouse && closestnodetomouse !== -1) {
-            startnode = closestnodetomouse;
-            currentnode = startnode;
-            
-            // Create the initial route object
-            currentroute = new Route(startnode, null);
-            
-            console.log("Start Node Set:", startnode.nodeId);
-            showMessage("Start Set! Now trim roads or click START.");
-            
-            // CRITICAL: Move to trim mode automatically so the user can edit
-            mode = trimmodemode; 
-        } else {
-            console.log("No node near click.");
-        }
-        return;
+  // 3. SELECTION LOGIC
+if (mode === selectnodemode) {
+    if (closestnodetomouse && closestnodetomouse !== -1) {
+        // Lock in the start node
+        startnode = closestnodetomouse;
+        currentnode = startnode;
+        currentroute = new Route(startnode, null);
+        
+        console.log("Start Node Set:", startnode.nodeId);
+        showMessage("Start Node Locked! Now trim roads or click START.");
+
+        // THE FIX: Immediately change the mode so selection logic stops running
+        mode = trimmodemode; 
+        
+        // Optional: Reset this so the hover highlight disappears
+        closestnodetomouse = -1; 
     }
+    return;
+}
 
     // 4. TRIMMING LOGIC (Deleting unwanted roads)
     if (mode === trimmodemode) {
