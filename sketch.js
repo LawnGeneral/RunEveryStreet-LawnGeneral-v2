@@ -1605,11 +1605,10 @@ function handleTrimming() {
     const removedEdge = edges.splice(closestedgetomouse, 1)[0];
     if (!removedEdge) return;
 
-    // 2) Push to undo stack
+    // 2) Add to undo stack
     deletedEdgesStack.push(removedEdge);
 
-    // 3) Unlink from node adjacency lists (IMPORTANT)
-    // This keeps graph state consistent and prevents "phantom" connectivity.
+    // 3) Unlink from node adjacency lists (IMPORTANT so floodfill/orphan logic is correct)
     if (removedEdge.from && Array.isArray(removedEdge.from.edges)) {
         const idx = removedEdge.from.edges.indexOf(removedEdge);
         if (idx !== -1) removedEdge.from.edges.splice(idx, 1);
@@ -1619,33 +1618,19 @@ function handleTrimming() {
         if (idx !== -1) removedEdge.to.edges.splice(idx, 1);
     }
 
-    // 4) Local orphan-node cleanup (FAST)
-    // If a node has no remaining edges, remove it from nodes[] so it stops drawing.
-    // Never remove the start node even if it becomes isolated.
-    const maybeRemoveNode = (n) => {
-        if (!n) return;
-        if (startnode && n === startnode) return;
-        if (!n.edges || n.edges.length > 0) return;
-
-        const ni = nodes.indexOf(n);
-        if (ni !== -1) nodes.splice(ni, 1);
-    };
-
-    maybeRemoveNode(removedEdge.from);
-    maybeRemoveNode(removedEdge.to);
-
-    // 5) Update counters
-    totaledgedistance -= removedEdge.distance;
-    totalRoadsDist = totaledgedistance;
-    totaluniqueroads = edges.length;
-
-    // 6) Reset hover index so we don't "ghost delete"
+    // 4) Reset hover index so we don't "ghost delete"
     closestedgetomouse = -1;
 
-    console.log("Road removed. New total distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
-    showMessage("Road removed. Use Undo if needed.");
+    // 5) AUTO-CLEAN: Remove any disconnected components not reachable from startnode
+    // This will rebuild edges/nodes and re-calc totals internally.
+    if (startnode) {
+        removeOrphans();
+    }
 
-    // 7) FORCE VISUAL UPDATE (because you use noLoop())
+    console.log("Road removed + orphans cleaned.");
+    showMessage("Road removed. Orphaned areas cleaned. Use Undo if needed.");
+
+    // 6) FORCE VISUAL UPDATE (because you use noLoop())
     redraw();
     openlayersmap.render();
 }
