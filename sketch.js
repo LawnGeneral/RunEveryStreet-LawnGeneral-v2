@@ -1216,3 +1216,36 @@ function generateAndDownloadGPX(route) {
     
     console.log("GPX File Generated Successfully.");
 }
+function getClosestNode(mx, my) {
+    // 1. Convert mouse pixels to map coordinates (lon/lat)
+    // This uses the OpenLayers 'map' object from your index.html
+    let coords = map.getCoordinateFromPixel([mx, my]);
+    
+    if (!coords) return null;
+
+    let closest = null;
+    let minDist = Infinity;
+
+    // 2. Search through your nodes array
+    // 'nodes' must be the array where you stored your ingested node data
+    for (let i = 0; i < nodes.length; i++) {
+        let n = nodes[i];
+        
+        // Use p5.js dist() to find the distance between click and node
+        let d = dist(coords[0], coords[1], n.lon, n.lat);
+        
+        if (d < minDist) {
+            minDist = d;
+            closest = n;
+        }
+    }
+
+    // 3. Threshold Check
+    // If the click is too far from any node (e.g., clicking in a field), ignore it.
+    // 0.001 is roughly 100 meters in coordinate distance.
+    if (minDist < 0.001) {
+        return closest;
+    } else {
+        return null;
+    }
+}
