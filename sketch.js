@@ -65,57 +65,52 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-	// 1. Geolocation Logic
-	if (navigator.geolocation) {
-		navigator.geolocation.getCurrentPosition(function (position) {
-			let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
-			openlayersmap.getView().setCenter(userCoords);
-			openlayersmap.getView().setZoom(15); 
-		}, function(error) {
-			console.warn("Geolocation blocked or failed. Using default center.");
-		}, {
-			enableHighAccuracy: true,
-			timeout: 5000
-		});
-	}
+    // 1. Geolocation Logic: Centers the map on the user
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (position) {
+            let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
+            openlayersmap.getView().setCenter(userCoords);
+            openlayersmap.getView().setZoom(15); 
+        }, function(error) {
+            console.warn("Geolocation blocked or failed. Using default center.");
+        }, {
+            enableHighAccuracy: true,
+            timeout: 5000
+        });
+    }
 
-	// 2. Canvas & Sizing Setup
-	mapWidth = windowWidth;
-	mapHeight = windowHeight - 40;
-	windowX = windowWidth;
-	windowY = mapHeight;
-	
-	canvas = createCanvas(windowX, windowY);
-	canvas.position(0, 40);
-	
-	colorMode(HSB);
-	
-	// 3. Application State
-	mode = choosemapmode;
-	iterationsperframe = 1;
-	margin = 0.05; 
+    // 2. Canvas & Sizing Setup (THE ALIGNMENT FIX)
+    // We use the full windowWidth/Height so canvas pixels = map pixels
+    canvas = createCanvas(windowWidth, windowHeight);
+    
+    // Position at the very top-left of the screen
+    canvas.position(0, 0); 
+    
+    // Start with 'none' so you can zoom/pan the map through the canvas
+    canvas.elt.style.pointerEvents = 'none';
+    
+    colorMode(HSB);
+    
+    // 3. Application State
+    mode = choosemapmode;
+    iterationsperframe = 1;
+    margin = 0.05; 
 
-	// --- THE FIXES ---
-	
-	// A. Default to NONE: 
-	// This allows you to pan and zoom the map without the canvas blocking you.
-	canvas.elt.style.pointerEvents = 'none'; 
+    // --- INTERACTION LOGIC ---
 
-	// B. Map-Canvas Sync:
-	openlayersmap.on('postrender', function() {
-		redraw(); 
-	});
+    // Forces p5.js to redraw the roads whenever the map moves or zooms
+    openlayersmap.on('postrender', function() {
+        redraw(); 
+    });
 
-	// C. Smart Toggling:
-	// The canvas should only "swallow" clicks if we are in selectnodemode.
-	// Otherwise, it stays 'none' so the map remains interactive.
-	openlayersmap.on('moveend', function() {
-		if (mode === selectnodemode) {
-			canvas.elt.style.pointerEvents = 'auto';
-		} else {
-			canvas.elt.style.pointerEvents = 'none';
-		}
-	});
+    // Smart Toggling: Ensures the map stays zoomable unless we are picking nodes
+    openlayersmap.on('moveend', function() {
+        if (mode === selectnodemode) {
+            canvas.elt.style.pointerEvents = 'auto';
+        } else {
+            canvas.elt.style.pointerEvents = 'none';
+        }
+    });
 }
 function draw() {
     // Detect if the user is on a touch device
@@ -1274,23 +1269,16 @@ function getClosestNode(mx, my) {
     }
 }
 function triggerIngest() {
-    console.log("Button clicked: Waking up canvas and fetching roads...");
+    // 1. Start the data load
+    getOverpassData();
     
-    // 1. Wake up the canvas so you can click the roads once they load
-    if (canvas && canvas.elt) {
-        canvas.elt.style.pointerEvents = 'auto';
-    }
+    // 2. Hide the button
+    document.getElementById('ui-panel').style.display = 'none';
     
-    // 2. Trigger the road data download function we found earlier
-    if (typeof getOverpassData === "function") {
-        getOverpassData();
-    } else {
-        console.error("Error: getOverpassData function not found in sketch.js");
-    }
+    // 3. WAKE UP THE INTERACTION
+    // This allows mousePressed() to actually work
+    canvas.elt.style.pointerEvents = 'auto'; 
     
-    // 3. Hide the button panel so it's out of your way
-    let ui = document.getElementById('ui-panel');
-    if (ui) {
-        ui.style.display = 'none';
-    }
+    // 4. Update the mode so getClosestNode is active
+    mode = selectnodemode; 
 }
