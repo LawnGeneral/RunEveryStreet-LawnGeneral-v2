@@ -1237,7 +1237,7 @@ function generateAndDownloadGPX(route) {
     console.log("GPX File Generated Successfully.");
 }
 function getClosestNode(mx, my) {
-    // 1. Get the coordinate from the map (using the correct variable name)
+    // 1. Get the coordinate from the map
     let pixelCoords = openlayersmap.getCoordinateFromPixel([mx, my]);
     if (!pixelCoords) return null;
 
@@ -1253,8 +1253,11 @@ function getClosestNode(mx, my) {
     for (let i = 0; i < nodes.length; i++) {
         let n = nodes[i];
         
-        // Use p5 dist() with the converted Lat/Lon
-        let d = dist(mouseLon, mouseLat, n.lon, n.lat);
+        // Manual Distance Calculation (Lon/Lat units)
+        // We use this instead of dist() for better precision with small decimals
+        let dx = mouseLon - n.lon;
+        let dy = mouseLat - n.lat;
+        let d = Math.sqrt(dx * dx + dy * dy);
         
         if (d < minDist) {
             minDist = d;
@@ -1262,12 +1265,13 @@ function getClosestNode(mx, my) {
         }
     }
 
-    // 4. Threshold check (0.001 is about 100 meters in degrees)
-    if (minDist < 0.001) {
-        console.log("Found Node: " + closest.nodeId);
+    // 4. Threshold check 
+    // 0.0005 is roughly 50 meters—perfect for selecting an intersection.
+    if (minDist < 0.0005) {
+        console.log("Success! Found Node: " + closest.nodeId);
         return closest;
     } else {
-        console.log("Click too far. Nearest was: " + minDist);
+        console.log("Too far from a road. Nearest distance: " + minDist.toFixed(6));
         return null;
     }
 }
