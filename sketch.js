@@ -1546,19 +1546,30 @@ function getClosestNode(mx, my) {
     }
 }
 function triggerIngest() {
-    // 1. Start the data load
+    // 1. Start loading OSM data
     getOverpassData();
-    
-    // 2. Hide the button
-    document.getElementById('ui-panel').style.display = 'none';
-    
-    // 3. WAKE UP THE INTERACTION
-    // This allows mousePressed() to actually work
-    canvas.elt.style.pointerEvents = 'auto'; 
-    
-    // 4. Update the mode so getClosestNode is active
-    mode = selectnodemode; 
+
+    // 2. Hide the ingest button panel
+    let panel = document.getElementById('ui-panel');
+    if (panel) {
+        panel.style.display = 'none';
+    }
+
+    // 3. Wake up canvas interaction (node selection / trimming)
+    canvas.elt.style.pointerEvents = 'auto';
+
+    // 4. Switch to node-selection mode
+    mode = selectnodemode;
+
+    // 5. CRITICAL: Force OpenLayers to re-measure the map size
+    // This fixes the right-side black area
+    openlayersmap.updateSize();
+    setTimeout(() => openlayersmap.updateSize(), 0);
+
+    console.log("Ingest triggered, UI hidden, map resized.");
 }
+
+
 function handleTrimming() {
     // closestedgetomouse is the index found by showEdges()
     if (closestedgetomouse >= 0 && closestedgetomouse < edges.length) {
