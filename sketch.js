@@ -1706,97 +1706,129 @@ function buildOddNodeMatrix(oddNodesList) {
     return matrix;
 }
 function findPairs(oddNodes, matrix) {
-    // --- 1) Greedy initial pairing (same spirit as your current version) ---
-    let unmatched = new Set();
-    for (let i = 0; i < oddNodes.length; i++) unmatched.add(i);
-
-    let pairsIdx = []; // store pairs as indices [i, j]
-
-    while (unmatched.size > 1) {
-        let i = unmatched.values().next().value;
-        unmatched.delete(i);
-
-        let bestJ = -1;
-        let bestCost = Infinity;
-
-        for (let j of unmatched) {
-            let c = matrix[i][j];
-            if (c < bestCost) {
-                bestCost = c;
-                bestJ = j;
-            }
+    // ---------- helpers ----------
+    function shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
         }
-
-        if (bestJ !== -1) {
-            pairsIdx.push([i, bestJ]);
-            unmatched.delete(bestJ);
-        } else {
-            // Shouldn't happen, but safety
-            break;
-        }
+        return arr;
     }
 
-    // --- Helper: total cost of current pairing ---
-    function totalCost(pairs) {
+    function totalCostIdx(pairsIdx) {
         let sum = 0;
-        for (let k = 0; k < pairs.length; k++) {
-            const a = pairs[k][0], b = pairs[k][1];
-            sum += matrix[a][b];
+        for (let k = 0; k < pairsIdx.length; k++) {
+            sum += matrix[pairsIdx[k][0]][pairsIdx[k][1]];
         }
         return sum;
     }
 
-    // --- 2) Local improvement by pair swapping ---
-    // Try to reduce cost by replacing (a-b) + (c-d) with either:
-    // (a-c) + (b-d) OR (a-d) + (b-c)
-    let improved = true;
-    let passes = 0;
-    const MAX_PASSES = 50; // keeps runtime bounded
+    function greedyPairingFromOrder(orderIdx) {
+        let unmatched = new Set(orderIdx);
+        let pairsIdx = [];
 
-    while (improved && passes < MAX_PASSES) {
-        improved = false;
-        passes++;
+        while (unmatched.size > 1) {
+            // pick the "first" element in the current order
+            let i = null;
+            for (let v of orderIdx) {
+                if (unmatched.has(v)) { i = v; break; }
+            }
+            if (i === null) break;
+            unmatched.delete(i);
 
-        for (let p = 0; p < pairsIdx.length; p++) {
-            for (let q = p + 1; q < pairsIdx.length; q++) {
-                const a = pairsIdx[p][0];
-                const b = pairsIdx[p][1];
-                const c = pairsIdx[q][0];
-                const d = pairsIdx[q][1];
+            let bestJ = -1;
+            let bestCost = Infinity;
+            for (let j of unmatched) {
+                const c = matrix[i][j];
+                if (c < bestCost) {
+                    bestCost = c;
+                    bestJ = j;
+                }
+            }
+            if (bestJ !== -1) {
+                pairsIdx.push([i, bestJ]);
+                unmatched.delete(bestJ);
+            } else {
+                break;
+            }
+        }
+        return pairsIdx;
+    }
 
-                const current = matrix[a][b] + matrix[c][d];
+    function localSwapImprove(pairsIdx) {
+        let improved = true;
+        let passes = 0;
+        const MAX_PASSES = 50;
 
-                // Option 1: (a-c) + (b-d)
-                const swap1 = matrix[a][c] + matrix[b][d];
+        while (improved && passes < MAX_PASSES) {
+            improved = false;
+            passes++;
 
-                // Option 2: (a-d) + (b-c)
-                const swap2 = matrix[a][d] + matrix[b][c];
+            for (let p = 0; p < pairsIdx.length; p++) {
+                for (let q = p + 1; q < pairsIdx.length; q++) {
+                    const a = pairsIdx[p][0];
+                    const b = pairsIdx[p][1];
+                    const c = pairsIdx[q][0];
+                    const d = pairsIdx[q][1];
 
-                // If either improves, take the best improving swap
-                if (swap1 + 1e-9 < current || swap2 + 1e-9 < current) {
-                    if (swap1 <= swap2) {
-                        pairsIdx[p] = [a, c];
-                        pairsIdx[q] = [b, d];
-                    } else {
-                        pairsIdx[p] = [a, d];
-                        pairsIdx[q] = [b, c];
+                    const current = matrix[a][b] + matrix[c][d];
+                    const swap1 = matrix[a][c] + matrix[b][d];
+                    const swap2 = matrix[a][d] + matrix[b][c];
+
+                    if (swap1 + 1e-9 < current || swap2 + 1e-9 < current) {
+                        if (swap1 <= swap2) {
+                            pairsIdx[p] = [a, c];
+                            pairsIdx[q] = [b, d];
+                        } else {
+                            pairsIdx[p] = [a, d];
+                            pairsIdx[q] = [b, c];
+                        }
+                        improved = true;
                     }
-                    improved = true;
                 }
             }
         }
+
+        return { pairsIdx, passes };
     }
 
-    // --- 3) Convert index pairs back to node pairs ---
-    let pairs = pairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
+    // ---------- multi-start search ----------
+    const n = oddNodes.length;
+    const baseOrder = [];
+    for (let i = 0; i < n; i++) baseOrder.push(i);
 
-    // Useful logging so you can see if it helped
+    // Start with a reasonable number; bump if you want more searching
+    const TRIES = 80;
+
+    let bestPairsIdx = null;
+    let bestCost = Infinity;
+    let bestPasses = 0;
+
+    for (let t = 0; t < TRIES; t++) {
+        const order = shuffle(baseOrder.slice());
+        let pairsIdx = greedyPairingFromOrder(order);
+
+        const improved = localSwapImprove(pairsIdx);
+        pairsIdx = improved.pairsIdx;
+
+        const cost = totalCostIdx(pairsIdx);
+        if (cost < bestCost) {
+            bestCost = cost;
+            bestPairsIdx = pairsIdx.slice();
+            bestPasses = improved.passes;
+        }
+    }
+
+    // Convert best result to node pairs
+    const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
+
     console.log(
-        `Pairing complete: ${pairs.length} pairs | passes=${passes} | pairCost=${totalCost(pairsIdx).toFixed(2)}`
+        `Pairing complete (multi-start): pairs=${pairs.length} tries=${TRIES} bestPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`
     );
 
     return pairs;
 }
+
 
 function applyDoublings(pairs) {
     totaledgedoublings = 0; // Notice: NO 'let' here. We are just resetting the existing variable.
