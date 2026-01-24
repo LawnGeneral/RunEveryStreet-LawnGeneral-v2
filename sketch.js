@@ -878,10 +878,9 @@ function solveRES() {
 
 function mousePressed() {
     // 1. UI GUARD: Don't click map through the toolbar
-    if (mouseY < 60) return; 
+    if (mouseY < 60) return;
 
     // 2. ACTION BUTTON (Bottom Left)
-    // Using fixed values that match your drawing function exactly
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
@@ -893,46 +892,74 @@ function mousePressed() {
                 navMode = !navMode; // Toggle movement
                 showMessage(navMode ? "Solver Running..." : "Solver Paused");
             } else {
-                // IMPORTANT: Ensure we are in solveRESmode when we start
                 mode = solveRESmode;
-                solveRES(); 
+                solveRES();
             }
         } else {
             showMessage("Click a red node to set Start first!");
         }
-        return; 
+        return;
     }
 
-    // 3. SELECTION LOGIC (Node Picking)
+    // 3. NODE PICKING (CLICK-BASED, NOT HOVER-BASED)
     if (mode === selectnodemode) {
-        // Validation: must be an object and not our default -1
-        if (closestnodetomouse && typeof closestnodetomouse === 'object') {
-            startnode = closestnodetomouse;
+        // Search radius in pixels (increase if you want easier clicking)
+        const R = 18;
+        const R2 = R * R;
+
+        let best = null;
+        let bestD2 = R2;
+
+        // Compute once per click
+        for (let i = 0; i < nodes.length; i++) {
+            let n = nodes[i];
+            let coord = ol.proj.fromLonLat([n.lon, n.lat]);
+            let pix = openlayersmap.getPixelFromCoordinate(coord);
+            if (!pix) continue;
+
+            // Quick reject off-screen
+            if (pix[0] < -20 || pix[0] > width + 20 || pix[1] < -20 || pix[1] > height + 20) continue;
+
+            let dx = pix[0] - mouseX;
+            let dy = pix[1] - mouseY;
+            let d2 = dx * dx + dy * dy;
+
+            if (d2 < bestD2) {
+                bestD2 = d2;
+                best = n;
+            }
+        }
+
+        if (best) {
+            startnode = best;
             currentnode = startnode;
-            
-            // Initialize route
+
             if (typeof Route === "function") {
                 currentroute = new Route(startnode, null);
             }
-            
-            console.log("Start Node Set:", startnode.nodeId);
-            showMessage("Start Locked! Click roads to trim or click START.");
 
-            // STATE TRANSITION: Stop selecting nodes, start trimming
-            mode = trimmodemode; 
-            closestnodetomouse = -1; 
+            console.log("Start Node Set:", startnode.nodeId);
+            showMessage("Start Locked! Toggle to TRIM/EDIT and click roads to trim, or click START.");
+
+            // Move into trimming once start is chosen
+            mode = trimmodemode;
+            redraw();
+        } else {
+            showMessage("No node close enough—zoom in a bit and click nearer a red dot.");
         }
+
         return;
     }
 
     // 4. TRIMMING LOGIC (Edge Deletion)
     if (mode === trimmodemode) {
         if (closestedgetomouse !== -1) {
-            handleTrimming(); 
+            handleTrimming();
         }
         return;
     }
 }
+
 
 /**
  * Helper to check if mouse is over the start/solve button
