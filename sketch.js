@@ -607,15 +607,16 @@ out;`;
 function showNodes() {
     if (!nodes || nodes.length === 0) return;
 
-    // 1. ALWAYS RESET STATE AT START
+    // 1. RESET STATE & SETUP
     push();
-    colorMode(RGB); // Force RGB mode
+    colorMode(RGB);
     closestnodetomouse = -1; 
-    let closestDist = 15;
+    let closestDist = 15; // Search radius for hover
     let winner = null;
     let winnerPix = null;
 
-    // 2. DRAW START NODE (Green) - Always visible if it exists
+    // 2. DRAW START NODE (Green)
+    // We draw this independently so it is always visible once set
     if (startnode) {
         let sCoord = ol.proj.fromLonLat([startnode.lon, startnode.lat]);
         let sPix = openlayersmap.getPixelFromCoordinate(sCoord);
@@ -627,22 +628,23 @@ function showNodes() {
         }
     }
 
-    // 3. DRAW NETWORK (Red Dots)
-    // We show these during Selection AND Trimming
+    // 3. DRAW NETWORK & FIND HOVER WINNER
+    // This block keeps red nodes visible during Selection AND Trimming
     if (mode === selectnodemode || mode === trimmodemode) {
         for (let i = 0; i < nodes.length; i++) {
             let n = nodes[i];
             let coord = ol.proj.fromLonLat([n.lon, n.lat]);
             let pix = openlayersmap.getPixelFromCoordinate(coord);
             
+            // Skip nodes that are off-screen for performance
             if (!pix || pix[0] < 0 || pix[0] > width || pix[1] < 0 || pix[1] > height) continue;
 
-            // FIX: Explicitly set the fill to Red before drawing
+            // Draw the intersection point (Red)
             fill(255, 0, 0, 150); 
             noStroke();
             ellipse(pix[0], pix[1], 6, 6);
             
-            // Only search for hovers if we haven't picked a start yet
+            // HOVER SEARCH: Only look for the "winner" if we are still in selection mode
             if (mode === selectnodemode) {
                 let d = dist(pix[0], pix[1], mouseX, mouseY);
                 if (d < closestDist) {
@@ -654,14 +656,16 @@ function showNodes() {
         }
     }
 
-    // 4. DRAW THE HOVER RING (Yellow)
+    // 4. DRAW THE SINGLE HOVER HIGHLIGHT (Yellow)
+    // This is outside the loop so only ONE node is highlighted at a time
     if (winner && winnerPix) {
-        closestnodetomouse = winner; 
+        closestnodetomouse = winner; // Lock the winner for mousePressed()
         noFill();
         stroke(255, 255, 0);
         strokeWeight(3);
         ellipse(winnerPix[0], winnerPix[1], 14, 14);
     }
+
     pop();
 }
 
