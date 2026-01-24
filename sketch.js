@@ -1,5 +1,6 @@
 let solverRunning = false;   // replaces navMode for solver logic
 let mapInteractive = true;  // controls whether map receives mouse events
+const HEADER_H = 34; // height of your top bar/logo area
 
 let currentroute = null;
 let totalRoadsDist = 0; 
@@ -69,42 +70,50 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-    // 1. Geolocation Logic
+    // 1. Geolocation Logic (optional, but nice UX)
     if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(function (position) {
-            let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
-            openlayersmap.getView().setCenter(userCoords);
-            openlayersmap.getView().setZoom(15); 
-        }, function(error) {
-            console.warn("Geolocation blocked or failed. Using default center.");
-        }, {
-            enableHighAccuracy: true,
-            timeout: 5000
-        });
+        navigator.geolocation.getCurrentPosition(
+            function (position) {
+                let userCoords = ol.proj.fromLonLat([
+                    position.coords.longitude,
+                    position.coords.latitude
+                ]);
+                openlayersmap.getView().setCenter(userCoords);
+                openlayersmap.getView().setZoom(15);
+            },
+            function () {
+                console.warn("Geolocation blocked or failed. Using default center.");
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 5000
+            }
+        );
     }
 
-    // 2. Canvas & Sizing Setup
-    canvas = createCanvas(windowWidth, windowHeight);
-    canvas.position(0, 0); 
-    
-    // Start in 'none' so the map is interactive immediately
+    // 2. Create canvas that EXACTLY matches the map area
+    canvas = createCanvas(windowWidth, windowHeight - HEADER_H);
+    canvas.position(0, HEADER_H);
+
+    // Let the map receive mouse events by default
     canvas.elt.style.pointerEvents = 'none';
-    
+
     colorMode(HSB);
-    
-    // 3. Application State
+    noLoop(); // We will redraw manually (important for map sync)
+
+    // 3. Initial application state
     mode = choosemapmode;
     iterationsperframe = 1;
-    margin = 0.05; 
+    margin = 0.05;
 
-    // Forces redraw whenever map moves
-    openlayersmap.on('postrender', function() {
-        redraw(); 
+    // 4. Force redraw whenever the map moves or zooms
+    openlayersmap.on('postrender', function () {
+        redraw();
     });
 
-    // Remove the 'moveend' pointerEvents logic from here. 
-    // We will handle it in the setMode() function instead.
+    console.log("Setup complete. Canvas aligned under header.");
 }
+
 function setMode(newMode) {
     mode = newMode;
     
