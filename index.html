@@ -55,14 +55,17 @@
         }
 
         /* Positioning the p5 canvas to overlay the map exactly */
-        canvas {
-    position: fixed !important;
-    top: 0px !important; /* Change this to 0 */
-    left: 0 !important;
-    z-index: 5;
-    display: block;
-    pointer-events: none; /* Stay out of the way by default */
+canvas {
+  position: fixed !important;
+  top: 40px !important;                 /* match .map top */
+  left: 0 !important;
+  width: 100% !important;
+  height: calc(100vh - 40px) !important; /* match .map height */
+  z-index: 5;
+  display: block;
+  pointer-events: none;                  /* JS will flip this when editing */
 }
+
         #ui-panel {
             position: fixed;
             top: 60px;
