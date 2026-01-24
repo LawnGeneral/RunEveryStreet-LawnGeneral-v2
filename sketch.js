@@ -877,10 +877,14 @@ function solveRES() {
 }
 
 function mousePressed() {
-    // 1. UI GUARD: Don't click map through the toolbar
+    // 0) HARD GATE: If we're in PAN/ZOOM mode, canvas clicks should do NOTHING.
+    // This prevents trimming/selecting/starting solver while panning.
+    if (mapPanZoomMode) return;
+
+    // 1) UI GUARD: Don't click through the toolbar area
     if (mouseY < 60) return;
 
-    // 2. ACTION BUTTON (Bottom Left)
+    // 2) ACTION BUTTON (Bottom Left)
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
@@ -901,23 +905,20 @@ function mousePressed() {
         return;
     }
 
-    // 3. NODE PICKING (CLICK-BASED, NOT HOVER-BASED)
+    // 3) NODE PICKING (CLICK-BASED)
     if (mode === selectnodemode) {
-        // Search radius in pixels (increase if you want easier clicking)
         const R = 18;
         const R2 = R * R;
 
         let best = null;
         let bestD2 = R2;
 
-        // Compute once per click
         for (let i = 0; i < nodes.length; i++) {
             let n = nodes[i];
             let coord = ol.proj.fromLonLat([n.lon, n.lat]);
             let pix = openlayersmap.getPixelFromCoordinate(coord);
             if (!pix) continue;
 
-            // Quick reject off-screen
             if (pix[0] < -20 || pix[0] > width + 20 || pix[1] < -20 || pix[1] > height + 20) continue;
 
             let dx = pix[0] - mouseX;
@@ -939,19 +940,18 @@ function mousePressed() {
             }
 
             console.log("Start Node Set:", startnode.nodeId);
-            showMessage("Start Locked! Toggle to TRIM/EDIT and click roads to trim, or click START.");
+            showMessage("Start Locked! Toggle PAN/ZOOM to move, or TRIM/EDIT to trim roads.");
 
-            // Move into trimming once start is chosen
             mode = trimmodemode;
             redraw();
+            openlayersmap.render();
         } else {
-            showMessage("No node close enough—zoom in a bit and click nearer a red dot.");
+            showMessage("No node close enough—zoom in and click nearer a red dot.");
         }
-
         return;
     }
 
-    // 4. TRIMMING LOGIC (Edge Deletion)
+    // 4) TRIMMING LOGIC
     if (mode === trimmodemode) {
         if (closestedgetomouse !== -1) {
             handleTrimming();
@@ -959,6 +959,7 @@ function mousePressed() {
         return;
     }
 }
+
 
 
 /**
