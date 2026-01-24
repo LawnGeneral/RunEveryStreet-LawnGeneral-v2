@@ -1239,11 +1239,11 @@ function showStatus() {
 	}
 }
 function windowResized() {
-    mapWidth = windowWidth;
-    mapHeight = windowHeight;
-    resizeCanvas(windowWidth, windowHeight - 34);
-    openlayersmap.updateSize();
+  resizeCanvas(windowWidth, windowHeight - HEADER_H);
+  canvas.position(0, HEADER_H);
+  openlayersmap.updateSize();
 }
+
 // Add this to the very end of sketch.js
 
 function keyPressed() {
