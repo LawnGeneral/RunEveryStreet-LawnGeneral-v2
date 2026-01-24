@@ -667,7 +667,7 @@ function showEdges() {
 	let closestedgetomousedist = Infinity;
 	for (let i = 0; i < edges.length; i++) {
 		edges[i].show();
-		if (mode == trimmode) {
+		if (mode == trimmodemode) {
 			let dist = edges[i].distanceToPoint(mouseX, mouseY)
 			if (dist < closestedgetomousedist) {
 				closestedgetomousedist = dist;
