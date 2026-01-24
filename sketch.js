@@ -1537,3 +1537,12 @@ function drawStartNodeHighlight() {
         pop();
     }
 }
+function getScreenPosition(node) {
+    // This uses the OpenLayers map to find where the node is on the screen
+    let coord = ol.proj.fromLonLat([node.lon, node.lat]);
+    let pixel = openlayersmap.getPixelFromCoordinate(coord);
+    return {
+        x: pixel[0],
+        y: pixel[1]
+    };
+}
