@@ -1518,38 +1518,76 @@ function getLiveTotalDistance() {
     return total;
 }
 function downloadGPX() {
-  if (!bestroute || !bestroute.waypoints || bestroute.waypoints.length === 0) {
+  // Use bestroute if available; otherwise fall back to currentroute
+  const route = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) ? bestroute : currentroute;
+
+  if (!route || !route.waypoints || route.waypoints.length === 0 || !startnode) {
     console.error("No route data found to download.");
+    showMessage("No route available to export yet.");
     return;
   }
 
-  let gpxHeader = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-                  '<gpx version="1.1" creator="GeminiRoute" xmlns="http://www.topografix.com/GPX/1/1">\n' +
-                  '  <trk><name>Every Single Street</name><trkseg>\n';
-  
-  let gpxFooter = '  </trkseg></trk>\n</gpx>';
-  let gpxBody = "";
+  // Build a clean list of trackpoints:
+  // 1) start node
+  // 2) every waypoint that has lat/lon
+  const pts = [];
+  pts.push({ lat: startnode.lat, lon: startnode.lon });
 
-  // Build waypoints from your bestroute data 
-  for (let i = 0; i < bestroute.waypoints.length; i++) {
-    let p = bestroute.waypoints[i];
-    // Use the current time to ensure the GPX file is valid for apps 
-    let timeStr = new Date(Date.now() + i * 1000).toISOString(); 
-    gpxBody += `    <trkpt lat="${p.lat}" lon="${p.lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+  for (let i = 0; i < route.waypoints.length; i++) {
+    const p = route.waypoints[i];
+    if (p && typeof p.lat === "number" && typeof p.lon === "number") {
+      pts.push({ lat: p.lat, lon: p.lon });
+    }
   }
 
-  let fullContent = gpxHeader + gpxBody + gpxFooter;
+  // If we somehow ended up with too few points, abort
+  if (pts.length < 2) {
+    console.error("Not enough valid points to export.");
+    showMessage("Route export failed: not enough valid points.");
+    return;
+  }
 
-  // This forces the browser to recognize the file as GPX, not TXT
-  let blob = new Blob([fullContent], { type: 'application/gpx+xml' });
-  let url = URL.createObjectURL(blob);
-  let link = document.createElement("a");
-  link.setAttribute("href", url);
-  link.setAttribute("download", "route.gpx"); // Explicitly sets the extension
+  // Optional: close the loop back to start if last point isn't start-ish
+  const last = pts[pts.length - 1];
+  const dLat = last.lat - startnode.lat;
+  const dLon = last.lon - startnode.lon;
+  if (Math.sqrt(dLat * dLat + dLon * dLon) > 0.00005) { // ~5m-ish
+    pts.push({ lat: startnode.lat, lon: startnode.lon });
+  }
+
+  const gpxHeader =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `  <trk><name>RunEveryStreet Route</name><trkseg>\n`;
+
+  const gpxFooter = `  </trkseg></trk>\n</gpx>\n`;
+
+  let gpxBody = "";
+  const t0 = Date.now();
+
+  for (let i = 0; i < pts.length; i++) {
+    const timeStr = new Date(t0 + i * 1000).toISOString();
+    // NOTE: GPX is lat=".." lon=".." (do not swap)
+    gpxBody += `    <trkpt lat="${pts[i].lat}" lon="${pts[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+  }
+
+  const fullContent = gpxHeader + gpxBody + gpxFooter;
+
+  // Create file ONLY when user clicks (this function should be called from your button click)
+  const blob = new Blob([fullContent], { type: "application/gpx+xml" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "route.gpx";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+  console.log(`GPX exported: ${pts.length} points`);
 }
+
 function getOddDegreeNodes() {
     let oddNodes = [];
     let deg1 = 0;
