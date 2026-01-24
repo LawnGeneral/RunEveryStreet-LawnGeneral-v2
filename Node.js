@@ -13,16 +13,13 @@ class Node {
     const lat = parseFloat(this.lat);
     if (isNaN(lon) || isNaN(lat)) return { x: -1000, y: -1000 };
 
-    // Convert Lat/Lon to the map's internal "Meters" projection
     const coords = ol.proj.fromLonLat([lon, lat]);
-    
-    // Get the exact pixel on the screen
     const pix = openlayersmap.getPixelFromCoordinate(coords);
     
     if (pix) {
-        // IMPORTANT: We must subtract the map's container position 
-        // if your canvas is offset by a header
-        return { x: pix[0], y: pix[1] };
+        // Shift the Y coordinate up to account for the header height
+        // Adjust '- 40' if your shift is slightly different
+        return { x: pix[0], y: pix[1] - 40 }; 
     }
     return { x: -1000, y: -1000 }; 
 }
