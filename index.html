@@ -66,17 +66,18 @@
       z-index: 1;
     }
 
-    /* p5 canvas overlays the map exactly (same top/height) */
-    canvas {
-      position: fixed !important;
-      top: 40px !important;                  /* match header height */
-      left: 0 !important;
-      width: 100% !important;
-      height: calc(100vh - 40px) !important; /* match #map height */
-      z-index: 5;
-      display: block;
-      pointer-events: none;                  /* JS will flip this when editing */
-    }
+  /* ONLY style the p5 canvas (do NOT affect OpenLayers canvases) */
+canvas.p5Canvas, #defaultCanvas0 {
+  position: fixed !important;
+  top: 40px !important;                  /* match header height */
+  left: 0 !important;
+  width: 100% !important;
+  height: calc(100vh - 40px) !important; /* match #map height */
+  z-index: 5;
+  display: block;
+  pointer-events: none;                  /* JS will flip this when editing */
+}
+
 
     #ui-panel {
       position: fixed;
