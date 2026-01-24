@@ -14,25 +14,24 @@ class Edge {
         }
     }
 
-    show() {
-        let p1 = this.from.getScreenPos();
-        let p2 = this.to.getScreenPos();
+   show() {
+    let p1 = this.from ? this.from.getScreenPos() : null;
+    let p2 = this.to ? this.to.getScreenPos() : null;
 
-        if (p1 && p2) {
-            push(); // Protects other drawing settings
-            if (this.isDoubled) {
-                // Purple/Magenta: Highlighting roads chosen for backtracking
-                stroke(300, 255, 255, 0.9); 
-                strokeWeight(6); 
-            } else {
-                // Cyan/Light Blue: Normal roads
-                stroke(180, 255, 255, 0.8);
-                strokeWeight(min(10, (this.travels + 1) * 2));
-            }
-            line(p1.x, p1.y, p2.x, p2.y);
-            pop();
+    // The Safety Shield: Only draw if BOTH points actually exist
+    if (p1 && p1.x !== undefined && p2 && p2.x !== undefined) {
+        push();
+        if (this.isDoubled) {
+            stroke(300, 255, 255, 0.9); 
+            strokeWeight(6); 
+        } else {
+            stroke(180, 255, 255, 0.8);
+            strokeWeight(min(10, (this.travels + 1) * 2));
         }
+        line(p1.x, p1.y, p2.x, p2.y);
+        pop();
     }
+}
 
     highlight() {
         let p1 = this.from.getScreenPos();
