@@ -130,13 +130,12 @@ function draw() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    // This line adjusts speed based on your computer's performance
     iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
 
-        // 1. SORTING: Decides where to turn
+        // 1. SORTING
         currentnode.edges.sort((a, b) => {
             let capA = a.isDoubled ? 2 : 1;
             let capB = b.isDoubled ? 2 : 1;
@@ -148,11 +147,18 @@ function handleSolverEngine() {
         });
 
         let chosenEdge = currentnode.edges[0];
-        if (!chosenEdge) return; 
+        // SAFETY: If a node has no edges, we can't move. Stop this iteration.
+        if (!chosenEdge) break; 
 
         let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
         
-        // 2. TRACKING: Progress toward finishing
+        // SAFETY: Ensure the next node exists and has coordinates
+        if (!nextNode || nextNode.lat === undefined) {
+            console.warn("Skipping invalid node/edge connection.");
+            break;
+        }
+
+        // 2. TRACKING
         let cap = chosenEdge.isDoubled ? 2 : 1;
         if (chosenEdge.travels < cap && chosenEdge.travels === 0) {
             remainingedges--; 
@@ -161,18 +167,18 @@ function handleSolverEngine() {
         let extraDist = (chosenEdge.travels >= 1) ? chosenEdge.distance : 0;
         chosenEdge.travels++;
         
+        // 3. RECORDING
         currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
         currentnode = nextNode;
         
-        // 3. COMPLETION: Only triggers when back at start AND all roads hit
-        if (remainingedges === 0 && currentnode === startnode) { 
+        // 4. COMPLETION
+        if (remainingedges <= 0 && currentnode === startnode) { 
             if (currentroute.distance < bestdistance) {
                 bestdistance = currentroute.distance;
                 bestroute = currentroute; 
                 lastRecordTime = millis();
             }
 
-            // Reset for the NEXT attempt
             resetEdges();
             currentnode = startnode;
             remainingedges = edges.length; 
