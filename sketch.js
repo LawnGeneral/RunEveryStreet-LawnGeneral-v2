@@ -1596,32 +1596,36 @@ function triggerIngest() {
   console.log("Ingest triggered: start in PAN/ZOOM, toggle to TRIM/EDIT to click nodes/roads.");
 }
 
-
-
-
 function handleTrimming() {
     // closestedgetomouse is the index found by showEdges()
     if (closestedgetomouse >= 0 && closestedgetomouse < edges.length) {
-        
+
         // 1. Remove the edge from the main array
-        // .splice returns an array, so we take the first [0] element
         let removedEdge = edges.splice(closestedgetomouse, 1)[0];
-        
-        // 2. Add it to the Undo Stack so we can bring it back if we mess up
+
+        // 2. Add it to the Undo Stack
         deletedEdgesStack.push(removedEdge);
-        
-        // 3. Update the total distance counters
+
+        // 3. Update distance counters
         totaledgedistance -= removedEdge.distance;
-        totalRoadsDist = totaledgedistance; 
+        totalRoadsDist = totaledgedistance;
         totaluniqueroads = edges.length;
 
-        // 4. Reset the hover index so it doesn't "ghost" delete
+        // 4. Reset the hover index
         closestedgetomouse = -1;
-        
+
         console.log("Road removed. New total distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
         showMessage("Road removed. Use Undo if needed.");
+
+        // 5. FORCE VISUAL UPDATE (because you use noLoop())
+        redraw();                 // refresh p5 immediately
+        openlayersmap.render();   // triggers OpenLayers render cycle (postrender -> redraw)
     }
 }
+
+
+
+
 // --- VISUALIZATION HELPERS ---
 
 function drawStartNodeHighlight() {
