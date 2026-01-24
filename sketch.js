@@ -717,22 +717,28 @@ function showNodes() {
 }
 
 function showEdges() {
-	let closestedgetomousedist = Infinity;
-	for (let i = 0; i < edges.length; i++) {
-		edges[i].show();
-		if (mode == trimmodemode) {
-			let dist = edges[i].distanceToPoint(mouseX, mouseY)
-			if (dist < closestedgetomousedist) {
-				closestedgetomousedist = dist;
-				closestedgetomouse = i;
-			}
-		}
-	}
-	if (closestedgetomouse >= 0 && !isTouchScreenDevice) {
-		edges[closestedgetomouse].highlight();
-	}
+    let closestedgetomousedist = Infinity;
 
+    // Always draw edges
+    for (let i = 0; i < edges.length; i++) {
+        edges[i].show();
+
+        // Only compute closest edge when trimming AND when canvas is interactive (EDIT mode)
+        if (mode === trimmodemode && !mapPanZoomMode) {
+            let d = edges[i].distanceToPoint(mouseX, mouseY);
+            if (d < closestedgetomousedist) {
+                closestedgetomousedist = d;
+                closestedgetomouse = i;
+            }
+        }
+    }
+
+    // IMPORTANT: Do NOT highlight the "closest" edge.
+    // Highlighting is what makes it look like a click turned the segment red.
+    // If you want hover feedback later, we can add a subtle highlight only on hover,
+    // but for now this makes trimming feel instant and unambiguous.
 }
+
 
 function resetEdges() {
     // 1. Reset the travel count for every road segment
