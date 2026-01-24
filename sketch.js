@@ -1237,19 +1237,24 @@ function generateAndDownloadGPX(route) {
     console.log("GPX File Generated Successfully.");
 }
 function getClosestNode(mx, my) {
-    // 1. Convert screen click to map coordinates
-    let coords = map.getCoordinateFromPixel([mx, my]);
-    if (!coords) return null;
+    // 1. Get the coordinate from the map (using the correct variable name)
+    let pixelCoords = openlayersmap.getCoordinateFromPixel([mx, my]);
+    if (!pixelCoords) return null;
+
+    // 2. Convert from Map Projection (meters) to Lat/Lon
+    let lonLat = ol.proj.toLonLat(pixelCoords);
+    let mouseLon = lonLat[0];
+    let mouseLat = lonLat[1];
 
     let closest = null;
     let minDist = Infinity;
 
-    // 2. Loop through the nodes array we found earlier
+    // 3. Loop through nodes
     for (let i = 0; i < nodes.length; i++) {
         let n = nodes[i];
         
-        // Calculate distance between mouse click and current node
-        let d = dist(coords[0], coords[1], n.lon, n.lat);
+        // Use p5 dist() with the converted Lat/Lon
+        let d = dist(mouseLon, mouseLat, n.lon, n.lat);
         
         if (d < minDist) {
             minDist = d;
@@ -1257,26 +1262,21 @@ function getClosestNode(mx, my) {
         }
     }
 
-    // 3. Precision Check (0.0005 is roughly 50 meters)
-    if (minDist < 0.0005) {
-        console.log("Found Node: " + closest.nodeId + " at distance: " + minDist);
+    // 4. Threshold check (0.001 is about 100 meters in degrees)
+    if (minDist < 0.001) {
+        console.log("Found Node: " + closest.nodeId);
         return closest;
     } else {
-        console.log("Click was too far from any road intersection.");
+        console.log("Click too far. Nearest was: " + minDist);
         return null;
     }
 }
 function triggerIngest() {
-    console.log("Button clicked: Starting road ingestion...");
+    console.log("Button clicked! Triggering getOverpassData...");
     
-    // This calls the existing logic that was previously tied to the screen click
-    if (typeof ingestRoads === "function") {
-        ingestRoads();
-    } else if (typeof loadXML === "function") {
-        // Some versions of this script use loadXML instead
-        loadXML();
-    }
+    // Call the specific function we found
+    getOverpassData();
     
-    // This hides the button so it's not in your way while selecting roads
+    // Hide the button UI immediately so it's not blocking the map
     document.getElementById('ui-panel').style.display = 'none';
 }
