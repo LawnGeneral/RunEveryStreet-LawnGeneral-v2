@@ -118,34 +118,37 @@ function draw() {
 
     // Standard p5.js cleanup
     clear();
-    drawMask();
+    // drawMask(); // Optional: remove if this causes a black overlay issue
 
-    // 1. SCENE MANAGEMENT: Skip map logic if we are still choosing a map
+    // 1. SCENE MANAGEMENT
+    // If we are still choosing a map and HAVEN'T clicked the red button, stop here.
     if (mode === choosemapmode) return;
 
     // 2. BASE MAP RENDERING
-    // We only show the blue roads if the solver isn't running (to keep the screen clean)
+    // Show the blue roads
     if (showRoads) showEdges();
-    if (!navMode) showNodes();
+    
+    // showNodes() draws the red dots. 
+    // We want these visible during selectnodemode so you can pick a start.
+    if (!navMode || mode === selectnodemode) showNodes();
 
-    // 3. THE ENGINE: Run the solver logic if in Solve mode
+    // 3. THE ENGINE
     if (mode === solveRESmode) {
         handleSolverEngine();
     }
 
-    // 4. VISUALIZATION: Draw the hiker's current path and the best found path
+    // 4. VISUALIZATION
     renderRouteGraphics();
 
-    // 5. REPORTING: Show the "Success" screen if the user is downloading the GPX
+    // 5. REPORTING
     if (mode === downloadGPXmode) {
         showReportOut();
     }
 
-    // 6. STANDARD UI: Buttons, zoom levels, and general labels
+    // 6. STANDARD UI
     renderUIOverlays();
 
-    // 7. SOLVER STATS OVERLAY (Step 2 Logic)
-    // This only displays when the solver is actually working
+    // 7. SOLVER STATS OVERLAY
     if (mode === solveRESmode) {
         drawSolverStats();
     }
@@ -480,31 +483,43 @@ out;`;
 }
 
 function showNodes() {
-    let closestnodetomousedist = Infinity;
-    for (let i = 0; i < nodes.length; i++) {
-        let pos = nodes[i].getScreenPos(); // Use the dynamic position
-        if (!pos) continue;
+    if (!nodes || nodes.length === 0) return;
 
+    let closestnodetomousedist = Infinity;
+    let currentClosestIndex = -1;
+
+    for (let i = 0; i < nodes.length; i++) {
+        let pos = nodes[i].getScreenPos();
+        
+        // Skip nodes that are off-screen or invalid
+        if (!pos || pos.x === -1000) continue;
+
+        // 1. DRAW the node
         if (showRoads) {
             nodes[i].show();
         }
         
-        if (mode == selectnodemode) {
-            // Calculate distance based on current screen pixels
+        // 2. LOGIC for hover-selection
+        if (mode === selectnodemode) {
             let disttoMouse = dist(pos.x, pos.y, mouseX, mouseY);
             if (disttoMouse < closestnodetomousedist) {
                 closestnodetomousedist = disttoMouse;
-                closestnodetomouse = i;
+                currentClosestIndex = i;
             }
         }
     }
     
-    if (mode == selectnodemode && closestnodetomouse !== -1) {
-        startnode = nodes[closestnodetomouse];
+    // 3. VISUAL FEEDBACK: 
+    // Highlight the node the mouse is currently hovering over (within 30px)
+    if (mode === selectnodemode && currentClosestIndex !== -1 && closestnodetomousedist < 30) {
+        nodes[currentClosestIndex].highlight(); 
+        // Note: We don't set startnode here anymore. 
+        // We wait for the mousePressed function to lock it in.
     }
     
-    if (startnode != null && (!isTouchScreenDevice || mode != selectnodemode)) {
-        startnode.highlight();
+    // 4. DRAW THE SELECTED START NODE (Green)
+    if (startnode != null) {
+        startnode.highlight(); // Ensure your highlight function uses a distinct color (like Green)
     }
 }
 
@@ -620,7 +635,6 @@ function solveRES() {
 }
 function mousePressed() {
   // 1. REPORT / DOWNLOAD MODE
-  // We check this first so the download button takes priority over the map
   if (mode === downloadGPXmode) {
     let boxW = 400;
     let boxH = 450;
@@ -632,42 +646,54 @@ function mousePressed() {
     let btnX = width / 2 - btnW / 2;
     let btnY = y + 350;
 
-    // Check if the click is specifically on the "Download" button
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
       generateAndDownloadGPX(bestroute);
       return; 
     }
 
-    // Optional: Click outside the box to close the report
     if (mouseX < x || mouseX > x + boxW || mouseY < y || mouseY > y + boxH) {
       mode = solveRESmode;
       navMode = false;
     }
-    return; // Exit after handling the report screen
+    return;
   }
 
-  // 2. SOLVER MODE (Setting the start node or clicking Start)
+  // 2. SELECT NODE MODE (Picking the start point after Ingest)
+  // This is the mode set by your Red "Load Roads" button
+  if (mode === selectnodemode) {
+    let closest = getClosestNode(mouseX, mouseY);
+    if (closest) {
+      startnode = closest;
+      currentnode = startnode;
+      console.log("Start Node set to: " + startnode.nodeId);
+      
+      // Once a node is picked, move to solver mode so the Start button works
+      mode = solveRESmode;
+    }
+    return;
+  }
+
+  // 3. SOLVER MODE (Interacting with the UI buttons)
   if (mode === solveRESmode) {
-    
-    // Check if you are clicking the "START" button in the UI
-    // Adjust these coordinates to where your Start button actually lives
+    // Check if clicking the "START" button (Bottom Left UI)
     if (mouseX > 20 && mouseX < 120 && mouseY > height - 60 && mouseY < height - 20) {
         if (startnode) {
             navMode = !navMode;
             if (navMode) solveRES();
         } else {
-            alert("Pick a green start node on the map first!");
+            // Fallback: If they somehow got here without a node, send them back
+            mode = selectnodemode;
+            alert("Please click a red node on the map to set your starting point.");
         }
         return;
     }
-
-    // If we aren't clicking a button, we are picking a node on the map
+    
+    // Allow re-picking a node even in solve mode if navigation hasn't started
     if (!navMode) {
       let closest = getClosestNode(mouseX, mouseY);
       if (closest) {
         startnode = closest;
         currentnode = startnode;
-        console.log("Start Node set to: " + startnode.nodeId);
       }
     }
   }
@@ -1230,11 +1256,16 @@ function generateAndDownloadGPX(route) {
     console.log("GPX File Generated Successfully.");
 }
 function getClosestNode(mx, my) {
-    // 1. Get the coordinate from the map
-    let pixelCoords = openlayersmap.getCoordinateFromPixel([mx, my]);
+    // 1. IMPORTANT: Adjust for the Header!
+    // Since the map starts 40px down, we must subtract the header height
+    // from the mouse position so the map knows where we actually clicked.
+    let adjustedY = my - 40; 
+    
+    // 2. Get the map coordinate from the adjusted pixel
+    let pixelCoords = openlayersmap.getCoordinateFromPixel([mx, adjustedY]);
     if (!pixelCoords) return null;
 
-    // 2. Convert from Map Projection (meters) to Lat/Lon
+    // 3. Convert to Lat/Lon for comparison with Node data
     let lonLat = ol.proj.toLonLat(pixelCoords);
     let mouseLon = lonLat[0];
     let mouseLat = lonLat[1];
@@ -1242,12 +1273,11 @@ function getClosestNode(mx, my) {
     let closest = null;
     let minDist = Infinity;
 
-    // 3. Loop through nodes
+    // 4. Loop through nodes
     for (let i = 0; i < nodes.length; i++) {
         let n = nodes[i];
         
         // Manual Distance Calculation (Lon/Lat units)
-        // We use this instead of dist() for better precision with small decimals
         let dx = mouseLon - n.lon;
         let dy = mouseLat - n.lat;
         let d = Math.sqrt(dx * dx + dy * dy);
@@ -1258,13 +1288,13 @@ function getClosestNode(mx, my) {
         }
     }
 
-    // 4. Threshold check 
-    // 0.0005 is roughly 50 meters—perfect for selecting an intersection.
-    if (minDist < 0.0005) {
+    // 5. Threshold check 
+    // Increased slightly to 0.001 to make it easier to click on mobile/touch
+    if (minDist < 0.001) {
         console.log("Success! Found Node: " + closest.nodeId);
         return closest;
     } else {
-        console.log("Too far from a road. Nearest distance: " + minDist.toFixed(6));
+        console.warn("Too far! Distance: " + minDist.toFixed(6) + ". Try clicking closer to a red dot.");
         return null;
     }
 }
