@@ -2,6 +2,7 @@ let solverRunning = false;   // replaces navMode for solver logic
 let mapInteractive = true;  // controls whether map receives mouse events
 const HEADER_H = 40; // height of your top bar/logo area
 let mapInteractionMode = true; // true = MAP pan/zoom, false = EDIT (canvas clicks)
+let mapPanZoomMode = true; // true = pan/zoom map, false = edit/trim on canvas
 
 let currentroute = null;
 let totalRoadsDist = 0; 
@@ -130,13 +131,8 @@ function setup() {
 
 function setMode(newMode) {
   mode = newMode;
-
-  // Pan/zoom should work whenever mapInteractionMode is true
-  canvas.elt.style.pointerEvents = mapInteractionMode ? 'none' : 'auto';
-
-  console.log(
-    `Mode=${mode} | mapInteractionMode=${mapInteractionMode ? "MAP" : "EDIT"} | canvas.pointerEvents=${canvas.elt.style.pointerEvents}`
-  );
+  applyInputMode();
+  console.log(`Mode=${mode} | Input=${mapPanZoomMode ? "PAN/ZOOM" : "EDIT/TRIM"} | canvas.pointerEvents=${canvas.elt.style.pointerEvents}`);
 }
 
 function draw() {
@@ -463,41 +459,44 @@ function drawToolbar() {
   textSize(12);
   textStyle(BOLD);
 
-  let btnW = 150;
-  let btnH = 40;
-  let margin = 10;
+  const btnW = 170;
+  const btnH = 40;
+  const margin = 10;
 
-  // --- MAP / EDIT TOGGLE (Far Right) ---
-  let toggleX = width - (btnW + margin);
+  // --- PAN/ZOOM <-> TRIM TOGGLE (Far Right) ---
+  const toggleX = width - (btnW + margin);
+  const toggleY = 10;
 
-  // Green when MAP mode (pan/zoom), Orange when EDIT mode (canvas clicks)
-  fill(mapInteractionMode ? 120 : 15, 80, 255);
+  // Green when PAN/ZOOM, Orange when TRIM/EDIT
+  fill(mapPanZoomMode ? 120 : 15, 80, 255);
   stroke(0); strokeWeight(2);
-  rect(toggleX, 10, btnW, btnH, 5);
+  rect(toggleX, toggleY, btnW, btnH, 5);
 
   fill(0); noStroke();
-  text(mapInteractionMode ? "MODE: MAP" : "MODE: EDIT", toggleX + btnW/2, 30);
+  text(mapPanZoomMode ? "MODE: PAN / ZOOM" : "MODE: TRIM / EDIT", toggleX + btnW/2, toggleY + btnH/2);
 
-  // Click toggle
-  if (mouseIsPressed && mouseX > toggleX && mouseX < toggleX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
-    mapInteractionMode = !mapInteractionMode;
+  // Click detection
+  if (mouseIsPressed && mouseX > toggleX && mouseX < toggleX + btnW && mouseY > toggleY && mouseY < toggleY + btnH) {
+    mapPanZoomMode = !mapPanZoomMode;
+    applyInputMode();
 
-    // Apply pointer-events immediately
-    canvas.elt.style.pointerEvents = mapInteractionMode ? 'none' : 'auto';
+    // If switching into edit mode but we're still in choosemapmode, move to trim mode if start is already set
+    if (!mapPanZoomMode) {
+      if (startnode && mode === choosemapmode) mode = trimmodemode;
+      if (!startnode && mode === choosemapmode) mode = selectnodemode;
+    }
 
-    // Helpful message
-    showMessage(mapInteractionMode ? "Map pan/zoom enabled" : "Edit mode enabled (click to trim)");
-
+    showMessage(mapPanZoomMode ? "Pan/Zoom enabled" : "Trim/Edit enabled");
     mouseIsPressed = false; // debounce
   }
 
-  // --- OPTIONAL: show TRIM buttons only when in trim mode ---
+  // --- OPTIONAL: show UNDO button only while trimming ---
   if (mode === trimmodemode) {
-    // UNDO button
-    let undoX = width - (btnW * 2 + margin * 2);
+    const undoX = width - (btnW * 2 + margin * 2);
     fill(200, 20, 255);
     stroke(0); strokeWeight(2);
     rect(undoX, 10, btnW, btnH, 5);
+
     fill(0); noStroke();
     text("UNDO TRIM", undoX + btnW/2, 30);
 
@@ -509,6 +508,7 @@ function drawToolbar() {
 
   pop();
 }
+
 
 
 function getOverpassData() {
@@ -1553,23 +1553,21 @@ function getClosestNode(mx, my) {
     }
 }
 function triggerIngest() {
-    // 1) Start loading OSM data
-    getOverpassData();
+  getOverpassData();
 
-    // 2) Hide the ingest button panel
-    const panel = document.getElementById('ui-panel');
-    if (panel) panel.style.display = 'none';
+  const panel = document.getElementById('ui-panel');
+  if (panel) panel.style.display = 'none';
 
-    // 3) IMPORTANT: use setMode so pointer-events are managed consistently
-    // This enables clicking on nodes (canvas active) without permanently breaking map interaction logic
-    setMode(selectnodemode);
+  // After loading roads, user should be able to pan/zoom to choose start
+  mapPanZoomMode = true;
+  setMode(selectnodemode); // nodes visible; clicks pass to map until you toggle to TRIM/EDIT
 
-    // 4) Force OpenLayers to re-measure (safe to keep)
-    openlayersmap.updateSize();
-    setTimeout(() => openlayersmap.updateSize(), 0);
+  openlayersmap.updateSize();
+  setTimeout(() => openlayersmap.updateSize(), 0);
 
-    console.log("Ingest triggered: loading roads, switching to node selection.");
+  console.log("Ingest triggered: start in PAN/ZOOM, toggle to TRIM/EDIT to click nodes/roads.");
 }
+
 
 
 
@@ -1642,4 +1640,8 @@ function runOverpassQuery(overpassQuery, onSuccess, onFail) {
     })
     .then(onSuccess)
     .catch(onFail);
+}
+function applyInputMode() {
+  // If pan/zoom mode, let events pass through canvas to the map
+  canvas.elt.style.pointerEvents = mapPanZoomMode ? 'none' : 'auto';
 }
