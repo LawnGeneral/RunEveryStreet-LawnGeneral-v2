@@ -205,14 +205,13 @@ function handleSolverEngine() {
         return; 
     }
 
-    // Dynamic Speed: Keeps the browser from freezing
+    // Dynamic Speed: Adjusts based on performance
     iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
 
         // 2. SMART SORTING
-        // Ensure currentnode has edges before trying to sort
         if (!currentnode.edges || currentnode.edges.length === 0) break;
 
         currentnode.edges.sort((a, b) => {
@@ -246,34 +245,39 @@ function handleSolverEngine() {
         chosenEdge.travels++;
         
         // 4. RECORDING
-        // This is where the "addWaypoint of undefined" error lived.
         let extraDist = (chosenEdge.travels > 1) ? moveDist : 0;
         currentroute.addWaypoint(nextNode, moveDist, extraDist);
         currentnode = nextNode;
         
-        // 5. COMPLETION LOGIC
+        // 5. COMPLETION LOGIC (Reached all roads)
         if (remainingedges <= 0) {
-            let distToHome = dist(currentnode.lat, currentnode.lon, startnode.lat, startnode.lon);
+            // Calculate distance to start node in degrees
+            let dLat = currentnode.lat - startnode.lat;
+            let dLon = currentnode.lon - startnode.lon;
+            let distToHome = Math.sqrt(dLat * dLat + dLon * dLon);
             
+            // If we are back at the start
             if (currentnode === startnode || distToHome < 0.0001) { 
                 
                 if (currentroute.distance < bestdistance) {
                     bestdistance = currentroute.distance;
                     
-                    // FIXED CLONING: Instead of JSON.stringify (which kills functions),
-                    // use a custom clone method or store the waypoints array.
-                    // If your Route class has a .clone() use that, otherwise:
+                    // Uses the .copy() method we added to the Route class
                     bestroute = currentroute.copy(); 
                     lastRecordTime = millis();
+                    console.log("New Best Route Found: " + (bestdistance / 1000).toFixed(2) + "km");
                 }
 
-                // RESET for next attempt
+                // RESET FOR NEXT ATTEMPT
                 resetEdges();
                 currentnode = startnode;
+                
+                // Recalculate physical roads for the new attempt
                 remainingedges = edges.filter(e => e.distance > 0).length; 
                 
-                // Ensure the new route is initialized properly
-                currentroute = new Route(currentnode);
+                // Initialize a fresh route for the next iteration
+                // Passing null for the second argument ensures a fresh start
+                currentroute = new Route(currentnode, null);
             }
         }
     }
@@ -670,11 +674,14 @@ function mousePressed() {
       currentnode = startnode;
       console.log("Start Node set to: " + startnode.nodeId);
       
-      // FIX: Initialize the hiker object so handleSolverEngine doesn't crash
-      // We pass the startnode and reset the path
-      hiker = new Hiker(startnode); 
+      // FIX: Initialize 'currentroute' using the 'Route' class instead of 'Hiker'
+      currentroute = new Route(startnode, null); 
       
-      // Once a node is picked, move to solver mode so the Start button works
+      // Reset solving stats for a fresh run
+      iterations = 0;
+      bestdistance = Infinity;
+      
+      // Move to solver mode so the UI buttons become active
       mode = solveRESmode;
     }
     return;
@@ -682,13 +689,13 @@ function mousePressed() {
 
   // 3. SOLVER MODE (Interacting with the UI buttons)
   if (mode === solveRESmode) {
-    // Check if clicking the "START" button (Bottom Left UI: x:20-120, y:bottom-60 to bottom-20)
+    // Check if clicking the "START" button (Bottom Left UI)
     if (mouseX > 20 && mouseX < 120 && mouseY > height - 60 && mouseY < height - 20) {
         if (startnode) {
             navMode = !navMode;
-            // Ensure hiker exists before solving
             if (navMode) {
-              if (!hiker) hiker = new Hiker(startnode);
+              // Ensure currentroute is ready before starting the engine
+              if (!currentroute) currentroute = new Route(startnode, null);
               solveRES();
             }
         } else {
@@ -698,13 +705,13 @@ function mousePressed() {
         return;
     }
     
-    // Allow re-picking a node if navigation hasn't started
+    // Allow re-picking a node if the solver hasn't actually started running
     if (!navMode) {
       let closest = getClosestNode(mouseX, mouseY);
       if (closest) {
         startnode = closest;
         currentnode = startnode;
-        hiker = new Hiker(startnode); // Update hiker to new start position
+        currentroute = new Route(startnode, null); 
       }
     }
   }
