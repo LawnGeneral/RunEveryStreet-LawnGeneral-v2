@@ -1266,3 +1266,17 @@ function getClosestNode(mx, my) {
         return null;
     }
 }
+function triggerIngest() {
+    console.log("Button clicked: Starting road ingestion...");
+    
+    // This calls the existing logic that was previously tied to the screen click
+    if (typeof ingestRoads === "function") {
+        ingestRoads();
+    } else if (typeof loadXML === "function") {
+        // Some versions of this script use loadXML instead
+        loadXML();
+    }
+    
+    // This hides the button so it's not in your way while selecting roads
+    document.getElementById('ui-panel').style.display = 'none';
+}
