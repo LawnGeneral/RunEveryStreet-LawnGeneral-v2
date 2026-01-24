@@ -1,6 +1,6 @@
 let solverRunning = false;   // replaces navMode for solver logic
 let mapInteractive = true;  // controls whether map receives mouse events
-const HEADER_H = 34; // height of your top bar/logo area
+const HEADER_H = 40; // height of your top bar/logo area
 
 let currentroute = null;
 let totalRoadsDist = 0; 
