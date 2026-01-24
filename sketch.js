@@ -824,37 +824,31 @@ function floodfill(startNode) {
 }
 
 function solveRES() {
-    // 1. Initial Cleanup
+    // 1. Safety
     if (!startnode) {
         showMessage("Error: No start node selected.");
         return;
     }
 
-    // Make sure solver is NOT running while we prep
-    solverRunning = false;
+    // 2. Ensure solver state flags are correct
+    // Your draw() / handleSolverEngine() currently keys off navMode.
+    navMode = true;           // <-- CRITICAL: actually start solver engine
+    solverRunning = true;     // keep if you still want it for future refactor
 
-    // (Optional but helpful) lock the map while solving/prepping
-    // so clicks don't accidentally pan/zoom when you're trying to edit
-    // mapInteractive = false;
-    // canvas.elt.style.pointerEvents = mapInteractive ? 'none' : 'auto';
-
+    // 3. Clean and prep the graph
     removeOrphans();
     resetEdges();
 
-    // 2. The Strategy (Odd nodes -> distance matrix -> pairing -> apply doubling)
+    // 4. Doubling strategy
     let myOddNodes = getOddDegreeNodes();
     let myMatrix = buildOddNodeMatrix(myOddNodes);
     let optimalPairs = findPairs(myOddNodes, myMatrix);
     applyDoublings(optimalPairs);
 
-    // 3. UI and State
-    // Engage solver mode
+    // 5. Enter solver mode
     setMode(solveRESmode);
 
-    // Start the solver engine
-    solverRunning = true;
-
-    // 4. Distance Synchronization
+    // 6. Distance synchronization
     totalRoadsDist = 0;
     let validRoadsCount = 0;
 
@@ -868,19 +862,24 @@ function solveRES() {
 
     remainingedges = validRoadsCount;
 
-    // 5. Solver Initialization
+    // 7. Solver initialization
     currentnode = startnode;
     currentroute = new Route(currentnode, null);
 
-    // Reset best records
     bestdistance = Infinity;
     bestroute = null;
     iterations = 0;
     lastRecordTime = millis();
 
-    console.log("--- SOLVER READY ---");
+    // 8. IMPORTANT: Your sketch uses noLoop() in setup.
+    // The solver needs frames to tick continuously.
+    loop();
+    openlayersmap.render();
+
+    console.log("--- SOLVER RUNNING ---");
     console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
 }
+
 
 function mousePressed() {
     // 0) HARD GATE: If we're in PAN/ZOOM mode, canvas clicks should do NOTHING.
