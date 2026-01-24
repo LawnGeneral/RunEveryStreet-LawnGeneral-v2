@@ -884,7 +884,6 @@ function solveRES() {
 
 function mousePressed() {
     // 0) HARD GATE: If we're in PAN/ZOOM mode, canvas clicks should do NOTHING.
-    // This prevents trimming/selecting/starting solver while panning.
     if (mapPanZoomMode) return;
 
     // 1) UI GUARD: Don't click through the toolbar area
@@ -957,14 +956,35 @@ function mousePressed() {
         return;
     }
 
-    // 4) TRIMMING LOGIC
+    // 4) TRIMMING LOGIC (CLICK-TIME PICK — NOT STALE)
     if (mode === trimmodemode) {
-        if (closestedgetomouse !== -1) {
-            handleTrimming();
+        // How close (in pixels) the click must be to a road segment to count
+        const PICK_PX = 10;
+
+        let bestIdx = -1;
+        let bestDist = Infinity;
+
+        // Compute closest edge *right now*, at the moment of click
+        for (let i = 0; i < edges.length; i++) {
+            const d = edges[i].distanceToPoint(mouseX, mouseY);
+            if (d < bestDist) {
+                bestDist = d;
+                bestIdx = i;
+            }
         }
+
+        // Only trim if we actually clicked near a road
+        if (bestIdx !== -1 && bestDist <= PICK_PX) {
+            closestedgetomouse = bestIdx;  // feed into your existing handleTrimming()
+            handleTrimming();
+        } else {
+            showMessage("Click closer to the yellow road line to remove it.");
+        }
+
         return;
     }
 }
+
 
 
 
