@@ -606,45 +606,9 @@ function solveRES() {
     console.log("Start Node ID: " + (startnode ? startnode.nodeId : "NOT SET"));
 }
 function mousePressed() {
-  // 1. MAP SELECTION MODE
-  if (mode === choosemapmode) {
-    // Logic for selecting which area to load
-    for (let i = 0; i < mapButtons.length; i++) {
-      if (mapButtons[i].isOver(mouseX, mouseY)) {
-        selectedMap = mapButtons[i].mapName;
-        loadMapData(selectedMap);
-        mode = solveRESmode; // Move to solver mode after selection
-        return;
-      }
-    }
-  }
-
-  // 2. SOLVER / EXPLORATION MODE
-  if (mode === solveRESmode) {
-    // If the solver is NOT running, clicking the map sets the start node
-    if (!navMode) {
-      let closest = getClosestNode(mouseX, mouseY);
-      if (closest) {
-        startnode = closest;
-        currentnode = startnode;
-        console.log("Start Node set to: " + startnode.nodeId);
-      }
-    }
-
-    // Check for UI buttons (Start/Stop/Reset)
-    if (isOverStartButton(mouseX, mouseY)) {
-      if (startnode) {
-        navMode = !navMode; // Toggle solver running state
-        if (navMode) solveRES(); 
-      } else {
-        alert("Please click a node on the map to set your start point first!");
-      }
-    }
-  }
-
-  // 3. REPORT / DOWNLOAD MODE
+  // 1. REPORT / DOWNLOAD MODE
+  // We check this first so the download button takes priority over the map
   if (mode === downloadGPXmode) {
-    // Calculate the button bounds exactly as they appear in showReportOut()
     let boxW = 400;
     let boxH = 450;
     let x = width / 2 - boxW / 2;
@@ -655,17 +619,43 @@ function mousePressed() {
     let btnX = width / 2 - btnW / 2;
     let btnY = y + 350;
 
-    // DOWNLOAD BUTTON CLICK
+    // Check if the click is specifically on the "Download" button
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
       generateAndDownloadGPX(bestroute);
-      return; // Exit so we don't trigger other clicks
+      return; 
     }
 
-    // RESTART/CLOSE CLICK (Optional: clicking outside the box to go back)
+    // Optional: Click outside the box to close the report
     if (mouseX < x || mouseX > x + boxW || mouseY < y || mouseY > y + boxH) {
       mode = solveRESmode;
       navMode = false;
-      resetEdges();
+    }
+    return; // Exit after handling the report screen
+  }
+
+  // 2. SOLVER MODE (Setting the start node or clicking Start)
+  if (mode === solveRESmode) {
+    
+    // Check if you are clicking the "START" button in the UI
+    // Adjust these coordinates to where your Start button actually lives
+    if (mouseX > 20 && mouseX < 120 && mouseY > height - 60 && mouseY < height - 20) {
+        if (startnode) {
+            navMode = !navMode;
+            if (navMode) solveRES();
+        } else {
+            alert("Pick a green start node on the map first!");
+        }
+        return;
+    }
+
+    // If we aren't clicking a button, we are picking a node on the map
+    if (!navMode) {
+      let closest = getClosestNode(mouseX, mouseY);
+      if (closest) {
+        startnode = closest;
+        currentnode = startnode;
+        console.log("Start Node set to: " + startnode.nodeId);
+      }
     }
   }
 }
