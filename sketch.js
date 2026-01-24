@@ -607,36 +607,42 @@ out;`;
 function showNodes() {
     if (!nodes || nodes.length === 0) return;
 
-    // 1. Always Draw the Green Start Node if it exists
+    // 1. ALWAYS RESET STATE AT START
+    push();
+    colorMode(RGB); // Force RGB mode
+    closestnodetomouse = -1; 
+    let closestDist = 15;
+    let winner = null;
+    let winnerPix = null;
+
+    // 2. DRAW START NODE (Green) - Always visible if it exists
     if (startnode) {
-        const sPix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([startnode.lon, startnode.lat]));
+        let sCoord = ol.proj.fromLonLat([startnode.lon, startnode.lat]);
+        let sPix = openlayersmap.getPixelFromCoordinate(sCoord);
         if (sPix) {
-            push();
-            fill(0, 255, 0); stroke(255); strokeWeight(2);
+            fill(0, 255, 0); 
+            stroke(255);
+            strokeWeight(2);
             ellipse(sPix[0], sPix[1], 15, 15);
-            pop();
         }
     }
 
-    // 2. Decide if we should show the rest of the network
-    // We want nodes visible during Selection AND Trimming
+    // 3. DRAW NETWORK (Red Dots)
+    // We show these during Selection AND Trimming
     if (mode === selectnodemode || mode === trimmodemode) {
-        let winner = null;
-        let winnerPix = null;
-        let closestDist = 15;
-
-        push();
         for (let i = 0; i < nodes.length; i++) {
             let n = nodes[i];
-            const pix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([n.lon, n.lat]));
+            let coord = ol.proj.fromLonLat([n.lon, n.lat]);
+            let pix = openlayersmap.getPixelFromCoordinate(coord);
+            
             if (!pix || pix[0] < 0 || pix[0] > width || pix[1] < 0 || pix[1] > height) continue;
 
-            // DRAW: Standard small red dots so you can see the intersections
-            fill(255, 0, 0, 80); // Faint red so they don't clutter the trim view
+            // FIX: Explicitly set the fill to Red before drawing
+            fill(255, 0, 0, 150); 
             noStroke();
-            ellipse(pix[0], pix[1], 5, 5);
+            ellipse(pix[0], pix[1], 6, 6);
             
-            // LOGIC: Only calculate hovers if we are still SELECTING the start
+            // Only search for hovers if we haven't picked a start yet
             if (mode === selectnodemode) {
                 let d = dist(pix[0], pix[1], mouseX, mouseY);
                 if (d < closestDist) {
@@ -646,17 +652,17 @@ function showNodes() {
                 }
             }
         }
-
-        // 3. Draw the Hover Highlight only if we found a winner
-        if (winner && winnerPix) {
-            closestnodetomouse = winner; 
-            noFill();
-            stroke(255, 255, 0);
-            strokeWeight(3);
-            ellipse(winnerPix[0], winnerPix[1], 14, 14);
-        }
-        pop();
     }
+
+    // 4. DRAW THE HOVER RING (Yellow)
+    if (winner && winnerPix) {
+        closestnodetomouse = winner; 
+        noFill();
+        stroke(255, 255, 0);
+        strokeWeight(3);
+        ellipse(winnerPix[0], winnerPix[1], 14, 14);
+    }
+    pop();
 }
 
 function showEdges() {
