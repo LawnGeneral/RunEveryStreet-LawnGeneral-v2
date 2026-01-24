@@ -1,3 +1,4 @@
+let currentroute;
 let totaledgedoublings = 0;
 let lastRecordTime = 0; 
 let autoStopThreshold = 60000; // 60 seconds
@@ -976,12 +977,26 @@ function getPathEdges(startNode, endNode) {
 function buildOddNodeMatrix(oddNodesList) {
     let matrix = [];
     for (let i = 0; i < oddNodesList.length; i++) {
-        // Run Dijkstra from this odd node to find distances to everyone else
+        // Run Dijkstra from this odd node
         let allDistances = dijkstra(oddNodesList[i]); 
         matrix[i] = [];
+        
         for (let j = 0; j < oddNodesList.length; j++) {
-            // Fill the row with distances to the other odd nodes
-            matrix[i][j] = allDistances.get(oddNodesList[j]);
+            // If they are the same node, distance is 0
+            if (i === j) {
+                matrix[i][j] = 0;
+                continue;
+            }
+
+            // Get distance from the Map. 
+            // If dijkstra returns a Map, use .get(). 
+            // If it returns a plain object, use allDistances[oddNodesList[j]]
+            let d = (allDistances instanceof Map) 
+                    ? allDistances.get(oddNodesList[j]) 
+                    : allDistances[oddNodesList[j]];
+
+            // Fallback: If no path exists, use a very large number instead of 'undefined'
+            matrix[i][j] = (d !== undefined) ? d : 999999;
         }
     }
     console.log("Step 2 Complete: Distance matrix built for matching.");
