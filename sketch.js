@@ -1,6 +1,7 @@
 let solverRunning = false;   // replaces navMode for solver logic
 let mapInteractive = true;  // controls whether map receives mouse events
 const HEADER_H = 40; // height of your top bar/logo area
+let mapInteractionMode = true; // true = MAP pan/zoom, false = EDIT (canvas clicks)
 
 let currentroute = null;
 let totalRoadsDist = 0; 
@@ -128,19 +129,16 @@ function setup() {
 
 
 function setMode(newMode) {
-    mode = newMode;
-    
-    // If we are in Zoom/Pan mode, let clicks pass THROUGH the canvas to the map
-    if (mode === choosemapmode) {
-        canvas.elt.style.pointerEvents = 'none';
-        console.log("Mode: Zoom & Pan (Map Active)");
-    } 
-    // If we are setting nodes or trimming, the canvas must CATCH the clicks
-    else {
-        canvas.elt.style.pointerEvents = 'auto';
-        console.log("Mode: Editing (Canvas Active)");
-    }
+  mode = newMode;
+
+  // Pan/zoom should work whenever mapInteractionMode is true
+  canvas.elt.style.pointerEvents = mapInteractionMode ? 'none' : 'auto';
+
+  console.log(
+    `Mode=${mode} | mapInteractionMode=${mapInteractionMode ? "MAP" : "EDIT"} | canvas.pointerEvents=${canvas.elt.style.pointerEvents}`
+  );
 }
+
 function draw() {
     if (touches.length > 0) isTouchScreenDevice = true;
 
@@ -459,65 +457,59 @@ function drawStatsBox(title, line1, line2, line3) {
 }
 
 function drawToolbar() {
-    push();
-    colorMode(HSB); 
-    textAlign(CENTER, CENTER);
-    textSize(12);
-    textStyle(BOLD);
+  push();
+  colorMode(HSB);
+  textAlign(CENTER, CENTER);
+  textSize(12);
+  textStyle(BOLD);
 
-    let btnW = 150;
-    let btnH = 40;
-    let margin = 10;
+  let btnW = 150;
+  let btnH = 40;
+  let margin = 10;
 
-    // --- 1. NAV/INTERACT TOGGLE (Far Right) ---
-    let navX = width - (btnW + margin);
-    // Green (120) if Panning, Orange (15) if Interacting
-    fill(navMode ? 120 : 15, 80, 255); 
+  // --- MAP / EDIT TOGGLE (Far Right) ---
+  let toggleX = width - (btnW + margin);
+
+  // Green when MAP mode (pan/zoom), Orange when EDIT mode (canvas clicks)
+  fill(mapInteractionMode ? 120 : 15, 80, 255);
+  stroke(0); strokeWeight(2);
+  rect(toggleX, 10, btnW, btnH, 5);
+
+  fill(0); noStroke();
+  text(mapInteractionMode ? "MODE: MAP" : "MODE: EDIT", toggleX + btnW/2, 30);
+
+  // Click toggle
+  if (mouseIsPressed && mouseX > toggleX && mouseX < toggleX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
+    mapInteractionMode = !mapInteractionMode;
+
+    // Apply pointer-events immediately
+    canvas.elt.style.pointerEvents = mapInteractionMode ? 'none' : 'auto';
+
+    // Helpful message
+    showMessage(mapInteractionMode ? "Map pan/zoom enabled" : "Edit mode enabled (click to trim)");
+
+    mouseIsPressed = false; // debounce
+  }
+
+  // --- OPTIONAL: show TRIM buttons only when in trim mode ---
+  if (mode === trimmodemode) {
+    // UNDO button
+    let undoX = width - (btnW * 2 + margin * 2);
+    fill(200, 20, 255);
     stroke(0); strokeWeight(2);
-    rect(navX, 10, btnW, btnH, 5);
-    
+    rect(undoX, 10, btnW, btnH, 5);
     fill(0); noStroke();
-    text(navMode ? "MAP: PAN/ZOOM" : "MAP: LOCKED", navX + btnW/2, 30);
+    text("UNDO TRIM", undoX + btnW/2, 30);
 
-    // Handle Click for Nav Toggle
-    if (mouseIsPressed && mouseX > navX && mouseX < navX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
-        navMode = !navMode;
-        // If map is active, clicks pass through. If map is locked, canvas catches them.
-        canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
-        mouseIsPressed = false; // Debounce
+    if (mouseIsPressed && mouseX > undoX && mouseX < undoX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
+      if (typeof undoTrim === "function") undoTrim();
+      mouseIsPressed = false;
     }
+  }
 
-    // --- 2. TRIM MODE SPECIFIC BUTTONS ---
-    // Only show these if we are actually in the trimming phase
-    if (mode === trimmodemode) {
-        // UNDO BUTTON
-        let undoX = width - (btnW * 2 + margin * 2);
-        fill(200, 20, 255); 
-        stroke(0); strokeWeight(2);
-        rect(undoX, 10, btnW, btnH, 5);
-        fill(0); noStroke();
-        text("UNDO LAST TRIM", undoX + btnW/2, 30);
-
-        if (mouseIsPressed && mouseX > undoX && mouseX < undoX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
-            if (typeof undoLastTrim === "function") undoLastTrim();
-            mouseIsPressed = false;
-        }
-
-        // START SOLVER BUTTON
-        let startX = width - (btnW * 3 + margin * 3);
-        fill(120, 255, 255); 
-        stroke(0); strokeWeight(2);
-        rect(startX, 10, btnW, btnH, 5);
-        fill(0); noStroke();
-        text("GO TO SOLVER", startX + btnW/2, 30);
-
-        if (mouseIsPressed && mouseX > startX && mouseX < startX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
-            setMode(solveRESmode);
-            mouseIsPressed = false;
-        }
-    }
-    pop();
+  pop();
 }
+
 
 function getOverpassData() {
     showMessage("Loading map data...");
