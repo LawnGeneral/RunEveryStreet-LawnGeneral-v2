@@ -200,14 +200,21 @@ function drawSolverStats() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    // Dynamic Speed: Keeps the browser from freezing if the frame rate drops
+    // 1. SAFETY GUARD: Prevent crash if the solver isn't fully ready
+    if (!currentnode || !currentroute || !startnode) {
+        return; 
+    }
+
+    // Dynamic Speed: Keeps the browser from freezing
     iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
 
-        // 1. SMART SORTING: Decides which way to turn
-        // This is the "Brain" – it prioritizes unvisited roads and doubled segments
+        // 2. SMART SORTING
+        // Ensure currentnode has edges before trying to sort
+        if (!currentnode.edges || currentnode.edges.length === 0) break;
+
         currentnode.edges.sort((a, b) => {
             let capA = a.isDoubled ? 2 : 1;
             let capB = b.isDoubled ? 2 : 1;
@@ -215,69 +222,58 @@ function handleSolverEngine() {
             let remainingA = capA - a.travels;
             let remainingB = capB - b.travels;
 
-            // Priority 1: Take roads that haven't reached their "Capacity" yet
             if (remainingA !== remainingB) {
                 return remainingB - remainingA; 
             }
-            
-            // Priority 2: If both are equal, introduce randomness to explore new paths
             return Math.random() - 0.5; 
         });
 
         let chosenEdge = currentnode.edges[0];
-        
-        // SAFETY: If a node has no edges, we can't move. Stop this iteration.
         if (!chosenEdge) break; 
 
         let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
         
-        // SAFETY: Ensure the next node exists and has coordinates
         if (!nextNode || nextNode.lat === undefined) {
-            console.warn("Skipping invalid node/edge connection.");
             break;
         }
 
-        // 2. PROGRESS TRACKING
-        // We only decrement 'remainingedges' the VERY first time we touch a road
+        // 3. PROGRESS TRACKING
         if (chosenEdge.travels === 0) {
             remainingedges--; 
         }
         
-        // 3. DISTANCE CALCULATION
         let moveDist = chosenEdge.distance; 
         chosenEdge.travels++;
         
         // 4. RECORDING
-        // currentroute.addWaypoint(node, totalDistanceIncrement, extraBacktrackDistance)
-        // We track the backtracking specifically for efficiency stats later
+        // This is where the "addWaypoint of undefined" error lived.
         let extraDist = (chosenEdge.travels > 1) ? moveDist : 0;
         currentroute.addWaypoint(nextNode, moveDist, extraDist);
         currentnode = nextNode;
         
         // 5. COMPLETION LOGIC
-        // We finish if all roads are visited AND we are close to the start node
         if (remainingedges <= 0) {
             let distToHome = dist(currentnode.lat, currentnode.lon, startnode.lat, startnode.lon);
             
-            // Checking for exact match OR very close proximity (0.0001 degrees)
             if (currentnode === startnode || distToHome < 0.0001) { 
                 
                 if (currentroute.distance < bestdistance) {
                     bestdistance = currentroute.distance;
                     
-                    // CLONING: We create a deep copy of the route. 
-                    // Otherwise, bestroute would change when currentroute resets!
-                    bestroute = JSON.parse(JSON.stringify(currentroute)); 
+                    // FIXED CLONING: Instead of JSON.stringify (which kills functions),
+                    // use a custom clone method or store the waypoints array.
+                    // If your Route class has a .clone() use that, otherwise:
+                    bestroute = currentroute.copy(); 
                     lastRecordTime = millis();
                 }
 
-                // RESET: Start a new attempt to see if we can beat the 4.99km record
+                // RESET for next attempt
                 resetEdges();
                 currentnode = startnode;
-                
-                // Count how many physical roads exist to reset the counter
                 remainingedges = edges.filter(e => e.distance > 0).length; 
-                currentroute = new Route(currentnode, null);
+                
+                // Ensure the new route is initialized properly
+                currentroute = new Route(currentnode);
             }
         }
     }
@@ -667,13 +663,16 @@ function mousePressed() {
   }
 
   // 2. SELECT NODE MODE (Picking the start point after Ingest)
-  // This is the mode set by your Red "Load Roads" button
   if (mode === selectnodemode) {
     let closest = getClosestNode(mouseX, mouseY);
     if (closest) {
       startnode = closest;
       currentnode = startnode;
       console.log("Start Node set to: " + startnode.nodeId);
+      
+      // FIX: Initialize the hiker object so handleSolverEngine doesn't crash
+      // We pass the startnode and reset the path
+      hiker = new Hiker(startnode); 
       
       // Once a node is picked, move to solver mode so the Start button works
       mode = solveRESmode;
@@ -683,25 +682,29 @@ function mousePressed() {
 
   // 3. SOLVER MODE (Interacting with the UI buttons)
   if (mode === solveRESmode) {
-    // Check if clicking the "START" button (Bottom Left UI)
+    // Check if clicking the "START" button (Bottom Left UI: x:20-120, y:bottom-60 to bottom-20)
     if (mouseX > 20 && mouseX < 120 && mouseY > height - 60 && mouseY < height - 20) {
         if (startnode) {
             navMode = !navMode;
-            if (navMode) solveRES();
+            // Ensure hiker exists before solving
+            if (navMode) {
+              if (!hiker) hiker = new Hiker(startnode);
+              solveRES();
+            }
         } else {
-            // Fallback: If they somehow got here without a node, send them back
             mode = selectnodemode;
             alert("Please click a red node on the map to set your starting point.");
         }
         return;
     }
     
-    // Allow re-picking a node even in solve mode if navigation hasn't started
+    // Allow re-picking a node if navigation hasn't started
     if (!navMode) {
       let closest = getClosestNode(mouseX, mouseY);
       if (closest) {
         startnode = closest;
         currentnode = startnode;
+        hiker = new Hiker(startnode); // Update hiker to new start position
       }
     }
   }
