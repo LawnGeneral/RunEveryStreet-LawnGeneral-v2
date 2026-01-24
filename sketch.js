@@ -70,7 +70,7 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-    // 1. Geolocation Logic (optional, but nice UX)
+    // 1) Geolocation Logic (optional but nice)
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             function (position) {
@@ -91,28 +91,37 @@ function setup() {
         );
     }
 
-    // 2. Create canvas that EXACTLY matches the map area
+    // 2) Canvas sized to EXACTLY match the map area (below the header)
+    // Make sure you have: const HEADER_H = 40;  (matches your .header-bar height)
     canvas = createCanvas(windowWidth, windowHeight - HEADER_H);
     canvas.position(0, HEADER_H);
 
-    // Let the map receive mouse events by default
+    // Let the map receive mouse events by default (Zoom/Pan mode)
     canvas.elt.style.pointerEvents = 'none';
 
     colorMode(HSB);
-    noLoop(); // We will redraw manually (important for map sync)
 
-    // 3. Initial application state
+    // If you're using redraw() calls, it's best to stop the continuous loop
+    noLoop();
+
+    // 3) Application State
     mode = choosemapmode;
     iterationsperframe = 1;
     margin = 0.05;
 
-    // 4. Force redraw whenever the map moves or zooms
+    // 4) Redraw whenever the OpenLayers map renders/moves
     openlayersmap.on('postrender', function () {
         redraw();
     });
 
-    console.log("Setup complete. Canvas aligned under header.");
+    // 5) CRITICAL: Force OpenLayers to correctly size the map container.
+    // This fixes the "map only draws on the left, black area on the right" issue.
+    openlayersmap.updateSize();
+    setTimeout(() => openlayersmap.updateSize(), 0);
+
+    console.log("Setup complete. Canvas + map aligned and map size updated.");
 }
+
 
 function setMode(newMode) {
     mode = newMode;
