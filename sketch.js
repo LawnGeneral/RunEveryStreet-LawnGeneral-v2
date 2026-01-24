@@ -1,24 +1,24 @@
-let currentroute;
+let currentroute = null;
 let totalRoadsDist = 0; 
 let totaledgedoublings = 0;
 let lastRecordTime = 0; 
 let autoStopThreshold = 60000; // 60 seconds
-let navMode = false; // false = Trimming, true = Panning/Zooming
+let navMode = false; // TRUE = Solver Active, FALSE = Prep Mode
 var deletedEdgesStack = [];
+
+// Map Initialization
 var openlayersmap = new ol.Map({
-	target: 'map',
-	layers: [
-		new ol.layer.Tile({
-			source: new ol.source.OSM(),
-			opacity: 0.5
-		})
-	],
-	view: new ol.View({
-		// REPLACE THESE NUMBERS with your local Longitude and Latitude
-		// Format: [Longitude, Latitude]
-		center: ol.proj.fromLonLat([-76.88, 40.27]), 
-		zoom: 14 // Increased zoom so you are closer to the streets
-	})
+    target: 'map',
+    layers: [
+        new ol.layer.Tile({
+            source: new ol.source.OSM(),
+            opacity: 0.5
+        })
+    ],
+    view: new ol.View({
+        center: ol.proj.fromLonLat([-76.88, 40.27]), 
+        zoom: 14 
+    })
 });
 
 var canvas;
@@ -27,45 +27,46 @@ var windowX, windowY;
 let txtoverpassQuery;
 var OSMxml;
 var numnodes, numways;
-var nodes;
-var minlat = Infinity,
-	maxlat = -Infinity,
-	minlon = Infinity,
-	maxlon = -Infinity;
-var nodes = [],
-	edges = [];
+
+// Bounds & Data Arrays
+var minlat = Infinity, maxlat = -Infinity, minlon = Infinity, maxlon = -Infinity;
+var nodes = [], edges = []; // Combined into one declaration
 var mapminlat, mapminlon, mapmaxlat, mapmaxlon;
 var totaledgedistance = 0;
 var closestnodetomouse = -1;
 var closestedgetomouse = -1;
-var startnode, currentnode;
+var startnode = null, currentnode = null;
+
+// Operational Modes
 var selectnodemode = 1,
-	solveRESmode = 2,
-	choosemapmode = 3,
-	trimmode = 4,
-	downloadGPXmode = 5;
-var mode;
+    solveRESmode = 2,
+    choosemapmode = 3,
+    trimmodemode = 4,
+    downloadGPXmode = 5;
+
+var mode = choosemapmode; // START in Zoom/Pan mode
 var remainingedges;
 var debugsteps = 0;
-var bestdistance;
-var bestroute;
+var bestdistance = Infinity; // Essential for the solver to record the first path
+var bestroute = null;
 var bestarea;
 var bestdoublingsup;
+
+// Visualization Settings
 var showSteps = false;
 var showRoads = true;
-var iterations, iterationsperframe;
-var msgbckDiv, msgDiv, reportbckDiv,reportmsgDiv;
+var iterations = 0, iterationsperframe = 100;
+var msgbckDiv, msgDiv, reportbckDiv, reportmsgDiv;
 var margin;
-var btnTLx, btnTLy, btnBRx, btnBRy; // button's top left and bottom right x and y coordinates.
+var btnTLx, btnTLy, btnBRx, btnBRy;
 var starttime;
-var efficiencyhistory = [],
-	distancehistory = [];
+var efficiencyhistory = [], distancehistory = [];
 var totalefficiencygains = 0;
 var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-    // 1. Geolocation Logic: Centers the map on the user
+    // 1. Geolocation Logic
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(function (position) {
             let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
@@ -79,14 +80,11 @@ function setup() {
         });
     }
 
-    // 2. Canvas & Sizing Setup (THE ALIGNMENT FIX)
-    // We use the full windowWidth/Height so canvas pixels = map pixels
+    // 2. Canvas & Sizing Setup
     canvas = createCanvas(windowWidth, windowHeight);
-    
-    // Position at the very top-left of the screen
     canvas.position(0, 0); 
     
-    // Start with 'none' so you can zoom/pan the map through the canvas
+    // Start in 'none' so the map is interactive immediately
     canvas.elt.style.pointerEvents = 'none';
     
     colorMode(HSB);
@@ -96,61 +94,66 @@ function setup() {
     iterationsperframe = 1;
     margin = 0.05; 
 
-    // --- INTERACTION LOGIC ---
-
-    // Forces p5.js to redraw the roads whenever the map moves or zooms
+    // Forces redraw whenever map moves
     openlayersmap.on('postrender', function() {
         redraw(); 
     });
 
-    // Smart Toggling: Ensures the map stays zoomable unless we are picking nodes
-    openlayersmap.on('moveend', function() {
-        if (mode === selectnodemode) {
-            canvas.elt.style.pointerEvents = 'auto';
-        } else {
-            canvas.elt.style.pointerEvents = 'none';
-        }
-    });
+    // Remove the 'moveend' pointerEvents logic from here. 
+    // We will handle it in the setMode() function instead.
+}
+function setMode(newMode) {
+    mode = newMode;
+    
+    // If we are in Zoom/Pan mode, let clicks pass THROUGH the canvas to the map
+    if (mode === choosemapmode) {
+        canvas.elt.style.pointerEvents = 'none';
+        console.log("Mode: Zoom & Pan (Map Active)");
+    } 
+    // If we are setting nodes or trimming, the canvas must CATCH the clicks
+    else {
+        canvas.elt.style.pointerEvents = 'auto';
+        console.log("Mode: Editing (Canvas Active)");
+    }
 }
 function draw() {
-    // Detect if the user is on a touch device
     if (touches.length > 0) isTouchScreenDevice = true;
 
-    // Standard p5.js cleanup
-    clear();
-    // drawMask(); // Optional: remove if this causes a black overlay issue
+    // Standard p5 cleanup to keep the background transparent
+    clear(); 
 
-    // 1. SCENE MANAGEMENT
-    // If we are still choosing a map and HAVEN'T clicked the red button, stop here.
-    if (mode === choosemapmode) return;
-
-    // 2. BASE MAP RENDERING
-    // Show the blue roads
-    if (showRoads) showEdges();
+    // 1. RENDER MAP DATA
+    // We always draw roads if they exist so the user can see the network
+    if (edges.length > 0 && showRoads) {
+        showEdges();
+    }
     
-    // showNodes() draws the red dots. 
-    // We want these visible during selectnodemode so you can pick a start.
-    if (!navMode || mode === selectnodemode) showNodes();
+    // FIX: Show nodes if we are selecting, trimming, OR if we have a start node 
+    // This ensures the green start dot stays visible during the solve.
+    if (mode === selectnodemode || mode === trimmodemode || startnode) {
+        showNodes();
+    }
 
-    // 3. THE ENGINE
-    if (mode === solveRESmode) {
+    // 2. THE SOLVER ENGINE
+    // CRITICAL GUARD: Only run if mode is solve AND navMode (Start button) is toggled ON
+    if (mode === solveRESmode && navMode) {
         handleSolverEngine();
     }
 
-    // 4. VISUALIZATION
+    // 3. THE PATHS
+    // Draws the rainbow "current" path and the white "best" path
     renderRouteGraphics();
 
-    // 5. REPORTING
-    if (mode === downloadGPXmode) {
-        showReportOut();
-    }
-
-    // 6. STANDARD UI
+    // 4. THE INTERFACE (Always draw last so it's on top)
     renderUIOverlays();
 
-    // 7. SOLVER STATS OVERLAY
+    // 5. MODAL OVERLAYS
     if (mode === solveRESmode) {
         drawSolverStats();
+    }
+
+    if (mode === downloadGPXmode) {
+        showReportOut();
     }
 }
 
@@ -160,9 +163,11 @@ function draw() {
  */
 function drawSolverStats() {
     push();
-    resetMatrix(); // Prevents the UI from moving when you pan/zoom the map
-    
-    // Background Box
+    // 1. Ensure we are using RGB for this specific UI box
+    colorMode(RGB); 
+    resetMatrix(); 
+
+    // 2. Background Box
     fill(0, 0, 0, 180); 
     noStroke();
     rect(15, 15, 260, 130, 12); 
@@ -172,22 +177,21 @@ function drawSolverStats() {
     textAlign(LEFT, TOP);
     textFont('monospace');
 
-    // --- MATH CHECK ---
-    // Both totalRoadsDist and bestdistance are now in meters (e.g., 3838)
-    // Efficiency calculation is safe because the units match!
+    // 3. MATH: Use totalRoadsDist (Target) / bestdistance (Actual)
+    // If totalRoadsDist is 5km and you walked 10km, efficiency is 50%.
     let efficiency = (bestdistance === Infinity || bestdistance === 0) ? 0 : (totalRoadsDist / bestdistance) * 100;
 
     text(`ITERATIONS  : ${iterations}`, 30, 35);
     text(`TO VISIT    : ${remainingedges} roads`, 30, 55);
     
-    // Convert meters to km for display only
+    // Convert bestdistance (meters) to KM for display
     let kmDisplay = (bestdistance === Infinity) ? "0.00" : (bestdistance / 1000).toFixed(2);
     text(`BEST ROUTE  : ${kmDisplay} km`, 30, 75);
 
-    // Color code the efficiency for feedback
-    if (efficiency > 85) fill(0, 255, 120);      // Green
-    else if (efficiency > 70) fill(255, 230, 0); // Yellow
-    else fill(255, 100, 100);                    // Red
+    // 4. Color Feedback (RGB values)
+    if (efficiency > 85) fill(0, 255, 120);      // Bright Green
+    else if (efficiency > 70) fill(255, 230, 0); // Bright Yellow
+    else fill(255, 100, 100);                    // Soft Red
 
     textSize(18);
     textStyle(BOLD);
@@ -200,7 +204,9 @@ function drawSolverStats() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    // 1. SAFETY GUARD: Prevent crash if the solver isn't fully ready
+    // 1. SAFETY GUARD: Only run if we are in Solve Mode AND the Start Button was pressed
+    if (mode !== solveRESmode || !navMode) return;
+    
     if (!currentnode || !currentroute || !startnode) {
         return; 
     }
@@ -221,9 +227,11 @@ function handleSolverEngine() {
             let remainingA = capA - a.travels;
             let remainingB = capB - b.travels;
 
+            // Priority: Take unvisited edges first
             if (remainingA !== remainingB) {
                 return remainingB - remainingA; 
             }
+            // If equal, introduce random exploration
             return Math.random() - 0.5; 
         });
 
@@ -249,34 +257,33 @@ function handleSolverEngine() {
         currentroute.addWaypoint(nextNode, moveDist, extraDist);
         currentnode = nextNode;
         
-        // 5. COMPLETION LOGIC (Reached all roads)
+        // 5. COMPLETION LOGIC
         if (remainingedges <= 0) {
-            // Calculate distance to start node in degrees
             let dLat = currentnode.lat - startnode.lat;
             let dLon = currentnode.lon - startnode.lon;
             let distToHome = Math.sqrt(dLat * dLat + dLon * dLon);
             
-            // If we are back at the start
+            // Check if returned to start (approx 10 meters)
             if (currentnode === startnode || distToHome < 0.0001) { 
                 
                 if (currentroute.distance < bestdistance) {
                     bestdistance = currentroute.distance;
-                    
-                    // Uses the .copy() method we added to the Route class
                     bestroute = currentroute.copy(); 
                     lastRecordTime = millis();
-                    console.log("New Best Route Found: " + (bestdistance / 1000).toFixed(2) + "km");
+                    console.log("New Best Route: " + (bestdistance / 1000).toFixed(2) + "km");
                 }
 
-                // RESET FOR NEXT ATTEMPT
-                resetEdges();
+                // --- THE RESET CYCLE ---
+                // 1. Clear the 'travels' counter on all edges
+                resetEdges(); 
+                
+                // 2. Teleport hiker back to start
                 currentnode = startnode;
                 
-                // Recalculate physical roads for the new attempt
+                // 3. Reset the countdown of roads to visit
                 remainingedges = edges.filter(e => e.distance > 0).length; 
                 
-                // Initialize a fresh route for the next iteration
-                // Passing null for the second argument ensures a fresh start
+                // 4. Create a fresh path for the new attempt
                 currentroute = new Route(currentnode, null);
             }
         }
@@ -287,18 +294,22 @@ function handleSolverEngine() {
  * Handles all Route-related drawing
  */
 function renderRouteGraphics() {
-    // 1. Draw the current path being explored (Rainbow/Active)
+    // 1. Draw the current path (Rainbow/Active)
     if (currentroute) {
+        // currentroute.show() internally handles its own HSB colors
         currentroute.show();
     }
 
-    // 2. Draw the best route found so far (White/Ghost)
-    // We draw this with a different color/alpha to distinguish it
+    // 2. Draw the best route (White Ghost Path)
     if (bestroute) {
         push();
-        // Custom styling for the "Best Record" path
-        stroke(255, 255, 255, 100); // Semi-transparent white
-        strokeWeight(8); // Slightly thicker
+        // FORCE RGB mode so white (255,255,255) works as expected
+        colorMode(RGB); 
+        
+        stroke(255, 255, 255, 120); // semi-transparent white
+        strokeWeight(8);            // thicker so it sits "under" the rainbow
+        
+        // Use the route's built-in show method
         bestroute.show();
         pop();
     }
@@ -308,97 +319,214 @@ function renderRouteGraphics() {
  * Handles Stats Boxes and Toolbars
  */
 function renderUIOverlays() {
-    // Solver Active Stats
+    // 1. ALWAYS DRAW THE TOOLBAR
+    // This ensures your 1. Zoom, 2. Set Start, and 3. Trim buttons never vanish.
+    drawToolbar();
+
+    // 2. SOLVER ACTIVE STATS
     if (mode === solveRESmode && bestdistance !== Infinity) {
         let timeLeft = ceil((autoStopThreshold - (millis() - lastRecordTime)) / 1000);
+        
+        // Use totalRoadsDist for efficiency if that's your "100%" goal
+        let efficiency = (totalRoadsDist / bestdistance * 100).toFixed(1);
+
         drawStatsBox(
             "SOLVER ACTIVE", 
-            `Best Dist: ${bestdistance.toFixed(2)}km`, 
-            `Efficiency: ${(totaledgedistance / bestdistance * 100).toFixed(1)}%`,
+            `Best Dist: ${(bestdistance / 1000).toFixed(2)}km`, 
+            `Efficiency: ${efficiency}%`,
             `Auto-stop in: ${max(0, timeLeft)}s`
         );
     }
 
-    // Trimming Mode Stats
-    if (mode === trimmode || mode === selectnodemode) {
+    // 3. TRIMMING / SELECTION STATS
+    // FIX: Using 'trimmodemode' to match your global variable list
+    if (mode === trimmodemode || mode === selectnodemode) {
         let liveDist = getLiveTotalDistance();
-        drawStatsBox("ROAD MILEAGE", `${liveDist.toFixed(2)}km`, "Trimming Mode", "");
-        drawToolbar();
+        let displayDist = liveDist > 1000 ? (liveDist / 1000).toFixed(2) + "km" : liveDist.toFixed(0) + "m";
+        
+        drawStatsBox(
+            "MAP PREPARATION", 
+            `Total Road: ${displayDist}`, 
+            mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE", 
+            ""
+        );
     }
+
+    // 4. ACTION BUTTON (Bottom Left)
+    // Only shows once a start node is picked, preventing accidental engine starts
+    if (startnode) {
+        drawSolverToggleButton();
+    }
+}
+
+// Helper to draw the Start/Stop button at the bottom
+function drawSolverToggleButton() {
+    push();
+    colorMode(RGB); // Ensure we're in RGB for red/green logic
+    
+    let btnW = 140;
+    let btnH = 40;
+    let btnX = 20;
+    let btnY = height - 60;
+
+    // 1. CLICK DETECTION
+    // Check if mouse is within bounds AND just clicked
+    if (mouseIsPressed && mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+        // Toggle the navigation/solving state
+        navMode = !navMode;
+        
+        // If starting, ensure we are in the correct mode
+        if (navMode) {
+            setMode(solveRESmode); 
+        }
+        
+        // Small delay to prevent "double clicking" due to frame rate
+        mouseIsPressed = false; 
+    }
+
+    // 2. RENDERING
+    // Red if running (Stop), Green if ready (Start)
+    fill(navMode ? color(255, 50, 50) : color(50, 200, 50));
+    stroke(255);
+    strokeWeight(2);
+    rect(btnX, btnY, btnW, btnH, 8);
+
+    fill(255);
+    noStroke();
+    textAlign(CENTER, CENTER);
+    textSize(14);
+    textStyle(BOLD);
+    text(navMode ? "STOP SOLVER" : "START SOLVER", btnX + btnW/2, btnY + btnH/2);
+    pop();
 }
 // --- UI HELPER FUNCTIONS ---
 
 function drawStatsBox(title, line1, line2, line3) {
     push();
-    fill(0, 180);
+    // 1. Force RGB for UI elements
+    colorMode(RGB); 
+    
+    // 2. Background Box (Black with 180 alpha)
+    fill(0, 0, 0, 180); 
     noStroke();
-    rect(10, 10, 210, 95, 5); // Increased height to 95
+    rect(10, 10, 210, 95, 8); // Slightly rounded corners (8) look more modern
+
+    // 3. Text Styling
     fill(255);
     textAlign(LEFT, TOP);
+    
+    // Title
     textSize(14);
     textStyle(BOLD);
     text(title, 20, 20);
+    
+    // Stats Lines
     textStyle(NORMAL);
+    textSize(13); // Slightly smaller for lines to create hierarchy
     text(line1, 20, 42);
     text(line2, 20, 58);
-    text(line3, 20, 74); // The countdown line
+    text(line3, 20, 74); 
+    
     pop();
 }
 
 function drawToolbar() {
     push();
     colorMode(HSB); 
-    
-    // Nav Toggle
-    fill(navMode ? 120 : 15, 255, 255); 
+    textAlign(CENTER, CENTER);
+    textSize(12);
+    textStyle(BOLD);
+
+    let btnW = 150;
+    let btnH = 40;
+    let margin = 10;
+
+    // --- 1. NAV/INTERACT TOGGLE (Far Right) ---
+    let navX = width - (btnW + margin);
+    // Green (120) if Panning, Orange (15) if Interacting
+    fill(navMode ? 120 : 15, 80, 255); 
     stroke(0); strokeWeight(2);
-    rect(width - 160, 10, 150, 40, 5);
-    fill(0); noStroke(); textAlign(CENTER, CENTER); textSize(12); textStyle(BOLD);
-    text(navMode ? "MODE: PAN/ZOOM" : "MODE: INTERACT", width - 85, 30);
+    rect(navX, 10, btnW, btnH, 5);
     
-    if (mode == trimmode) {
-        // Undo
+    fill(0); noStroke();
+    text(navMode ? "MAP: PAN/ZOOM" : "MAP: LOCKED", navX + btnW/2, 30);
+
+    // Handle Click for Nav Toggle
+    if (mouseIsPressed && mouseX > navX && mouseX < navX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
+        navMode = !navMode;
+        // If map is active, clicks pass through. If map is locked, canvas catches them.
+        canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
+        mouseIsPressed = false; // Debounce
+    }
+
+    // --- 2. TRIM MODE SPECIFIC BUTTONS ---
+    // Only show these if we are actually in the trimming phase
+    if (mode === trimmodemode) {
+        // UNDO BUTTON
+        let undoX = width - (btnW * 2 + margin * 2);
         fill(200, 20, 255); 
         stroke(0); strokeWeight(2);
-        rect(width - 320, 10, 150, 40, 5);
+        rect(undoX, 10, btnW, btnH, 5);
         fill(0); noStroke();
-        text("UNDO LAST TRIM", width - 245, 30);
+        text("UNDO LAST TRIM", undoX + btnW/2, 30);
 
-        // Start
+        if (mouseIsPressed && mouseX > undoX && mouseX < undoX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
+            if (typeof undoLastTrim === "function") undoLastTrim();
+            mouseIsPressed = false;
+        }
+
+        // START SOLVER BUTTON
+        let startX = width - (btnW * 3 + margin * 3);
         fill(120, 255, 255); 
         stroke(0); strokeWeight(2);
-        rect(width - 480, 10, 150, 40, 5);
+        rect(startX, 10, btnW, btnH, 5);
         fill(0); noStroke();
-        text("START SOLVER", width - 405, 30);
+        text("GO TO SOLVER", startX + btnW/2, 30);
+
+        if (mouseIsPressed && mouseX > startX && mouseX < startX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
+            setMode(solveRESmode);
+            mouseIsPressed = false;
+        }
     }
     pop();
 }
 
 function getOverpassData() { 
-    showMessage("Loading map data…");
-    canvas.position(0, 34); 
+    showMessage("Loading map data...");
+    
+    // FIX: Keep canvas at (0,0) to maintain coordinate alignment with the map
+    canvas.position(0, 0); 
+    
     bestroute = null;
     totaledgedistance = 0;
     showRoads = true;
     totaluniqueroads = 0;
+    
+    // Clear old data to prevent "ghost roads" from previous zooms
+    nodes = [];
+    edges = [];
 
-    // Get the coordinates from the current map view
-    var extent = ol.proj.transformExtent(openlayersmap.getView().calculateExtent(openlayersmap.getSize()), 'EPSG:3857', 'EPSG:4326');
+    // 1. Get coordinates from OpenLayers
+    var extent = ol.proj.transformExtent(
+        openlayersmap.getView().calculateExtent(openlayersmap.getSize()), 
+        'EPSG:3857', 
+        'EPSG:4326'
+    );
     
     mapminlat = extent[1];
     mapminlon = extent[0];
     mapmaxlat = extent[3];
     mapmaxlon = extent[2];
 
-    // Using a smaller margin to ensure the data matches the visual zoom
-    dataminlat = extent[1] + (extent[3] - extent[1]) * margin;
-    dataminlon = extent[0] + (extent[2] - extent[0]) * margin;
-    datamaxlat = extent[3] - (extent[3] - extent[1]) * margin;
-    datamaxlon = extent[2] - (extent[2] - extent[0]) * margin;
+    // Margin calculation
+    let latSize = mapmaxlat - mapminlat;
+    let lonSize = mapmaxlon - mapminlon;
+    dataminlat = mapminlat + latSize * margin;
+    dataminlon = mapminlon + lonSize * margin;
+    datamaxlat = mapmaxlat - latSize * margin;
+    datamaxlon = mapmaxlon - lonSize * margin;
 
     let OverpassURL = "https://overpass-api.de/api/interpreter?data=";
-
-    // This query uses the CityStrides logic to filter for "runnable" named streets only
     let overpassquery = `[out:xml][timeout:30];
 (
   way(${dataminlat},${dataminlon},${datamaxlat},${datamaxlon})
@@ -416,7 +544,6 @@ function getOverpassData() {
 (._;>;);
 out;`;
 
-    // Properly encode the query for the URL
     let fullURL = OverpassURL + encodeURIComponent(overpassquery);
 
     httpGet(fullURL, 'text', true, function (response) {
@@ -425,44 +552,38 @@ out;`;
         var XMLnodes = OSMxml.getElementsByTagName("node");
         var XMLways = OSMxml.getElementsByTagName("way");
 
-        // SAFETY: If CityStrides logic returns 0 roads, don't freeze the UI
         if (XMLways.length === 0) {
-            showMessage("No named roads found. Zoom out and try again!");
-            setTimeout(() => { mode = choosemapmode; showMessage("Zoom to area, then click here"); }, 3000);
+            showMessage("No named roads found. Zoom out!");
+            setTimeout(() => { setMode(choosemapmode); }, 3000);
             return;
         }
 
         numnodes = XMLnodes.length;
         numways = XMLways.length;
 
+        // Reset min/max for the current batch
+        minlat = Infinity; maxlat = -Infinity; minlon = Infinity; maxlon = -Infinity;
+
+        // Parse Nodes
         for (let i = 0; i < numnodes; i++) {
-            var lat = XMLnodes[i].getAttribute('lat');
-            var lon = XMLnodes[i].getAttribute('lon');
-            minlat = min(minlat, lat);
-            maxlat = max(maxlat, lat);
-            minlon = min(minlon, lon);
-            maxlon = max(maxlon, lon);
+            let lat = parseFloat(XMLnodes[i].getAttribute('lat'));
+            let lon = parseFloat(XMLnodes[i].getAttribute('lon'));
+            let nodeid = XMLnodes[i].getAttribute('id');
+            
+            minlat = min(minlat, lat); maxlat = max(maxlat, lat);
+            minlon = min(minlon, lon); maxlon = max(maxlon, lon);
+            
+            nodes.push(new Node(nodeid, lat, lon));
         }
 
-        nodes = [];
-        edges = [];
-
-        for (let i = 0; i < numnodes; i++) {
-            var lat = XMLnodes[i].getAttribute('lat');
-            var lon = XMLnodes[i].getAttribute('lon');
-            var nodeid = XMLnodes[i].getAttribute('id');
-            let node = new Node(nodeid, lat, lon);
-            nodes.push(node);
-        }
-
-        // Parse ways into edges
+        // Parse Ways into Edges
         for (let i = 0; i < numways; i++) {
             let wayid = XMLways[i].getAttribute('id');
             let nodesinsideway = XMLways[i].getElementsByTagName('nd');
             for (let j = 0; j < nodesinsideway.length - 1; j++) {
                 let fromnode = getNodebyId(nodesinsideway[j].getAttribute("ref"));
                 let tonode = getNodebyId(nodesinsideway[j + 1].getAttribute("ref"));
-                if (fromnode != null && tonode != null) {
+                if (fromnode && tonode) {
                     let newEdge = new Edge(fromnode, tonode, wayid);
                     edges.push(newEdge);
                     totaledgedistance += newEdge.distance;
@@ -470,62 +591,76 @@ out;`;
             }
         }
 
-        mode = selectnodemode;
-        showMessage("Click on start of route");
+        // Use our new setMode function to wake up the canvas
+        totaluniqueroads = edges.length;
+        totalRoadsDist = totaledgedistance; // Store the target for efficiency math
+        setMode(selectnodemode); 
+        showMessage("Click a red node to set Start");
+        
     }, function (err) {
         console.error("Overpass failed:", err);
-        showMessage("Overpass failed. Click here to retry");
-        mode = choosemapmode;
+        showMessage("Retry loading data...");
+        setMode(choosemapmode);
     });
 }
 
 function showNodes() {
     if (!nodes || nodes.length === 0) return;
 
-    let closestnodetomousedist = Infinity;
-    let currentClosestIndex = -1;
+    // Reset the global hover variable
+    closestnodetomouse = -1;
+    let closestDist = 20; // Only select if within 20 pixels
 
-    for (let i = 0; i < nodes.length; i++) {
-        let n = nodes[i];
-        
-        // Use your Node's logic to get the screen position
-        // If your Node object doesn't have getScreenPos, we do the math here:
-        const coords = ol.proj.fromLonLat([parseFloat(n.lon), parseFloat(n.lat)]);
-        const pix = openlayersmap.getPixelFromCoordinate(coords);
-        
-        if (!pix) continue;
+    // Ensure we are in RGB mode for these colors
+    push();
+    colorMode(RGB);
 
-        let x = pix[0];
-        let y = pix[1];
-
-        // 1. DRAW the node (Red dots)
-        if (showRoads) {
-            fill(255, 0, 0);
-            noStroke();
-            ellipse(x, y, 5, 5);
-        }
-        
-        // 2. HOVER LOGIC
-        if (mode === selectnodemode) {
-            let distToMouse = dist(x, y, mouseX, mouseY);
-            if (distToMouse < closestnodetomousedist) {
-                closestnodetomousedist = distToMouse;
-                currentClosestIndex = i;
-            }
-        }
-    }
-    
-    // 3. DRAW THE START NODE (Green)
+    // 1. DRAW START NODE (Green) - Do this first so it's under the hover logic
     if (startnode) {
-        const sCoords = ol.proj.fromLonLat([parseFloat(startnode.lon), parseFloat(startnode.lat)]);
-        const sPix = openlayersmap.getPixelFromCoordinate(sCoords);
+        const sPix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([startnode.lon, startnode.lat]));
         if (sPix) {
-            fill(0, 255, 0); // Green
+            fill(0, 255, 0); 
             stroke(255);
             strokeWeight(2);
             ellipse(sPix[0], sPix[1], 15, 15);
         }
     }
+
+    // 2. DRAW REGULAR NODES (Red)
+    // PERFORMANCE FIX: Only draw nodes when in specific modes to save CPU
+    if (mode === selectnodemode || mode === trimmodemode) {
+        for (let i = 0; i < nodes.length; i++) {
+            let n = nodes[i];
+            
+            // Convert GPS to Screen Pixels
+            const pix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([n.lon, n.lat]));
+            if (!pix) continue;
+
+            let x = pix[0];
+            let y = pix[1];
+
+            // Only draw if the node is actually inside the canvas view
+            if (x < 0 || x > width || y < 0 || y > height) continue;
+
+            fill(255, 0, 0, 150); // Added slight transparency
+            noStroke();
+            ellipse(x, y, 6, 6);
+            
+            // 3. HOVER LOGIC (Find the node under the mouse)
+            let d = dist(x, y, mouseX, mouseY);
+            if (d < closestDist) {
+                closestDist = d;
+                closestnodetomouse = n; // Store the actual node, not just the index
+                
+                // Draw a highlight ring around the hovered node
+                noFill();
+                stroke(255, 255, 0);
+                strokeWeight(2);
+                ellipse(x, y, 12, 12);
+            }
+        }
+    }
+    pop();
 }
 
 function showEdges() {
@@ -547,171 +682,185 @@ function showEdges() {
 }
 
 function resetEdges() {
+    // 1. Reset the travel count for every road segment
     for (let i = 0; i < edges.length; i++) {
         edges[i].travels = 0;
-        // Note: we do NOT reset isDoubled here because that's 
-        // part of our "Master Plan" calculated in solveRES()
+        // Correct: isDoubled stays as-is (it's your map's "Master Plan")
     }
+
+    // 2. CRITICAL: Reset the counter that the Solver Engine watches
+    // We only count edges that have a physical distance (valid roads)
+    remainingedges = edges.filter(e => e.distance > 0).length;
+
+    // 3. Reset the starting point for the new attempt
+    currentnode = startnode;
 }
-function removeOrphans() { // remove unreachable nodes and edges
-	resetEdges();
-	currentnode = startnode;
-	floodfill(currentnode, 1); // recursively walk every unwalked route until all connected nodes have been reached at least once, then remove unwalked ones.
-	let newedges = [];
-	let newnodes = [];
-	totaledgedistance = 0;
-	for (let i = 0; i < edges.length; i++) {
-		if (edges[i].travels > 0) {
-			newedges.push(edges[i]);
-			totaledgedistance += edges[i].distance;
-			if (!newnodes.includes(edges[i].from)) {
-				newnodes.push(edges[i].from);
-			}
-			if (!newnodes.includes(edges[i].to)) {
-				newnodes.push(edges[i].to);
-			}
-		}
-	}
-	edges = newedges;
-	nodes = newnodes;
-	resetEdges();
+function removeOrphans() { 
+    // 1. SAFETY: If there's no start node, we can't define what an "orphan" is
+    if (!startnode) {
+        showMessage("Set a Start Node first!");
+        return;
+    }
+
+    showMessage("Cleaning map...");
+    resetEdges();
+    
+    // 2. MARK REACHABLE EDGES
+    // Start at your chosen point and "walk" everything connected to it
+    floodfill(startnode); 
+
+    let newedges = [];
+    let reachableNodesSet = new Set(); // Using a Set prevents duplicates automatically
+    totaledgedistance = 0;
+
+    // 3. FILTER
+    for (let i = 0; i < edges.length; i++) {
+        // If travels > 0, it means the floodfill reached this edge
+        if (edges[i].travels > 0) {
+            newedges.push(edges[i]);
+            totaledgedistance += edges[i].distance;
+            
+            // Add nodes to the Set (much faster than .includes)
+            reachableNodesSet.add(edges[i].from);
+            reachableNodesSet.add(edges[i].to);
+        }
+    }
+
+    // 4. APPLY CHANGES
+    edges = newedges;
+    nodes = Array.from(reachableNodesSet); // Convert Set back to array
+    
+    // 5. CLEAN UP
+    totaluniqueroads = edges.length;
+    totalRoadsDist = totaledgedistance; // Update your efficiency target
+    resetEdges(); 
+    
+    showMessage("Map Cleaned: " + edges.length + " roads remaining.");
 }
 
-function floodfill(node, stepssofar) {
-	for (let i = 0; i < node.edges.length; i++) {
-		if (node.edges[i].travels == 0) {
-			node.edges[i].travels = stepssofar;
-			floodfill(node.edges[i].OtherNodeofEdge(node), stepssofar + 1);
-		}
-	}
+function floodfill(startNode) {
+    // 1. Our "To-Do List" (Stack)
+    let stack = [startNode];
+
+    while (stack.length > 0) {
+        // Take the last node added to the list
+        let node = stack.pop();
+
+        for (let i = 0; i < node.edges.length; i++) {
+            let edge = node.edges[i];
+
+            // 2. If we haven't "walked" this road in the floodfill yet
+            if (edge.travels === 0) {
+                // Mark it as reached (using 1 is enough for the logic)
+                edge.travels = 1;
+
+                // 3. Find the node on the other side
+                let nextNode = edge.OtherNodeofEdge(node);
+                
+                // Add the next node to the list to explore its neighbors later
+                stack.push(nextNode);
+            }
+        }
+    }
 }
 
 function solveRES() {
     // 1. Initial Cleanup
-    // Ensure we are working with a clean, connected graph
+    if (!startnode) {
+        showMessage("Error: No start node selected.");
+        return;
+    }
+    
     removeOrphans();
     resetEdges();
     
     // 2. The Strategy (The "Genius" Math)
-    // Find odd nodes and calculate the shortest paths to pair them up
+    // This part assumes getOddDegreeNodes, buildOddNodeMatrix, and findPairs exist.
     let myOddNodes = getOddDegreeNodes(); 
     let myMatrix = buildOddNodeMatrix(myOddNodes); 
     let optimalPairs = findPairs(myOddNodes, myMatrix); 
-    applyDoublings(optimalPairs); // Marks edges as .isDoubled = true
+    applyDoublings(optimalPairs); 
 
-    // 3. UI and State Reset
-    showRoads = false; // Switch view to the solver's path
-    currentnode = startnode; 
+    // 3. UI and State
+    // We set the mode so draw() and handleSolverEngine() engage
+    setMode(solveRESmode); 
+    navMode = true; // Auto-start the engine immediately
     
-  // 4. Distance Synchronization & Road Counting
+    // 4. Distance Synchronization
     totalRoadsDist = 0;
     let validRoadsCount = 0;
 
     for (let e of edges) {
-        // DEBUG: Let's see what the first edge looks like if distance is 0
-        if (validRoadsCount === 0) console.log("Sample Edge Data:", e);
-
-        // Try every common name for distance just in case
-        let d = parseFloat(e.distance) || parseFloat(e.dist) || parseFloat(e.len) || 0;
+        // Ensure distance is a valid number
+        let d = parseFloat(e.distance) || 0;
         
         if (d > 0) {
-            totalRoadsDist += d; // Keep this as raw meters!
+            totalRoadsDist += d; 
             validRoadsCount++;
-            e.distance = d; // Force it to the correct property for the solver
         }
     }
 
-    // Set the "Finish Line" based on actual physical roads found
     remainingedges = validRoadsCount; 
     
-    // 5. Solver Variables Reset
-    // We initialize these to start a fresh search for the best circuit
+    // 5. Solver Initialization
+    currentnode = startnode;
     currentroute = new Route(currentnode, null);
-    bestroute = new Route(currentnode, null);
+    
+    // Reset best records
     bestdistance = Infinity;
+    bestroute = null; 
     iterations = 0;
     lastRecordTime = millis();
     
-    // Debugging logs to verify the numbers in the Console (F12)
-    console.log("--- SOLVER INITIALIZED ---");
-    console.log("Total Unique Distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
-    console.log("Physical Roads to Visit: " + remainingedges);
-    console.log("Start Node ID: " + (startnode ? startnode.nodeId : "NOT SET"));
+    console.log("--- SOLVER READY ---");
+    console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
 }
 function mousePressed() {
-  // 1. REPORT / DOWNLOAD MODE
-  if (mode === downloadGPXmode) {
-    let boxW = 400;
-    let boxH = 450;
-    let x = width / 2 - boxW / 2;
-    let y = height / 2 - boxH / 2;
+    // 1. UI OVERLAYS FIRST
+    // Check if the user clicked the Toolbar at the top
+    // (This logic is usually handled inside drawToolbar or a dedicated check)
+    if (mouseY < 60) return; 
 
-    let btnW = 300;
-    let btnH = 50;
-    let btnX = width / 2 - btnW / 2;
-    let btnY = y + 350;
+    // 2. ACTION BUTTON (Bottom Left)
+    // We check this BEFORE node/edge selection so clicking the button 
+    // doesn't accidentally pick a node behind it.
+    let btnW = 140;
+    let btnH = 40;
+    let btnX = 20;
+    let btnY = height - 60;
 
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-      generateAndDownloadGPX(bestroute);
-      return; 
-    }
-
-    if (mouseX < x || mouseX > x + boxW || mouseY < y || mouseY > y + boxH) {
-      mode = solveRESmode;
-      navMode = false;
-    }
-    return;
-  }
-
-  // 2. SELECT NODE MODE (Picking the start point after Ingest)
-  if (mode === selectnodemode) {
-    let closest = getClosestNode(mouseX, mouseY);
-    if (closest) {
-      startnode = closest;
-      currentnode = startnode;
-      console.log("Start Node set to: " + startnode.nodeId);
-      
-      // FIX: Initialize 'currentroute' using the 'Route' class instead of 'Hiker'
-      currentroute = new Route(startnode, null); 
-      
-      // Reset solving stats for a fresh run
-      iterations = 0;
-      bestdistance = Infinity;
-      
-      // Move to solver mode so the UI buttons become active
-      mode = solveRESmode;
-    }
-    return;
-  }
-
-  // 3. SOLVER MODE (Interacting with the UI buttons)
-  if (mode === solveRESmode) {
-    // Check if clicking the "START" button (Bottom Left UI)
-    if (mouseX > 20 && mouseX < 120 && mouseY > height - 60 && mouseY < height - 20) {
         if (startnode) {
-            navMode = !navMode;
-            if (navMode) {
-              // Ensure currentroute is ready before starting the engine
-              if (!currentroute) currentroute = new Route(startnode, null);
-              solveRES();
+            // Toggle logic: If running, stop. If stopped, start.
+            if (mode === solveRESmode && navMode) {
+                navMode = false;
+            } else {
+                solveRES(); // This function should call setMode(solveRESmode)
             }
         } else {
-            mode = selectnodemode;
-            alert("Please click a red node on the map to set your starting point.");
+            showMessage("Select a start node first!");
+        }
+        return; // "Consume" the click so it doesn't pass through to the map
+    }
+
+    // 3. SELECTION LOGIC
+    if (mode === selectnodemode) {
+        // Use the global variable updated by showNodes() for high performance
+        if (closestnodetomouse) {
+            startnode = closestnodetomouse;
+            currentnode = startnode;
+            currentroute = new Route(startnode, null);
+            showMessage("Start Node Set!");
+            console.log("Start Node:", startnode.nodeId);
         }
         return;
     }
-    
-    // Allow re-picking a node if the solver hasn't actually started running
-    if (!navMode) {
-      let closest = getClosestNode(mouseX, mouseY);
-      if (closest) {
-        startnode = closest;
-        currentnode = startnode;
-        currentroute = new Route(startnode, null); 
-      }
+
+    // 4. TRIMMING LOGIC
+    if (mode === trimmodemode) {
+        handleTrimming(mouseX, mouseY);
+        return;
     }
-  }
 }
 
 /**
@@ -719,8 +868,17 @@ function mousePressed() {
  * Adjust coordinates based on your specific UI placement
  */
 function isOverStartButton(mx, my) {
-  // Example: Button is at bottom center
-  return (mx > width/2 - 50 && mx < width/2 + 50 && my > height - 60 && my < height - 20);
+    // These must match the values in drawSolverToggleButton()
+    let btnW = 140;
+    let btnH = 40;
+    let btnX = 20; // Bottom-left position
+    let btnY = height - 60;
+
+    // 1. Check if mouse is inside the rectangle
+    let inside = (mx > btnX && mx < btnX + btnW && my > btnY && my < btnY + btnH);
+    
+    // 2. The button only "exists" logically if we have a start node
+    return inside && startnode != null;
 }
 
 /** * HELPER FUNCTIONS FOR CLEANER CODE
