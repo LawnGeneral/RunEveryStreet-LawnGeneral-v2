@@ -1626,18 +1626,34 @@ function downloadGPX() {
   document.body.removeChild(link);
 }
 function getOddDegreeNodes() {
-  let oddNodes = [];
-  
-  for (let i = 0; i < nodes.length; i++) {
-    // If the number of edges is 1, 3, 5, etc., it's an odd node
-    if (nodes[i].edges.length % 2 !== 0) {
-      oddNodes.push(nodes[i]);
+    let oddNodes = [];
+    let deg1 = 0;
+    let deg0 = 0;
+    let maxDeg = 0;
+
+    for (let i = 0; i < nodes.length; i++) {
+        const deg = nodes[i].edges ? nodes[i].edges.length : 0;
+
+        if (deg === 0) deg0++;
+        if (deg === 1) deg1++;
+        if (deg % 2 !== 0) oddNodes.push(nodes[i]);
+        if (deg > maxDeg) maxDeg = deg;
     }
-  }
-  
-  console.log("Step 1 Complete: Found " + oddNodes.length + " odd-degree nodes.");
-  return oddNodes;
+
+    console.log(
+        `Graph stats: nodes=${nodes.length}, edges=${edges.length}, oddNodes=${oddNodes.length}, deg1(deadEnds)=${deg1}, deg0(orphanNodes)=${deg0}, maxDeg=${maxDeg}`
+    );
+
+    // A quick “tree-ness” indicator:
+    // For a connected graph, edges ≈ nodes-1 means very tree-like (lots of forced repeats).
+    // More cycles -> edges >> nodes.
+    console.log(
+        `Cycle signal: edges - nodes + 1 = ${(edges.length - nodes.length + 1)} (higher => more loops, easier to get high efficiency)`
+    );
+
+    return oddNodes;
 }
+
 function dijkstra(startNode) {
     let distances = new Map();
     let parents = new Map(); // Track the way back
