@@ -225,14 +225,15 @@ function drawSolverStats() {
 /**
  * Encapsulated Solver Logic
  */
+
 function handleSolverEngine() {
-    // 1. SAFETY GUARD
+    // 1) SAFETY GUARD
     if (mode !== solveRESmode || !navMode) return;
     if (!currentnode || !currentroute || !startnode) return;
 
     // Helper: meters between two lat/lon points
     function metersBetween(lat1, lon1, lat2, lon2) {
-        const R = 6371000; // meters
+        const R = 6371000;
         const toRad = (d) => d * Math.PI / 180;
         const dLat = toRad(lat2 - lat1);
         const dLon = toRad(lon2 - lon1);
@@ -243,6 +244,16 @@ function handleSolverEngine() {
         return 2 * R * Math.asin(Math.sqrt(a));
     }
 
+    // Helper: truth-based remaining edge count
+    function recomputeRemainingEdges() {
+        let c = 0;
+        for (let i = 0; i < edges.length; i++) {
+            const e = edges[i];
+            if (e && e.distance > 0 && e.travels === 0) c++;
+        }
+        return c;
+    }
+
     // Dynamic Speed
     iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate()));
 
@@ -251,14 +262,15 @@ function handleSolverEngine() {
 
         if (!currentnode.edges || currentnode.edges.length === 0) break;
 
+        // Sort: prioritize edges with remaining capacity (unvisited first)
         currentnode.edges.sort((a, b) => {
             let capA = a.isDoubled ? 2 : 1;
             let capB = b.isDoubled ? 2 : 1;
 
-            let remainingA = capA - a.travels;
-            let remainingB = capB - b.travels;
+            let remA = capA - a.travels;
+            let remB = capB - b.travels;
 
-            if (remainingA !== remainingB) return remainingB - remainingA;
+            if (remA !== remB) return remB - remA;
             return Math.random() - 0.5;
         });
 
@@ -268,22 +280,20 @@ function handleSolverEngine() {
         let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
         if (!nextNode || nextNode.lat === undefined) break;
 
-        // PROGRESS TRACKING
-        if (chosenEdge.travels === 0) {
-            remainingedges--;
-        }
-
+        // Move
         let moveDist = chosenEdge.distance;
         chosenEdge.travels++;
 
-        // RECORDING
+        // Record waypoint
         let extraDist = (chosenEdge.travels > 1) ? moveDist : 0;
         currentroute.addWaypoint(nextNode, moveDist, extraDist);
         currentnode = nextNode;
 
-        // COMPLETION LOGIC
+        // ✅ CRITICAL: recompute remaining edges from truth each step
+        remainingedges = recomputeRemainingEdges();
+
+        // Completion logic (all edges visited at least once)
         if (remainingedges <= 0) {
-            // FIX: meter-based check to see if we're back near the start
             const distToHomeM = metersBetween(
                 currentnode.lat, currentnode.lon,
                 startnode.lat, startnode.lon
@@ -298,15 +308,19 @@ function handleSolverEngine() {
                     console.log("New Best Route: " + (bestdistance / 1000).toFixed(2) + "km");
                 }
 
-                // RESET CYCLE
-                resetEdges();
+                // Reset cycle
+                resetEdges(); // your resetEdges already zeros travels
                 currentnode = startnode;
-                remainingedges = edges.filter(e => e.distance > 0).length;
+
+                // recompute remaining edges for the next attempt
+                remainingedges = recomputeRemainingEdges();
+
                 currentroute = new Route(currentnode, null);
             }
         }
     }
 }
+
 
 
 /**
