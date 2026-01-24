@@ -123,28 +123,28 @@ function draw() {
     clear(); 
 
     // 1. RENDER MAP DATA
-    // We always draw roads if they exist so the user can see the network
     if (edges.length > 0 && showRoads) {
         showEdges();
     }
     
-    // FIX: Show nodes if we are selecting, trimming, OR if we have a start node 
-    // This ensures the green start dot stays visible during the solve.
-    if (mode === selectnodemode || mode === trimmodemode || startnode) {
-        showNodes();
+    // FIX: Only run full node detection/hover during selection mode.
+    // Once we have a start node, we switch to a simplified "highlight" 
+    // so the mouse stops hunting for new nodes.
+    if (mode === selectnodemode) {
+        showNodes(); // This calculates hovers and draws all red dots
+    } else if (startnode) {
+        drawStartNodeHighlight(); // Just draw the ONE green dot we picked
     }
 
     // 2. THE SOLVER ENGINE
-    // CRITICAL GUARD: Only run if mode is solve AND navMode (Start button) is toggled ON
     if (mode === solveRESmode && navMode) {
         handleSolverEngine();
     }
 
     // 3. THE PATHS
-    // Draws the rainbow "current" path and the white "best" path
     renderRouteGraphics();
 
-    // 4. THE INTERFACE (Always draw last so it's on top)
+    // 4. THE INTERFACE (Always draw last)
     renderUIOverlays();
 
     // 5. MODAL OVERLAYS
