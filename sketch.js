@@ -1561,28 +1561,24 @@ function getClosestNode(mx, my) {
     }
 }
 function triggerIngest() {
-    // 1. Start loading OSM data
+    // 1) Start loading OSM data
     getOverpassData();
 
-    // 2. Hide the ingest button panel
-    let panel = document.getElementById('ui-panel');
-    if (panel) {
-        panel.style.display = 'none';
-    }
+    // 2) Hide the ingest button panel
+    const panel = document.getElementById('ui-panel');
+    if (panel) panel.style.display = 'none';
 
-    // 3. Wake up canvas interaction (node selection / trimming)
-    canvas.elt.style.pointerEvents = 'auto';
+    // 3) IMPORTANT: use setMode so pointer-events are managed consistently
+    // This enables clicking on nodes (canvas active) without permanently breaking map interaction logic
+    setMode(selectnodemode);
 
-    // 4. Switch to node-selection mode
-    mode = selectnodemode;
-
-    // 5. CRITICAL: Force OpenLayers to re-measure the map size
-    // This fixes the right-side black area
+    // 4) Force OpenLayers to re-measure (safe to keep)
     openlayersmap.updateSize();
     setTimeout(() => openlayersmap.updateSize(), 0);
 
-    console.log("Ingest triggered, UI hidden, map resized.");
+    console.log("Ingest triggered: loading roads, switching to node selection.");
 }
+
 
 
 function handleTrimming() {
