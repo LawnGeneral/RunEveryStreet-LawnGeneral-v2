@@ -816,14 +816,10 @@ function solveRES() {
     console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
 }
 function mousePressed() {
-    // 1. UI OVERLAYS FIRST
-    // Check if the user clicked the Toolbar at the top
-    // (This logic is usually handled inside drawToolbar or a dedicated check)
+    // 1. UI GUARD: Don't click the map if clicking the top toolbar
     if (mouseY < 60) return; 
 
-    // 2. ACTION BUTTON (Bottom Left)
-    // We check this BEFORE node/edge selection so clicking the button 
-    // doesn't accidentally pick a node behind it.
+    // 2. ACTION BUTTON (Bottom Left - Start/Toggle Solver)
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
@@ -831,34 +827,47 @@ function mousePressed() {
 
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
         if (startnode) {
-            // Toggle logic: If running, stop. If stopped, start.
-            if (mode === solveRESmode && navMode) {
-                navMode = false;
+            if (mode === solveRESmode) {
+                // If already solving, this button toggles movement
+                navMode = !navMode;
+                showMessage(navMode ? "Solver Running..." : "Solver Paused");
             } else {
-                solveRES(); // This function should call setMode(solveRESmode)
+                // If not in solve mode yet, start the math and switch modes
+                solveRES(); 
             }
         } else {
-            showMessage("Select a start node first!");
+            showMessage("Click a red node to set Start first!");
         }
-        return; // "Consume" the click so it doesn't pass through to the map
+        return; 
     }
 
-    // 3. SELECTION LOGIC
+    // 3. SELECTION LOGIC (Setting the Start Node)
     if (mode === selectnodemode) {
-        // Use the global variable updated by showNodes() for high performance
-        if (closestnodetomouse) {
+        // Ensure closestnodetomouse is a valid object, not -1 or null
+        if (closestnodetomouse && closestnodetomouse !== -1) {
             startnode = closestnodetomouse;
             currentnode = startnode;
+            
+            // Create the initial route object
             currentroute = new Route(startnode, null);
-            showMessage("Start Node Set!");
-            console.log("Start Node:", startnode.nodeId);
+            
+            console.log("Start Node Set:", startnode.nodeId);
+            showMessage("Start Set! Now trim roads or click START.");
+            
+            // CRITICAL: Move to trim mode automatically so the user can edit
+            mode = trimmodemode; 
+        } else {
+            console.log("No node near click.");
         }
         return;
     }
 
-    // 4. TRIMMING LOGIC
+    // 4. TRIMMING LOGIC (Deleting unwanted roads)
     if (mode === trimmodemode) {
-        handleTrimming(mouseX, mouseY);
+        // We use the index found in showEdges()
+        if (closestedgetomouse !== -1) {
+            handleTrimming(); 
+        }
         return;
     }
 }
@@ -1484,4 +1493,27 @@ function triggerIngest() {
     
     // 4. Update the mode so getClosestNode is active
     mode = selectnodemode; 
+}
+function handleTrimming() {
+    // closestedgetomouse is the index found by showEdges()
+    if (closestedgetomouse >= 0 && closestedgetomouse < edges.length) {
+        
+        // 1. Remove the edge from the main array
+        // .splice returns an array, so we take the first [0] element
+        let removedEdge = edges.splice(closestedgetomouse, 1)[0];
+        
+        // 2. Add it to the Undo Stack so we can bring it back if we mess up
+        deletedEdgesStack.push(removedEdge);
+        
+        // 3. Update the total distance counters
+        totaledgedistance -= removedEdge.distance;
+        totalRoadsDist = totaledgedistance; 
+        totaluniqueroads = edges.length;
+
+        // 4. Reset the hover index so it doesn't "ghost" delete
+        closestedgetomouse = -1;
+        
+        console.log("Road removed. New total distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
+        showMessage("Road removed. Use Undo if needed.");
+    }
 }
