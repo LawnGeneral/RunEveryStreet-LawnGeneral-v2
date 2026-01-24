@@ -1645,3 +1645,12 @@ function applyInputMode() {
   // If pan/zoom mode, let events pass through canvas to the map
   canvas.elt.style.pointerEvents = mapPanZoomMode ? 'none' : 'auto';
 }
+function togglePanTrim() {
+  mapPanZoomMode = !mapPanZoomMode;
+  applyInputMode();
+
+  const btn = document.getElementById("mode-toggle");
+  if (btn) btn.textContent = mapPanZoomMode ? "MODE: PAN/ZOOM" : "MODE: TRIM/EDIT";
+
+  showMessage(mapPanZoomMode ? "Pan/Zoom enabled" : "Trim/Edit enabled");
+}
