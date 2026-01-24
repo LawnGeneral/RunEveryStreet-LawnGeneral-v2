@@ -4,8 +4,11 @@ class Edge {
         this.from = from_;
         this.to = to_;
         this.travels = 0;
-        this.isDoubled = false; // <--- THE MASTER PLAN PROPERTY
-        this.distance = calcdistance(this.from.lat, this.from.lon, this.to.lat, this.to.lon);
+        this.isDoubled = false; 
+
+        // calculate distance using the Haversine formula (meters)
+        this.distance = this.calculateRealDistance(this.from, this.to);
+
         if (!this.from.edges.includes(this)) {
             this.from.edges.push(this);
         }
@@ -14,51 +17,19 @@ class Edge {
         }
     }
 
-   show() {
-    let p1 = this.from ? this.from.getScreenPos() : null;
-    let p2 = this.to ? this.to.getScreenPos() : null;
-
-    // The Safety Shield: Only draw if BOTH points actually exist
-    if (p1 && p1.x !== undefined && p2 && p2.x !== undefined) {
-        push();
-        if (this.isDoubled) {
-            stroke(300, 255, 255, 0.9); 
-            strokeWeight(6); 
-        } else {
-            stroke(180, 255, 255, 0.8);
-            strokeWeight(min(10, (this.travels + 1) * 2));
-        }
-        line(p1.x, p1.y, p2.x, p2.y);
-        pop();
-    }
-}
-
-    highlight() {
-        let p1 = this.from.getScreenPos();
-        let p2 = this.to.getScreenPos();
-
-        if (p1 && p2) {
-            strokeWeight(8); 
-            stroke(20, 255, 255, 1);
-            line(p1.x, p1.y, p2.x, p2.y);
-        }
-    }
-
-    OtherNodeofEdge(node) {
-        if (node == this.from) {
-            return this.to;
-        } else {
-            return this.from;
-        }
-    }
-
-    distanceToPoint(x, y) {
-        let p1 = this.from.getScreenPos();
-        let p2 = this.to.getScreenPos();
+    // New helper method to ensure distance is NEVER zero
+    calculateRealDistance(nodeA, nodeB) {
+        const R = 6371000; // Radius of the Earth in meters
+        const dLat = (nodeB.lat - nodeA.lat) * Math.PI / 180;
+        const dLon = (nodeB.lon - nodeA.lon) * Math.PI / 180;
+        const a = 
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(nodeA.lat * Math.PI / 180) * Math.cos(nodeB.lat * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const d = R * c; 
         
-        if (p1 && p2) {
-            return dist(x, y, (p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
-        }
-        return Infinity;
+        return d > 0 ? d : 0.1; // Fallback to 0.1m so it's never exactly zero
     }
+    
+    // ... rest of your show() and highlight() methods ...
 }
