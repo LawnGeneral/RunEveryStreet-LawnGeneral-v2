@@ -1706,34 +1706,98 @@ function buildOddNodeMatrix(oddNodesList) {
     return matrix;
 }
 function findPairs(oddNodes, matrix) {
+    // --- 1) Greedy initial pairing (same spirit as your current version) ---
     let unmatched = new Set();
     for (let i = 0; i < oddNodes.length; i++) unmatched.add(i);
-    
-    let pairs = [];
+
+    let pairsIdx = []; // store pairs as indices [i, j]
 
     while (unmatched.size > 1) {
-        let i = unmatched.values().next().value; // Pick first available
+        let i = unmatched.values().next().value;
         unmatched.delete(i);
 
-        let closestDist = Infinity;
-        let closestJ = -1;
+        let bestJ = -1;
+        let bestCost = Infinity;
 
-        // Find the closest available partner
         for (let j of unmatched) {
-            if (matrix[i][j] < closestDist) {
-                closestDist = matrix[i][j];
-                closestJ = j;
+            let c = matrix[i][j];
+            if (c < bestCost) {
+                bestCost = c;
+                bestJ = j;
             }
         }
 
-        if (closestJ !== -1) {
-            pairs.push([oddNodes[i], oddNodes[closestJ]]);
-            unmatched.delete(closestJ);
+        if (bestJ !== -1) {
+            pairsIdx.push([i, bestJ]);
+            unmatched.delete(bestJ);
+        } else {
+            // Shouldn't happen, but safety
+            break;
         }
     }
-    console.log(`Step 3: Created ${pairs.length} optimal pairs for backtracking.`);
+
+    // --- Helper: total cost of current pairing ---
+    function totalCost(pairs) {
+        let sum = 0;
+        for (let k = 0; k < pairs.length; k++) {
+            const a = pairs[k][0], b = pairs[k][1];
+            sum += matrix[a][b];
+        }
+        return sum;
+    }
+
+    // --- 2) Local improvement by pair swapping ---
+    // Try to reduce cost by replacing (a-b) + (c-d) with either:
+    // (a-c) + (b-d) OR (a-d) + (b-c)
+    let improved = true;
+    let passes = 0;
+    const MAX_PASSES = 50; // keeps runtime bounded
+
+    while (improved && passes < MAX_PASSES) {
+        improved = false;
+        passes++;
+
+        for (let p = 0; p < pairsIdx.length; p++) {
+            for (let q = p + 1; q < pairsIdx.length; q++) {
+                const a = pairsIdx[p][0];
+                const b = pairsIdx[p][1];
+                const c = pairsIdx[q][0];
+                const d = pairsIdx[q][1];
+
+                const current = matrix[a][b] + matrix[c][d];
+
+                // Option 1: (a-c) + (b-d)
+                const swap1 = matrix[a][c] + matrix[b][d];
+
+                // Option 2: (a-d) + (b-c)
+                const swap2 = matrix[a][d] + matrix[b][c];
+
+                // If either improves, take the best improving swap
+                if (swap1 + 1e-9 < current || swap2 + 1e-9 < current) {
+                    if (swap1 <= swap2) {
+                        pairsIdx[p] = [a, c];
+                        pairsIdx[q] = [b, d];
+                    } else {
+                        pairsIdx[p] = [a, d];
+                        pairsIdx[q] = [b, c];
+                    }
+                    improved = true;
+                }
+            }
+        }
+    }
+
+    // --- 3) Convert index pairs back to node pairs ---
+    let pairs = pairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
+
+    // Useful logging so you can see if it helped
+    console.log(
+        `Pairing complete: ${pairs.length} pairs | passes=${passes} | pairCost=${totalCost(pairsIdx).toFixed(2)}`
+    );
+
     return pairs;
 }
+
 function applyDoublings(pairs) {
     totaledgedoublings = 0; // Notice: NO 'let' here. We are just resetting the existing variable.
     for (let e of edges) { e.isDoubled = false; }
