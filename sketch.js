@@ -1643,9 +1643,38 @@ function runOverpassQuery(overpassQuery, onSuccess, onFail) {
     .catch(onFail);
 }
 function applyInputMode() {
-  // If pan/zoom mode, let events pass through canvas to the map
+  // Safety: canvas may not exist yet very early
+  if (!canvas || !canvas.elt) return;
+
+  // 1) Route input: PAN lets map receive events; EDIT lets canvas receive events
   canvas.elt.style.pointerEvents = mapPanZoomMode ? 'none' : 'auto';
+
+  // 2) Force the correct p5 mode when entering EDIT
+  // If no start node yet, we MUST be in selectnodemode so hover+click works.
+  if (!mapPanZoomMode && !startnode) {
+    mode = selectnodemode;
+    showMessage("Click a red node to set Start");
+    redraw();
+    return;
+  }
+
+  // If we already have a start node, EDIT should go to trimming
+  if (!mapPanZoomMode && startnode) {
+    mode = trimmodemode;
+    showMessage("Trim mode: click a road to remove (Undo available)");
+    redraw();
+    return;
+  }
+
+  // 3) If we switched back to PAN/ZOOM, keep solver running modes untouched,
+  // otherwise default to browse/choose map mode
+  if (mapPanZoomMode) {
+    // Optional: if you want, you can force choosemapmode here
+    // mode = choosemapmode;
+    redraw();
+  }
 }
+
 function togglePanTrim() {
   mapPanZoomMode = !mapPanZoomMode;
   applyInputMode();
