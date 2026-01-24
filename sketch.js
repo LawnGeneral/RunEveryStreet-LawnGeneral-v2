@@ -497,118 +497,144 @@ function drawToolbar() {
     pop();
 }
 
-function getOverpassData() { 
+function getOverpassData() {
     showMessage("Loading map data...");
-    
-    // FIX: Keep canvas at (0,0) to maintain coordinate alignment with the map
-    canvas.position(0, 0); 
-    
+
+    // Keep canvas aligned with map
+    canvas.position(0, 0);
+
+    // Reset global state
     bestroute = null;
     totaledgedistance = 0;
-    showRoads = true;
+    totalRoadsDist = 0;
     totaluniqueroads = 0;
-    
-    // Clear old data to prevent "ghost roads" from previous zooms
+    showRoads = true;
+
     nodes = [];
     edges = [];
 
-    // 1. Get coordinates from OpenLayers
-    var extent = ol.proj.transformExtent(
-        openlayersmap.getView().calculateExtent(openlayersmap.getSize()), 
-        'EPSG:3857', 
+    // 1. Get current map bounds (EPSG:4326)
+    let extent = ol.proj.transformExtent(
+        openlayersmap.getView().calculateExtent(openlayersmap.getSize()),
+        'EPSG:3857',
         'EPSG:4326'
     );
-    
+
     mapminlat = extent[1];
     mapminlon = extent[0];
     mapmaxlat = extent[3];
     mapmaxlon = extent[2];
 
-    // Margin calculation
+    // Apply margin
     let latSize = mapmaxlat - mapminlat;
     let lonSize = mapmaxlon - mapminlon;
-    dataminlat = mapminlat + latSize * margin;
-    dataminlon = mapminlon + lonSize * margin;
-    datamaxlat = mapmaxlat - latSize * margin;
-    datamaxlon = mapmaxlon - lonSize * margin;
 
-    let OverpassURL = "https://overpass-api.de/api/interpreter?data=";
-    let overpassquery = `[out:xml][timeout:30];
+    let dataminlat = mapminlat + latSize * margin;
+    let dataminlon = mapminlon + lonSize * margin;
+    let datamaxlat = mapmaxlat - latSize * margin;
+    let datamaxlon = mapmaxlon - lonSize * margin;
+
+    // Safety guard against giant queries
+    let area = (datamaxlat - dataminlat) * (datamaxlon - dataminlon);
+    if (area > 0.02) {
+        showMessage("Zoom in more before loading roads");
+        setMode(choosemapmode);
+        return;
+    }
+
+    // 2. Build Overpass query (POST)
+    let overpassquery = `
+[out:xml][timeout:180];
 (
   way(${dataminlat},${dataminlon},${datamaxlat},${datamaxlon})
-  ["highway"]
-  ["name"]
-  ["highway"!~"^(bridleway|bus_guideway|bus_stop|busway|construction|corridor|cycleway|elevator|escape|footway|motorway|motorway_junction|motorway_link|path|platform|proposed|raceway|razed|rest_area|services|steps|via_ferrata)$"]
-  ["access"!~"^(no|customers|permit|private)$"]
-  ["indoor"!~"^(area|column|corridor|door|level|room|wall|yes)$"]
-  ["service"!~"^(drive-through|driveway|parking_aisle)$"]
-  ["foot"!~"no"]
-  ["area"!~"yes"]
-  ["motorroad"!~"yes"]
-  ["toll"!~"yes"];
+    ["highway"]
+    ["name"]
+    ["highway"!~"^(bridleway|bus_guideway|bus_stop|busway|construction|corridor|cycleway|elevator|escape|footway|motorway|motorway_junction|motorway_link|path|platform|proposed|raceway|razed|rest_area|services|steps|via_ferrata)$"]
+    ["access"!~"^(no|customers|permit|private)$"]
+    ["indoor"!~"^(area|column|corridor|door|level|room|wall|yes)$"]
+    ["service"!~"^(drive-through|driveway|parking_aisle)$"]
+    ["foot"!~"no"]
+    ["area"!~"yes"]
+    ["motorroad"!~"yes"]
+    ["toll"!~"yes"];
 );
 (._;>;);
-out;`;
+out;
+`;
 
-    let fullURL = OverpassURL + encodeURIComponent(overpassquery);
+    // 3. Execute Overpass query via POST
+    runOverpassQuery(
+        overpassquery,
+        function (responseText) {
+            let parser = new DOMParser();
+            OSMxml = parser.parseFromString(responseText, "text/xml");
 
-    httpGet(fullURL, 'text', true, function (response) {
-        var parser = new DOMParser();
-        OSMxml = parser.parseFromString(response, "text/xml");
-        var XMLnodes = OSMxml.getElementsByTagName("node");
-        var XMLways = OSMxml.getElementsByTagName("way");
+            let XMLnodes = OSMxml.getElementsByTagName("node");
+            let XMLways = OSMxml.getElementsByTagName("way");
 
-        if (XMLways.length === 0) {
-            showMessage("No named roads found. Zoom out!");
-            setTimeout(() => { setMode(choosemapmode); }, 3000);
-            return;
-        }
+            if (XMLways.length === 0) {
+                showMessage("No named roads found. Zoom in!");
+                setMode(choosemapmode);
+                return;
+            }
 
-        numnodes = XMLnodes.length;
-        numways = XMLways.length;
+            numnodes = XMLnodes.length;
+            numways = XMLways.length;
 
-        // Reset min/max for the current batch
-        minlat = Infinity; maxlat = -Infinity; minlon = Infinity; maxlon = -Infinity;
+            minlat = Infinity; maxlat = -Infinity;
+            minlon = Infinity; maxlon = -Infinity;
 
-        // Parse Nodes
-        for (let i = 0; i < numnodes; i++) {
-            let lat = parseFloat(XMLnodes[i].getAttribute('lat'));
-            let lon = parseFloat(XMLnodes[i].getAttribute('lon'));
-            let nodeid = XMLnodes[i].getAttribute('id');
-            
-            minlat = min(minlat, lat); maxlat = max(maxlat, lat);
-            minlon = min(minlon, lon); maxlon = max(maxlon, lon);
-            
-            nodes.push(new Node(nodeid, lat, lon));
-        }
+            // 4. Parse Nodes
+            for (let i = 0; i < numnodes; i++) {
+                let lat = parseFloat(XMLnodes[i].getAttribute("lat"));
+                let lon = parseFloat(XMLnodes[i].getAttribute("lon"));
+                let id  = XMLnodes[i].getAttribute("id");
 
-        // Parse Ways into Edges
-        for (let i = 0; i < numways; i++) {
-            let wayid = XMLways[i].getAttribute('id');
-            let nodesinsideway = XMLways[i].getElementsByTagName('nd');
-            for (let j = 0; j < nodesinsideway.length - 1; j++) {
-                let fromnode = getNodebyId(nodesinsideway[j].getAttribute("ref"));
-                let tonode = getNodebyId(nodesinsideway[j + 1].getAttribute("ref"));
-                if (fromnode && tonode) {
-                    let newEdge = new Edge(fromnode, tonode, wayid);
-                    edges.push(newEdge);
-                    totaledgedistance += newEdge.distance;
+                minlat = min(minlat, lat);
+                maxlat = max(maxlat, lat);
+                minlon = min(minlon, lon);
+                maxlon = max(maxlon, lon);
+
+                nodes.push(new Node(id, lat, lon));
+            }
+
+            // 5. Parse Ways → Edges
+            for (let i = 0; i < numways; i++) {
+                let wayid = XMLways[i].getAttribute("id");
+                let nds = XMLways[i].getElementsByTagName("nd");
+
+                for (let j = 0; j < nds.length - 1; j++) {
+                    let from = getNodebyId(nds[j].getAttribute("ref"));
+                    let to   = getNodebyId(nds[j + 1].getAttribute("ref"));
+
+                    if (from && to) {
+                        let edge = new Edge(from, to, wayid);
+                        edges.push(edge);
+                        totaledgedistance += edge.distance;
+                    }
                 }
             }
-        }
 
-        // Use our new setMode function to wake up the canvas
-        totaluniqueroads = edges.length;
-        totalRoadsDist = totaledgedistance; // Store the target for efficiency math
-        setMode(selectnodemode); 
-        showMessage("Click a red node to set Start");
-        
-    }, function (err) {
-        console.error("Overpass failed:", err);
-        showMessage("Retry loading data...");
-        setMode(choosemapmode);
-    });
+            totalRoadsDist = totaledgedistance;
+            totaluniqueroads = edges.length;
+
+            // 6. Wake up UI
+            setMode(selectnodemode);
+            showMessage("Click a red node to set Start");
+
+            // Force immediate draw (prevents “roads appear only after zoom”)
+            redraw();
+
+            console.log(`Loaded ${edges.length} road segments`);
+        },
+        function (err) {
+            console.error("Overpass failed:", err);
+            showMessage("Overpass failed (try smaller area).");
+            setMode(choosemapmode);
+        }
+    );
 }
+
 
 function showNodes() {
     if (!nodes || nodes.length === 0) return;
@@ -1567,4 +1593,21 @@ function getScreenPosition(node) {
         x: pixel[0],
         y: pixel[1]
     };
+}
+function runOverpassQuery(overpassQuery, onSuccess, onFail) {
+    fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        body: "data=" + encodeURIComponent(overpassQuery)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`Overpass HTTP ${response.status}`);
+        }
+        return response.text();
+    })
+    .then(onSuccess)
+    .catch(onFail);
 }
