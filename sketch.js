@@ -70,7 +70,7 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-    // 1) Geolocation Logic (optional but nice)
+    // 1) Optional geolocation centering
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             function (position) {
@@ -91,36 +91,40 @@ function setup() {
         );
     }
 
-    // 2) Canvas sized to EXACTLY match the map area (below the header)
-    // Make sure you have: const HEADER_H = 40;  (matches your .header-bar height)
+    // 2) Create p5 canvas to EXACTLY match map area (below header)
+    // Make sure HEADER_H === header height (40 in your case)
     canvas = createCanvas(windowWidth, windowHeight - HEADER_H);
     canvas.position(0, HEADER_H);
-
-    // Let the map receive mouse events by default (Zoom/Pan mode)
     canvas.elt.style.pointerEvents = 'none';
 
     colorMode(HSB);
-
-    // If you're using redraw() calls, it's best to stop the continuous loop
     noLoop();
 
-    // 3) Application State
+    // 3) Initial app state
     mode = choosemapmode;
     iterationsperframe = 1;
     margin = 0.05;
 
-    // 4) Redraw whenever the OpenLayers map renders/moves
+    // 4) Redraw canvas whenever OpenLayers renders
     openlayersmap.on('postrender', function () {
         redraw();
     });
 
-    // 5) CRITICAL: Force OpenLayers to correctly size the map container.
-    // This fixes the "map only draws on the left, black area on the right" issue.
+    // 5) HARD-FORCE map div size (fixes 400px-wide bug)
+    const mapEl = document.getElementById('map');
+    if (mapEl) {
+        mapEl.style.width = window.innerWidth + "px";
+        mapEl.style.height = (window.innerHeight - HEADER_H) + "px";
+    }
+
+    // 6) Force OpenLayers to re-measure after layout settles
     openlayersmap.updateSize();
     setTimeout(() => openlayersmap.updateSize(), 0);
+    setTimeout(() => openlayersmap.updateSize(), 250);
 
-    console.log("Setup complete. Canvas + map aligned and map size updated.");
+    console.log("Setup complete: map + canvas sizes forced.");
 }
+
 
 
 function setMode(newMode) {
@@ -1248,10 +1252,21 @@ function showStatus() {
 	}
 }
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight - HEADER_H);
-  canvas.position(0, HEADER_H);
-  openlayersmap.updateSize();
+    // Resize p5 canvas
+    resizeCanvas(windowWidth, windowHeight - HEADER_H);
+    canvas.position(0, HEADER_H);
+
+    // Force map div size again
+    const mapEl = document.getElementById('map');
+    if (mapEl) {
+        mapEl.style.width = window.innerWidth + "px";
+        mapEl.style.height = (window.innerHeight - HEADER_H) + "px";
+    }
+
+    // Tell OpenLayers to re-measure
+    openlayersmap.updateSize();
 }
+
 
 // Add this to the very end of sketch.js
 
