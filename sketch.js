@@ -899,7 +899,7 @@ function mousePressed() {
     // 1) UI GUARD: Don't click through the top toolbar area
     if (mouseY < 60) return;
 
-    // 2) START/STOP BUTTON (Bottom Left) — should work in ANY mode
+    // 2) START/STOP BUTTON (Bottom Left) — works in ANY mode
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
@@ -911,28 +911,42 @@ function mousePressed() {
             return;
         }
 
-        // If solver already initialized, this toggles running/paused
-        if (mode === solveRESmode && currentroute && currentnode && remainingedges !== undefined) {
-            navMode = !navMode;
+        // --- STOP SOLVER: switch to summary modal (NO auto-download) ---
+        if (navMode === true) {
+            navMode = false;
+            solverRunning = false;
 
-            if (navMode) {
-                showMessage("Solver Running...");
-                loop();
-            } else {
-                showMessage("Solver Paused");
-                noLoop();
-                redraw();
-            }
+            // Pause rendering/CPU
+            noLoop();
 
+            // Show export/summary modal
+            mode = downloadGPXmode;
+            showMessage("Solver Paused — review & export when ready.");
+
+            // Force one redraw so the modal appears immediately
+            redraw();
+            openlayersmap.render();
             return;
         }
 
-        // Otherwise, initialize and start solver
-        navMode = true;
-        mode = solveRESmode;
-        solveRES();   // solveRES() will call loop()
-        showMessage("Solver Running...");
-        return;
+        // --- START / RESUME SOLVER ---
+        // If we've never initialized the solver, initialize it.
+        // If we were paused in solve mode, just resume.
+        if (mode !== solveRESmode || !currentroute || !currentnode || remainingedges === undefined) {
+            navMode = true;
+            solverRunning = true;
+            mode = solveRESmode;
+            solveRES(); // solveRES() should call loop()
+            showMessage("Solver Running...");
+            return;
+        } else {
+            navMode = true;
+            solverRunning = true;
+            mode = solveRESmode;
+            showMessage("Solver Running...");
+            loop();
+            return;
+        }
     }
 
     // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
@@ -1040,9 +1054,9 @@ function mousePressed() {
 
         return;
     }
+
+    // 6) If the modal is up, clicks are handled in showReportOut() (button)
 }
-
-
 
 
 
