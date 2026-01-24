@@ -1,4 +1,5 @@
 let currentroute;
+let totalRoadsDist = 0; 
 let totaledgedoublings = 0;
 let lastRecordTime = 0; 
 let autoStopThreshold = 60000; // 60 seconds
@@ -99,31 +100,83 @@ function setup() {
 	});
 }
 function draw() {
+    // Detect if the user is on a touch device
     if (touches.length > 0) isTouchScreenDevice = true;
+
+    // Standard p5.js cleanup
     clear();
     drawMask();
 
-    // Skip all map logic if we are still on the "Choose Map" screen
+    // 1. SCENE MANAGEMENT: Skip map logic if we are still choosing a map
     if (mode === choosemapmode) return;
 
-    // --- BASE MAP RENDERING ---
+    // 2. BASE MAP RENDERING
+    // We only show the blue roads if the solver isn't running (to keep the screen clean)
     if (showRoads) showEdges();
     if (!navMode) showNodes();
 
-    // --- 1. SOLVER ENGINE ---
+    // 3. THE ENGINE: Run the solver logic if in Solve mode
     if (mode === solveRESmode) {
         handleSolverEngine();
     }
 
-    // --- 2. ROUTE VISUALIZATION ---
+    // 4. VISUALIZATION: Draw the hiker's current path and the best found path
     renderRouteGraphics();
 
-    // --- 3. UI OVERLAYS & REPORTS ---
+    // 5. REPORTING: Show the "Success" screen if the user is downloading the GPX
     if (mode === downloadGPXmode) {
         showReportOut();
     }
 
+    // 6. STANDARD UI: Buttons, zoom levels, and general labels
     renderUIOverlays();
+
+    // 7. SOLVER STATS OVERLAY (Step 2 Logic)
+    // This only displays when the solver is actually working
+    if (mode === solveRESmode) {
+        drawSolverStats();
+    }
+}
+
+/**
+ * Helper function to keep the draw() loop clean.
+ * This draws the black box with real-time efficiency data.
+ */
+function drawSolverStats() {
+    push();
+    resetMatrix(); // Prevents the UI from moving when you pan/zoom the map
+    
+    // Background Box
+    fill(0, 0, 0, 180); 
+    noStroke();
+    rect(15, 15, 260, 130, 12); 
+
+    fill(255);
+    textSize(15);
+    textAlign(LEFT, TOP);
+    textFont('monospace'); // Use a fixed-width font for clean alignment
+
+    // Calculation: (Total Map Distance / Best Hiker Distance)
+    // If bestdistance is Infinity, efficiency is 0.
+    let efficiency = (bestdistance === Infinity) ? 0 : (totalRoadsDist / bestdistance) * 100;
+
+    text(`ITERATIONS  : ${iterations}`, 30, 35);
+    text(`TO VISIT    : ${remainingedges} roads`, 30, 55);
+    
+    let kmDisplay = (bestdistance === Infinity) ? "0.00" : (bestdistance / 1000).toFixed(2);
+    text(`BEST ROUTE  : ${kmDisplay} km`, 30, 75);
+
+    // Color code the efficiency for feedback
+    // >85% is excellent (Green), >70% is okay (Yellow), <70% needs work (Red)
+    if (efficiency > 85) fill(0, 255, 120); 
+    else if (efficiency > 70) fill(255, 230, 0);
+    else fill(255, 100, 100);
+
+    textSize(18);
+    textStyle(BOLD);
+    text(`EFFICIENCY  : ${efficiency.toFixed(1)}%`, 30, 105);
+    
+    pop();
 }
 
 /**
@@ -135,16 +188,20 @@ function handleSolverEngine() {
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
 
-        // 1. SORTING
-        currentnode.edges.sort((a, b) => {
-            let capA = a.isDoubled ? 2 : 1;
-            let capB = b.isDoubled ? 2 : 1;
-            let remainingA = capA - a.travels;
-            let remainingB = capB - b.travels;
+       // 1. SORTING: Decides which way to turn
+currentnode.edges.sort((a, b) => {
+    let capA = a.isDoubled ? 2 : 1;
+    let capB = b.isDoubled ? 2 : 1;
+    let remainingA = capA - a.travels;
+    let remainingB = capB - b.travels;
 
-            if (remainingA !== remainingB) return remainingB - remainingA; 
-            return a.travels - b.travels;
-        });
+    // Priority 1: Take roads we haven't finished yet
+    if (remainingA !== remainingB) return remainingB - remainingA; 
+    
+    // Priority 2: If both are "fresh" or both are "done", pick randomly
+    // This is the "Engine" that explores new possibilities!
+    return Math.random() - 0.5; 
+});
 
         let chosenEdge = currentnode.edges[0];
         // SAFETY: If a node has no edges, we can't move. Stop this iteration.
@@ -474,28 +531,42 @@ function floodfill(node, stepssofar) {
 }
 
 function solveRES() {
+    // 1. Initial Cleanup
     removeOrphans();
     resetEdges();
     
-    // --- STEP 1-3: The Strategy ---
+    // 2. The Strategy (The "Genius" Math)
+    // This identifies the odd nodes and decides which roads to double
     let myOddNodes = getOddDegreeNodes(); 
     let myMatrix = buildOddNodeMatrix(myOddNodes); 
     let optimalPairs = findPairs(myOddNodes, myMatrix); 
-    applyDoublings(optimalPairs);
+    applyDoublings(optimalPairs); // This marks edges with .isDoubled = true
 
-    // --- STEP 4: The Sync ---
-    showRoads = false;
-    currentnode = startnode;
+    // 3. UI and State Reset
+    showRoads = false; // Hide the blue lines to show the solver trail
+    currentnode = startnode; 
     
-    // CHANGE THIS: Only count physical roads. 
-    // The "Doubled" roads are handled by the sorting logic, not the counter.
+    // 4. Distance Synchronization
+    // Calculate total unique distance ONCE for the efficiency UI
+    totalRoadsDist = 0;
+    for (let e of edges) {
+        totalRoadsDist += e.distance;
+    }
+
+    // IMPORTANT: The counter only tracks the first time we hit a road.
+    // It must match the number of physical roads, not the doubled ones.
     remainingedges = edges.length; 
     
+    // 5. Solver Variables Reset
     currentroute = new Route(currentnode, null);
     bestroute = new Route(currentnode, null);
     bestdistance = Infinity;
     iterations = 0;
     lastRecordTime = millis();
+    
+    console.log("Solver Initialized:");
+    console.log("- Total Unique Distance: " + (totalRoadsDist/1000).toFixed(2) + " km");
+    console.log("- Physical Roads to visit: " + remainingedges);
 }
 function mousePressed() {
   // Ensure the canvas can catch clicks unless we are explicitly in Navigation (Pan/Zoom) mode
