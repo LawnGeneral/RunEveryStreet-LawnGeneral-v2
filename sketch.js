@@ -489,37 +489,45 @@ function showNodes() {
     let currentClosestIndex = -1;
 
     for (let i = 0; i < nodes.length; i++) {
-        let pos = nodes[i].getScreenPos();
+        let n = nodes[i];
         
-        // Skip nodes that are off-screen or invalid
-        if (!pos || pos.x === -1000) continue;
+        // Use your Node's logic to get the screen position
+        // If your Node object doesn't have getScreenPos, we do the math here:
+        const coords = ol.proj.fromLonLat([parseFloat(n.lon), parseFloat(n.lat)]);
+        const pix = openlayersmap.getPixelFromCoordinate(coords);
+        
+        if (!pix) continue;
 
-        // 1. DRAW the node
+        let x = pix[0];
+        let y = pix[1];
+
+        // 1. DRAW the node (Red dots)
         if (showRoads) {
-            nodes[i].show();
+            fill(255, 0, 0);
+            noStroke();
+            ellipse(x, y, 5, 5);
         }
         
-        // 2. LOGIC for hover-selection
+        // 2. HOVER LOGIC
         if (mode === selectnodemode) {
-            let disttoMouse = dist(pos.x, pos.y, mouseX, mouseY);
-            if (disttoMouse < closestnodetomousedist) {
-                closestnodetomousedist = disttoMouse;
+            let distToMouse = dist(x, y, mouseX, mouseY);
+            if (distToMouse < closestnodetomousedist) {
+                closestnodetomousedist = distToMouse;
                 currentClosestIndex = i;
             }
         }
     }
     
-    // 3. VISUAL FEEDBACK: 
-    // Highlight the node the mouse is currently hovering over (within 30px)
-    if (mode === selectnodemode && currentClosestIndex !== -1 && closestnodetomousedist < 30) {
-        nodes[currentClosestIndex].highlight(); 
-        // Note: We don't set startnode here anymore. 
-        // We wait for the mousePressed function to lock it in.
-    }
-    
-    // 4. DRAW THE SELECTED START NODE (Green)
-    if (startnode != null) {
-        startnode.highlight(); // Ensure your highlight function uses a distinct color (like Green)
+    // 3. DRAW THE START NODE (Green)
+    if (startnode) {
+        const sCoords = ol.proj.fromLonLat([parseFloat(startnode.lon), parseFloat(startnode.lat)]);
+        const sPix = openlayersmap.getPixelFromCoordinate(sCoords);
+        if (sPix) {
+            fill(0, 255, 0); // Green
+            stroke(255);
+            strokeWeight(2);
+            ellipse(sPix[0], sPix[1], 15, 15);
+        }
     }
 }
 
