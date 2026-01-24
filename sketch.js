@@ -724,19 +724,36 @@ function showEdges() {
 
 
 function resetEdges() {
-    // 1. Reset the travel count for every road segment
-    for (let i = 0; i < edges.length; i++) {
-        edges[i].travels = 0;
-        // Correct: isDoubled stays as-is (it's your map's "Master Plan")
+    // 0) Ensure every node has a clean adjacency list
+    for (let i = 0; i < nodes.length; i++) {
+        nodes[i].edges = [];
     }
 
-    // 2. CRITICAL: Reset the counter that the Solver Engine watches
-    // We only count edges that have a physical distance (valid roads)
-    remainingedges = edges.filter(e => e.distance > 0).length;
+    // 1) Rebuild adjacency from the master edges list
+    for (let i = 0; i < edges.length; i++) {
+        let e = edges[i];
 
-    // 3. Reset the starting point for the new attempt
+        // Guard: skip broken edges
+        if (!e || !e.from || !e.to) continue;
+
+        // Ensure node.edges exists
+        if (!Array.isArray(e.from.edges)) e.from.edges = [];
+        if (!Array.isArray(e.to.edges)) e.to.edges = [];
+
+        e.from.edges.push(e);
+        e.to.edges.push(e);
+
+        // Reset solver counter
+        e.travels = 0;
+    }
+
+    // 2) Reset remaining edge count
+    remainingedges = edges.filter(e => e && e.distance > 0).length;
+
+    // 3) Reset the current position
     currentnode = startnode;
 }
+
 function removeOrphans() { 
     // 1. SAFETY: If there's no start node, we can't define what an "orphan" is
     if (!startnode) {
