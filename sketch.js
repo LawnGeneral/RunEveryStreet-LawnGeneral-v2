@@ -1,17 +1,15 @@
-let solverRunning = false;   // replaces navMode for solver logic
+
 let mapInteractive = true;  // controls whether map receives mouse events
 const HEADER_H = 40; // height of your top bar/logo area
 let mapInteractionMode = true; // true = MAP pan/zoom, false = EDIT (canvas clicks)
 let mapPanZoomMode = true; // true = pan/zoom map, false = edit/trim on canvas
-
 let currentroute = null;
 let totalRoadsDist = 0; 
 let totaledgedoublings = 0;
-let lastRecordTime = 0; 
-let autoStopThreshold = 60000; // 60 seconds
 let navMode = false; // TRUE = Solver Active, FALSE = Prep Mode
 var deletedEdgesStack = [];
-
+var remainingedges;
+var bestdistance = Infinity;
 // Map Initialization
 var openlayersmap = new ol.Map({
     target: 'map',
@@ -51,9 +49,7 @@ var selectnodemode = 1,
     downloadGPXmode = 5;
 
 var mode = choosemapmode; // START in Zoom/Pan mode
-var remainingedges;
 var debugsteps = 0;
-var bestdistance = Infinity; // Essential for the solver to record the first path
 var bestroute = null;
 var bestarea;
 var bestdoublingsup;
@@ -163,10 +159,7 @@ function draw() {
     renderUIOverlays();
 
     // 6. MODAL OVERLAYS
-    if (mode === solveRESmode) {
-        drawSolverStats();
-    }
-
+ 
     if (mode === downloadGPXmode) {
         showReportOut();
     }
@@ -250,45 +243,37 @@ function renderRouteGraphics() {
  * Handles Stats Boxes and Toolbars
  */
 function renderUIOverlays() {
-    // 1. ALWAYS DRAW THE TOOLBAR
-    // This ensures your 1. Zoom, 2. Set Start, and 3. Trim buttons never vanish.
+    // 1) ALWAYS DRAW THE TOOLBAR (mode toggle, undo, etc.)
     drawToolbar();
 
-    // 2. SOLVER ACTIVE STATS
-    if (mode === solveRESmode && bestdistance !== Infinity) {
-        let timeLeft = ceil((autoStopThreshold - (millis() - lastRecordTime)) / 1000);
-        
-        // Use totalRoadsDist for efficiency if that's your "100%" goal
-        let efficiency = (totalRoadsDist / bestdistance * 100).toFixed(1);
-
-        drawStatsBox(
-            "SOLVER ACTIVE", 
-            `Best Dist: ${(bestdistance / 1000).toFixed(2)}km`, 
-            `Efficiency: ${efficiency}%`,
-            `Auto-stop in: ${max(0, timeLeft)}s`
-        );
-    }
-
-    // 3. TRIMMING / SELECTION STATS
-    // FIX: Using 'trimmodemode' to match your global variable list
+    // 2) MAP PREPARATION STATS (Selection / Trimming)
     if (mode === trimmodemode || mode === selectnodemode) {
         let liveDist = getLiveTotalDistance();
-        let displayDist = liveDist > 1000 ? (liveDist / 1000).toFixed(2) + "km" : liveDist.toFixed(0) + "m";
-        
+        let displayDist = liveDist > 1000
+            ? (liveDist / 1000).toFixed(2) + "km"
+            : liveDist.toFixed(0) + "m";
+
         drawStatsBox(
-            "MAP PREPARATION", 
-            `Total Road: ${displayDist}`, 
-            mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE", 
+            "MAP PREPARATION",
+            `Total Road: ${displayDist}`,
+            mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE",
             ""
         );
     }
 
-    // 4. ACTION BUTTON (Bottom Left)
-    // Only shows once a start node is picked, preventing accidental engine starts
-    if (startnode) {
+    // 3) ROUTE READY / EXPORT FLOW
+    // If a route exists (bestroute built), show a "STOP SOLVER" button
+    // that opens the summary/export modal. (No solver is actually running.)
+    if (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) {
+        drawSolverToggleButton(); // This button should open summary mode in mousePressed()
+    }
+    // If no route yet, but a start node is selected, still show the action button
+    // so the user can build the route.
+    else if (startnode) {
         drawSolverToggleButton();
     }
 }
+
 
 // Helper to draw the Start/Stop button at the bottom
 function drawSolverToggleButton() {
