@@ -17,14 +17,13 @@ class Node {
     const pix = openlayersmap.getPixelFromCoordinate(coords);
     
     if (pix) {
-        // Shift the Y coordinate up to account for the header height
-        // Adjust '- 40' if your shift is slightly different
-        return { x: pix[0], y: pix[1] - 40 }; 
+        // No more math! Because the canvas is 0,0 and full window,
+        // we use the exact pixel the map provides.
+        return { x: pix[0], y: pix[1] }; 
     }
     return { x: -1000, y: -1000 }; 
 }
-
-  show() {
+  how() {
     let pos = this.getScreenPos();
     if (pos) {
       noStroke();
