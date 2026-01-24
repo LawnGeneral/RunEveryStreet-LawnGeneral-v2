@@ -30,23 +30,29 @@ class Edge {
     }
 
     show() {
-        let p1 = this.from ? this.from.getScreenPos() : null;
-        let p2 = this.to ? this.to.getScreenPos() : null;
+    let p1 = this.from ? this.from.getScreenPos() : null;
+    let p2 = this.to ? this.to.getScreenPos() : null;
 
-        if (p1 && p1.x !== undefined && p2 && p2.x !== undefined) {
-            push();
-            colorMode(HSB); // Ensure we are in HSB for the stroke colors
-            if (this.isDoubled) {
-                stroke(300, 255, 255, 0.9); // Purple/Magenta
-                strokeWeight(6); 
-            } else {
-                stroke(180, 255, 255, 0.8); // Cyan
-                strokeWeight(min(10, (this.travels + 1) * 2));
-            }
-            line(p1.x, p1.y, p2.x, p2.y);
-            pop();
+    if (p1 && p1.x !== undefined && p2 && p2.x !== undefined) {
+        push();
+        // 1. Switch back to RGB for standard colors
+        colorMode(RGB); 
+
+        if (this.isDoubled) {
+            // Hot Pink/Magenta for doubled lines
+            stroke(255, 0, 255, 180); 
+            strokeWeight(6); 
+        } else {
+            // 2. Yellow (255 Red, 255 Green) for standard roads
+            stroke(255, 255, 0, 150); 
+            // Scales thickness based on how many times the hiker walked it
+            strokeWeight(min(10, (this.travels + 1) * 2));
         }
+        
+        line(p1.x, p1.y, p2.x, p2.y);
+        pop();
     }
+}
 
     highlight() {
         let p1 = this.from ? this.from.getScreenPos() : null;
