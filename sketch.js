@@ -607,72 +607,56 @@ out;`;
 function showNodes() {
     if (!nodes || nodes.length === 0) return;
 
-    // 1. Setup
-    closestnodetomouse = -1;
-    let closestDist = 15; // Tightened from 20 to 15 to prevent "swarming"
-    let winningNode = null;
-    let winningPix = null;
-
-    push();
-    colorMode(RGB);
-
-    // 2. DRAW START NODE (Green) 
+    // 1. Always Draw the Green Start Node if it exists
     if (startnode) {
         const sPix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([startnode.lon, startnode.lat]));
         if (sPix) {
-            fill(0, 255, 0); 
-            stroke(255);
-            strokeWeight(2);
+            push();
+            fill(0, 255, 0); stroke(255); strokeWeight(2);
             ellipse(sPix[0], sPix[1], 15, 15);
+            pop();
         }
     }
 
-    // 3. DRAW REGULAR NODES & FIND WINNER
-    // We only do this in selection mode to stop the "sticky" behavior in other modes
-    if (mode === selectnodemode) {
+    // 2. Decide if we should show the rest of the network
+    // We want nodes visible during Selection AND Trimming
+    if (mode === selectnodemode || mode === trimmodemode) {
+        let winner = null;
+        let winnerPix = null;
+        let closestDist = 15;
+
+        push();
         for (let i = 0; i < nodes.length; i++) {
             let n = nodes[i];
             const pix = openlayersmap.getPixelFromCoordinate(ol.proj.fromLonLat([n.lon, n.lat]));
-            if (!pix) continue;
+            if (!pix || pix[0] < 0 || pix[0] > width || pix[1] < 0 || pix[1] > height) continue;
 
-            let x = pix[0];
-            let y = pix[1];
-
-            // Only process nodes on screen
-            if (x < 0 || x > width || y < 0 || y > height) continue;
-
-            // Draw the basic red dot
-            fill(255, 0, 0, 100); 
+            // DRAW: Standard small red dots so you can see the intersections
+            fill(255, 0, 0, 80); // Faint red so they don't clutter the trim view
             noStroke();
-            ellipse(x, y, 6, 6);
+            ellipse(pix[0], pix[1], 5, 5);
             
-            // HOVER LOGIC: Find the single closest node
-            let d = dist(x, y, mouseX, mouseY);
-            if (d < closestDist) {
-                closestDist = d; // New "high score" to beat
-                winningNode = n; // This is our current champion
-                winningPix = [x, y];
+            // LOGIC: Only calculate hovers if we are still SELECTING the start
+            if (mode === selectnodemode) {
+                let d = dist(pix[0], pix[1], mouseX, mouseY);
+                if (d < closestDist) {
+                    closestDist = d;
+                    winner = n;
+                    winnerPix = pix;
+                }
             }
         }
-    }
 
-    // 4. DRAW ONLY ONE HIGHLIGHT (The Winner)
-    if (winningNode && winningPix) {
-        closestnodetomouse = winningNode; 
-        
-        noFill();
-        stroke(255, 255, 0); // Yellow
-        strokeWeight(3);
-        ellipse(winningPix[0], winningPix[1], 14, 14);
-        
-        // Optional: Add a label so you know what you're clicking
-        fill(255);
-        noStroke();
-        textSize(10);
-        text("Set Start", winningPix[0] + 10, winningPix[1]);
+        // 3. Draw the Hover Highlight only if we found a winner
+        if (winner && winnerPix) {
+            closestnodetomouse = winner; 
+            noFill();
+            stroke(255, 255, 0);
+            strokeWeight(3);
+            ellipse(winnerPix[0], winnerPix[1], 14, 14);
+        }
+        pop();
     }
-
-    pop();
 }
 
 function showEdges() {
