@@ -1,69 +1,94 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta http-equiv="X-UA-Compatible" content="IE=edge">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
 
-	<title>RunEveryStreet</title>
+    <title>RunEveryStreet</title>
 
-	<script src="libraries/p5.js"></script>
-	<script src="libraries/p5.dom.js"></script>
-	<script src="libraries/p5.sound.js"></script>
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/css/ol.css" type="text/css">
-	<!--script src="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/build/ol.js"></script>-->
-	<script src="https://cdn.jsdelivr.net/npm/ol@v7.1.0/dist/ol.js"></script>
+    <script src="libraries/p5.js"></script>
+    <script src="libraries/p5.dom.js"></script>
+    <script src="libraries/p5.sound.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/openlayers/openlayers.github.io@master/en/v6.3.1/css/ol.css" type="text/css">
+    <script src="https://cdn.jsdelivr.net/npm/ol@v7.1.0/dist/ol.js"></script>
+
     <style>
-      .map {
-        height: 100%;
-        width: 100%;
-		position:fixed;
-      }
-	  a:link {
-		color: white;
-		background-color: transparent;
-		text-decoration: none;
-		}
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: black;
+            font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif;
+        }
 
-		a:visited {
-		color: white;
-		background-color: transparent;
-		text-decoration: none;
-		}
+        .map {
+            height: 100%;
+            width: 100%;
+            position: fixed;
+            z-index: 1;
+        }
 
-		a:hover {
-		color: white;
-		background-color: transparent;
-		text-decoration: underline;
-		}
+        /* Top Header Navigation */
+        .header-bar {
+            background-color: #380702;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 15px;
+            position: relative;
+            z-index: 10;
+            height: 40px;
+        }
 
-		a:active {
-		color: white;
-		background-color: transparent;
-		text-decoration: none;
-		}
-		body {
-			margin:0;
-			padding:0;
-			overflow: hidden;
-		}
-		canvas {
-			margin:auto;
-		}
-	</style>
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            font-size: 13px;
+        }
+
+        /* Status Banner for Instructions */
+        #status-banner {
+            position: fixed;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            z-index: 100;
+            pointer-events: none; /* User clicks through this to the map */
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        a:link, a:visited { color: white; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        
+        canvas { display: block; }
+    </style>
 </head>
-<body style="background-color:black;">
-	<div style="background-color:#380702;""><img src="assets/logosmalllit.png" /></div>
-	<div style='position:fixed;width:120px;top:32px;right:0px;color:white;background:none;opacity:1;-webkit-transform:translate(-50%, -50%);transform:translate(-50%, -50%);font-family:"Lucida Sans Unicode", "Lucida Grande", sans-serif;font-size:13px;text-align:center;vertical-align:middle;height:50px;'>
-		<a href="https://codeberg.org/lejun/RunEveryStreet/">Source Code</a>
-	</div>
-	<div style='position:fixed;width:40px;top:32px;right:0px;color:white;background:none;opacity:1;-webkit-transform:translate(-50%, -50%);transform:translate(-50%, -50%);font-family:"Lucida Sans Unicode", "Lucida Grande", sans-serif;font-size:13px;text-align:center;vertical-align:middle;height:50px;'>
-		<a href=".">Restart</a>
-	</div>
-	<div id="map" class="map"></div>
-	<script src="sketch.js"></script>
-	<script src="Edge.js"></script>
-	<script src="Node.js"></script>
-	<script src="Route.js"></script>
+<body>
+
+    <div class="header-bar">
+        <img src="assets/logosmalllit.png" alt="Logo" style="height: 30px;" />
+        <div class="nav-links">
+            <a href="https://codeberg.org/lejun/RunEveryStreet/" target="_blank">Source Code</a>
+            <a href=".">Restart</a>
+        </div>
+    </div>
+
+    <div id="status-banner">
+        Zoom to selected area, then click a road to start
+    </div>
+
+    <div id="map" class="map"></div>
+
+    <script src="sketch.js"></script>
+    <script src="Edge.js"></script>
+    <script src="Node.js"></script>
+    <script src="Route.js"></script>
+
 </body>
 </html>
