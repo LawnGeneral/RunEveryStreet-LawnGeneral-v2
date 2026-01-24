@@ -226,91 +226,88 @@ function drawSolverStats() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
-    // 1. SAFETY GUARD: Only run if we are in Solve Mode AND the Start Button was pressed
+    // 1. SAFETY GUARD
     if (mode !== solveRESmode || !navMode) return;
-    
-    if (!currentnode || !currentroute || !startnode) {
-        return; 
+    if (!currentnode || !currentroute || !startnode) return;
+
+    // Helper: meters between two lat/lon points
+    function metersBetween(lat1, lon1, lat2, lon2) {
+        const R = 6371000; // meters
+        const toRad = (d) => d * Math.PI / 180;
+        const dLat = toRad(lat2 - lat1);
+        const dLon = toRad(lon2 - lon1);
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return 2 * R * Math.asin(Math.sqrt(a));
     }
 
-    // Dynamic Speed: Adjusts based on performance
-    iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
+    // Dynamic Speed
+    iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate()));
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
 
-        // 2. SMART SORTING
         if (!currentnode.edges || currentnode.edges.length === 0) break;
 
         currentnode.edges.sort((a, b) => {
             let capA = a.isDoubled ? 2 : 1;
             let capB = b.isDoubled ? 2 : 1;
-            
+
             let remainingA = capA - a.travels;
             let remainingB = capB - b.travels;
 
-            // Priority: Take unvisited edges first
-            if (remainingA !== remainingB) {
-                return remainingB - remainingA; 
-            }
-            // If equal, introduce random exploration
-            return Math.random() - 0.5; 
+            if (remainingA !== remainingB) return remainingB - remainingA;
+            return Math.random() - 0.5;
         });
 
         let chosenEdge = currentnode.edges[0];
-        if (!chosenEdge) break; 
+        if (!chosenEdge) break;
 
         let nextNode = chosenEdge.OtherNodeofEdge(currentnode);
-        
-        if (!nextNode || nextNode.lat === undefined) {
-            break;
+        if (!nextNode || nextNode.lat === undefined) break;
+
+        // PROGRESS TRACKING
+        if (chosenEdge.travels === 0) {
+            remainingedges--;
         }
 
-        // 3. PROGRESS TRACKING
-        if (chosenEdge.travels === 0) {
-            remainingedges--; 
-        }
-        
-        let moveDist = chosenEdge.distance; 
+        let moveDist = chosenEdge.distance;
         chosenEdge.travels++;
-        
-        // 4. RECORDING
+
+        // RECORDING
         let extraDist = (chosenEdge.travels > 1) ? moveDist : 0;
         currentroute.addWaypoint(nextNode, moveDist, extraDist);
         currentnode = nextNode;
-        
-        // 5. COMPLETION LOGIC
+
+        // COMPLETION LOGIC
         if (remainingedges <= 0) {
-            let dLat = currentnode.lat - startnode.lat;
-            let dLon = currentnode.lon - startnode.lon;
-            let distToHome = Math.sqrt(dLat * dLat + dLon * dLon);
-            
-            // Check if returned to start (approx 10 meters)
-            if (currentnode === startnode || distToHome < 0.0001) { 
-                
+            // FIX: meter-based check to see if we're back near the start
+            const distToHomeM = metersBetween(
+                currentnode.lat, currentnode.lon,
+                startnode.lat, startnode.lon
+            );
+
+            // Consider "home" if within 25 meters OR exact object match
+            if (currentnode === startnode || distToHomeM <= 25) {
                 if (currentroute.distance < bestdistance) {
                     bestdistance = currentroute.distance;
-                    bestroute = currentroute.copy(); 
+                    bestroute = currentroute.copy();
                     lastRecordTime = millis();
                     console.log("New Best Route: " + (bestdistance / 1000).toFixed(2) + "km");
                 }
 
-                // --- THE RESET CYCLE ---
-                // 1. Clear the 'travels' counter on all edges
-                resetEdges(); 
-                
-                // 2. Teleport hiker back to start
+                // RESET CYCLE
+                resetEdges();
                 currentnode = startnode;
-                
-                // 3. Reset the countdown of roads to visit
-                remainingedges = edges.filter(e => e.distance > 0).length; 
-                
-                // 4. Create a fresh path for the new attempt
+                remainingedges = edges.filter(e => e.distance > 0).length;
                 currentroute = new Route(currentnode, null);
             }
         }
     }
 }
+
 
 /**
  * Handles all Route-related drawing
