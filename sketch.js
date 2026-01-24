@@ -547,16 +547,21 @@ function solveRES() {
     showRoads = false; // Switch view to the solver's path
     currentnode = startnode; 
     
-    // 4. Distance Synchronization & Road Counting
+  // 4. Distance Synchronization & Road Counting
     totalRoadsDist = 0;
     let validRoadsCount = 0;
 
     for (let e of edges) {
-        // Force conversion to number to prevent "0.00 km" bug
-        let d = parseFloat(e.distance);
-        if (!isNaN(d) && d > 0) {
+        // DEBUG: Let's see what the first edge looks like if distance is 0
+        if (validRoadsCount === 0) console.log("Sample Edge Data:", e);
+
+        // Try every common name for distance just in case
+        let d = parseFloat(e.distance) || parseFloat(e.dist) || parseFloat(e.len) || 0;
+        
+        if (d > 0) {
             totalRoadsDist += d;
             validRoadsCount++;
+            e.distance = d; // Force it to the correct property for the solver
         }
     }
 
