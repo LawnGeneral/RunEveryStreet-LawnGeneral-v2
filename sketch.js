@@ -898,7 +898,7 @@ function mousePressed() {
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
         if (startnode) {
             if (mode === solveRESmode) {
-                navMode = !navMode; // Toggle movement
+                navMode = !navMode;
                 showMessage(navMode ? "Solver Running..." : "Solver Paused");
             } else {
                 mode = solveRESmode;
@@ -956,15 +956,21 @@ function mousePressed() {
         return;
     }
 
-    // 4) TRIMMING LOGIC (CLICK-TIME PICK — NOT STALE)
+    // 4) TRIMMING LOGIC (CLICK-TIME PICK, MORE FORGIVING)
     if (mode === trimmodemode) {
-        // How close (in pixels) the click must be to a road segment to count
-        const PICK_PX = 10;
+        // Base pick radius in pixels
+        let PICK_PX = 25;
+
+        // Make it a bit easier when zoomed out
+        const z = openlayersmap?.getView?.().getZoom?.();
+        if (typeof z === "number") {
+            // At zoom 12 => +10px, zoom 16 => +0px (roughly)
+            PICK_PX += Math.max(0, Math.min(12, (16 - z) * 5));
+        }
 
         let bestIdx = -1;
         let bestDist = Infinity;
 
-        // Compute closest edge *right now*, at the moment of click
         for (let i = 0; i < edges.length; i++) {
             const d = edges[i].distanceToPoint(mouseX, mouseY);
             if (d < bestDist) {
@@ -973,17 +979,18 @@ function mousePressed() {
             }
         }
 
-        // Only trim if we actually clicked near a road
         if (bestIdx !== -1 && bestDist <= PICK_PX) {
-            closestedgetomouse = bestIdx;  // feed into your existing handleTrimming()
+            closestedgetomouse = bestIdx;
             handleTrimming();
         } else {
-            showMessage("Click closer to the yellow road line to remove it.");
+            showMessage("Click closer to the road line (or zoom in a bit).");
+            console.log("Trim miss:", { bestDist, PICK_PX });
         }
 
         return;
     }
 }
+
 
 
 
