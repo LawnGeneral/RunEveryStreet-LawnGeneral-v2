@@ -1759,37 +1759,40 @@ function runOverpassQuery(overpassQuery, onSuccess, onFail) {
     .catch(onFail);
 }
 function applyInputMode() {
-  // Safety: canvas may not exist yet very early
   if (!canvas || !canvas.elt) return;
 
   // 1) Route input: PAN lets map receive events; EDIT lets canvas receive events
   canvas.elt.style.pointerEvents = mapPanZoomMode ? 'none' : 'auto';
 
-  // 2) Force the correct p5 mode when entering EDIT
-  // If no start node yet, we MUST be in selectnodemode so hover+click works.
-  if (!mapPanZoomMode && !startnode) {
+  // 2) IMPORTANT: Never override solver/report modes.
+  // setMode(solveRESmode) must "stick" or the solver will never run.
+  if (mode === solveRESmode || mode === downloadGPXmode) {
+    redraw();
+    openlayersmap.render();
+    return;
+  }
+
+  // 3) If we're in PAN/ZOOM, do not force any p5 mode.
+  // User is just navigating the map.
+  if (mapPanZoomMode) {
+    redraw();
+    openlayersmap.render();
+    return;
+  }
+
+  // 4) We are in EDIT mode: choose the correct editing sub-mode
+  if (!startnode) {
     mode = selectnodemode;
     showMessage("Click a red node to set Start");
-    redraw();
-    return;
-  }
-
-  // If we already have a start node, EDIT should go to trimming
-  if (!mapPanZoomMode && startnode) {
+  } else {
     mode = trimmodemode;
     showMessage("Trim mode: click a road to remove (Undo available)");
-    redraw();
-    return;
   }
 
-  // 3) If we switched back to PAN/ZOOM, keep solver running modes untouched,
-  // otherwise default to browse/choose map mode
-  if (mapPanZoomMode) {
-    // Optional: if you want, you can force choosemapmode here
-    // mode = choosemapmode;
-    redraw();
-  }
+  redraw();
+  openlayersmap.render();
 }
+
 
 function togglePanTrim() {
   mapPanZoomMode = !mapPanZoomMode;
