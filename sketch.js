@@ -342,25 +342,65 @@ function drawToolbar() {
   const btnW = 170;
   const btnH = 40;
   const margin = 10;
+  const y = 10;
 
-  // --- PAN/ZOOM <-> TRIM TOGGLE (Far Right) ---
+  // --- LEFT: FIT ROADS (only useful after ingest) ---
+  const fitX = margin;
+
+  const hasRoadData =
+    (edges && edges.length > 0) ||
+    (nodes && nodes.length > 0 && isFinite(minlat) && isFinite(minlon) && isFinite(maxlat) && isFinite(maxlon));
+
+  // Blue-ish when available, gray when not
+  fill(hasRoadData ? 200 : 0, hasRoadData ? 80 : 0, hasRoadData ? 255 : 180);
+  stroke(0); strokeWeight(2);
+  rect(fitX, y, btnW, btnH, 5);
+
+  fill(0); noStroke();
+  text("FIT ROADS", fitX + btnW / 2, y + btnH / 2);
+
+  if (mouseIsPressed && mouseX > fitX && mouseX < fitX + btnW && mouseY > y && mouseY < y + btnH) {
+    if (!hasRoadData) {
+      showMessage("Ingest roads first, then Fit Roads.");
+    } else {
+      // Use parsed OSM data bounds (min/max lat/lon) to fit view
+      // (These are set during getOverpassData node parsing.)
+      const extent4326 = [minlon, minlat, maxlon, maxlat];
+      const extent3857 = ol.proj.transformExtent(extent4326, "EPSG:4326", "EPSG:3857");
+
+      // Fit with padding so roads aren't under the header/buttons
+      openlayersmap.getView().fit(extent3857, {
+        size: openlayersmap.getSize(),
+        padding: [60, 30, 30, 30], // top, right, bottom, left
+        duration: 250
+      });
+
+      openlayersmap.updateSize();
+      openlayersmap.render();
+      redraw();
+
+      showMessage("Fit to loaded roads");
+    }
+
+    mouseIsPressed = false; // debounce
+  }
+
+  // --- RIGHT: PAN/ZOOM <-> TRIM TOGGLE ---
   const toggleX = width - (btnW + margin);
-  const toggleY = 10;
 
   // Green when PAN/ZOOM, Orange when TRIM/EDIT
   fill(mapPanZoomMode ? 120 : 15, 80, 255);
   stroke(0); strokeWeight(2);
-  rect(toggleX, toggleY, btnW, btnH, 5);
+  rect(toggleX, y, btnW, btnH, 5);
 
   fill(0); noStroke();
-  text(mapPanZoomMode ? "MODE: PAN / ZOOM" : "MODE: TRIM / EDIT", toggleX + btnW/2, toggleY + btnH/2);
+  text(mapPanZoomMode ? "MODE: PAN / ZOOM" : "MODE: TRIM / EDIT", toggleX + btnW / 2, y + btnH / 2);
 
-  // Click detection
-  if (mouseIsPressed && mouseX > toggleX && mouseX < toggleX + btnW && mouseY > toggleY && mouseY < toggleY + btnH) {
+  if (mouseIsPressed && mouseX > toggleX && mouseX < toggleX + btnW && mouseY > y && mouseY < y + btnH) {
     mapPanZoomMode = !mapPanZoomMode;
     applyInputMode();
 
-    // If switching into edit mode but we're still in choosemapmode, move to trim mode if start is already set
+    // If switching into edit mode but we're still in choosemapmode, go to the correct edit mode
     if (!mapPanZoomMode) {
       if (startnode && mode === choosemapmode) mode = trimmodemode;
       if (!startnode && mode === choosemapmode) mode = selectnodemode;
@@ -370,17 +410,18 @@ function drawToolbar() {
     mouseIsPressed = false; // debounce
   }
 
-  // --- OPTIONAL: show UNDO button only while trimming ---
+  // --- OPTIONAL: UNDO button only while trimming ---
   if (mode === trimmodemode) {
     const undoX = width - (btnW * 2 + margin * 2);
+
     fill(200, 20, 255);
     stroke(0); strokeWeight(2);
-    rect(undoX, 10, btnW, btnH, 5);
+    rect(undoX, y, btnW, btnH, 5);
 
     fill(0); noStroke();
-    text("UNDO TRIM", undoX + btnW/2, 30);
+    text("UNDO TRIM", undoX + btnW / 2, y + btnH / 2);
 
-    if (mouseIsPressed && mouseX > undoX && mouseX < undoX + btnW && mouseY > 10 && mouseY < 10 + btnH) {
+    if (mouseIsPressed && mouseX > undoX && mouseX < undoX + btnW && mouseY > y && mouseY < y + btnH) {
       if (typeof undoTrim === "function") undoTrim();
       mouseIsPressed = false;
     }
@@ -388,6 +429,7 @@ function drawToolbar() {
 
   pop();
 }
+
 
 
 
