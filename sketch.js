@@ -184,27 +184,32 @@ function drawSolverStats() {
  * Encapsulated Solver Logic
  */
 function handleSolverEngine() {
+    // Dynamic Speed: Keeps the browser from freezing if the frame rate drops
     iterationsperframe = max(1, iterationsperframe - 1 * (5 - frameRate())); 
 
     for (let it = 0; it < iterationsperframe; it++) {
         iterations++;
 
-       // 1. SORTING: Decides which way to turn
-currentnode.edges.sort((a, b) => {
-    let capA = a.isDoubled ? 2 : 1;
-    let capB = b.isDoubled ? 2 : 1;
-    let remainingA = capA - a.travels;
-    let remainingB = capB - b.travels;
+        // 1. SMART SORTING: Decides which way to turn
+        // This is the "Brain" – it prioritizes unvisited roads and doubled segments
+        currentnode.edges.sort((a, b) => {
+            let capA = a.isDoubled ? 2 : 1;
+            let capB = b.isDoubled ? 2 : 1;
+            
+            let remainingA = capA - a.travels;
+            let remainingB = capB - b.travels;
 
-    // Priority 1: Take roads we haven't finished yet
-    if (remainingA !== remainingB) return remainingB - remainingA; 
-    
-    // Priority 2: If both are "fresh" or both are "done", pick randomly
-    // This is the "Engine" that explores new possibilities!
-    return Math.random() - 0.5; 
-});
+            // Priority 1: Take roads that haven't reached their "Capacity" yet
+            if (remainingA !== remainingB) {
+                return remainingB - remainingA; 
+            }
+            
+            // Priority 2: If both are equal, introduce randomness to explore new paths
+            return Math.random() - 0.5; 
+        });
 
         let chosenEdge = currentnode.edges[0];
+        
         // SAFETY: If a node has no edges, we can't move. Stop this iteration.
         if (!chosenEdge) break; 
 
@@ -216,31 +221,48 @@ currentnode.edges.sort((a, b) => {
             break;
         }
 
-        // 2. TRACKING
-        let cap = chosenEdge.isDoubled ? 2 : 1;
-        if (chosenEdge.travels < cap && chosenEdge.travels === 0) {
+        // 2. PROGRESS TRACKING
+        // We only decrement 'remainingedges' the VERY first time we touch a road
+        if (chosenEdge.travels === 0) {
             remainingedges--; 
         }
         
-        let extraDist = (chosenEdge.travels >= 1) ? chosenEdge.distance : 0;
+        // 3. DISTANCE CALCULATION
+        let moveDist = chosenEdge.distance; 
         chosenEdge.travels++;
         
-        // 3. RECORDING
-        currentroute.addWaypoint(nextNode, chosenEdge.distance, extraDist);
+        // 4. RECORDING
+        // currentroute.addWaypoint(node, totalDistanceIncrement, extraBacktrackDistance)
+        // We track the backtracking specifically for efficiency stats later
+        let extraDist = (chosenEdge.travels > 1) ? moveDist : 0;
+        currentroute.addWaypoint(nextNode, moveDist, extraDist);
         currentnode = nextNode;
         
-        // 4. COMPLETION
-        if (remainingedges <= 0 && currentnode === startnode) { 
-            if (currentroute.distance < bestdistance) {
-                bestdistance = currentroute.distance;
-                bestroute = currentroute; 
-                lastRecordTime = millis();
-            }
+        // 5. COMPLETION LOGIC
+        // We finish if all roads are visited AND we are close to the start node
+        if (remainingedges <= 0) {
+            let distToHome = dist(currentnode.lat, currentnode.lon, startnode.lat, startnode.lon);
+            
+            // Checking for exact match OR very close proximity (0.0001 degrees)
+            if (currentnode === startnode || distToHome < 0.0001) { 
+                
+                if (currentroute.distance < bestdistance) {
+                    bestdistance = currentroute.distance;
+                    
+                    // CLONING: We create a deep copy of the route. 
+                    // Otherwise, bestroute would change when currentroute resets!
+                    bestroute = JSON.parse(JSON.stringify(currentroute)); 
+                    lastRecordTime = millis();
+                }
 
-            resetEdges();
-            currentnode = startnode;
-            remainingedges = edges.length; 
-            currentroute = new Route(currentnode, null);
+                // RESET: Start a new attempt to see if we can beat the 4.99km record
+                resetEdges();
+                currentnode = startnode;
+                
+                // Count how many physical roads exist to reset the counter
+                remainingedges = edges.filter(e => e.distance > 0).length; 
+                currentroute = new Route(currentnode, null);
+            }
         }
     }
 }
@@ -584,77 +606,77 @@ function solveRES() {
     console.log("Start Node ID: " + (startnode ? startnode.nodeId : "NOT SET"));
 }
 function mousePressed() {
-  // Ensure the canvas can catch clicks unless we are explicitly in Navigation (Pan/Zoom) mode
-  canvas.elt.style.pointerEvents = navMode ? 'none' : 'auto';
-
-  // 1. MODE: CHOOSE MAP (Fetching Overpass Data)
-  if (mode == choosemapmode && isInside(mouseX, mouseY, btnTLx, btnTLy, btnBRx, btnBRy)) {
-    getOverpassData();
-    return;
-  }
-
-  // 2. MODE: SELECT START NODE
-  if (mode == selectnodemode) {
-    // Check if clicking the PAN/ZOOM Toggle (Top Right)
-    if (isInside(mouseX, mouseY, width - 160, 10, width - 10, 50)) {
-      toggleNav();
-      return;
-    }
-
-    // If NOT in navMode and clicking the map area, select the node
-    if (!navMode && mouseY < mapHeight) {
-      showNodes(); // sets 'startnode'
-      mode = trimmode;
-      navMode = false;
-      showMessage('Click roads to trim. Use the top-right button to Pan/Zoom.');
-      removeOrphans();
-      return;
+  // 1. MAP SELECTION MODE
+  if (mode === choosemapmode) {
+    // Logic for selecting which area to load
+    for (let i = 0; i < mapButtons.length; i++) {
+      if (mapButtons[i].isOver(mouseX, mouseY)) {
+        selectedMap = mapButtons[i].mapName;
+        loadMapData(selectedMap);
+        mode = solveRESmode; // Move to solver mode after selection
+        return;
+      }
     }
   }
 
-  // 3. MODE: TRIM ROADS
-  if (mode == trimmode) {
-    // A. PAN/ZOOM Toggle (Right-most)
-    if (isInside(mouseX, mouseY, width - 160, 10, width - 10, 50)) {
-      toggleNav();
-      return;
+  // 2. SOLVER / EXPLORATION MODE
+  if (mode === solveRESmode) {
+    // If the solver is NOT running, clicking the map sets the start node
+    if (!navMode) {
+      let closest = getClosestNode(mouseX, mouseY);
+      if (closest) {
+        startnode = closest;
+        currentnode = startnode;
+        console.log("Start Node set to: " + startnode.nodeId);
+      }
     }
 
-    // B. UNDO Button (Middle)
-    if (isInside(mouseX, mouseY, width - 320, 10, width - 170, 50)) {
-      undoTrim();
-      return;
+    // Check for UI buttons (Start/Stop/Reset)
+    if (isOverStartButton(mouseX, mouseY)) {
+      if (startnode) {
+        navMode = !navMode; // Toggle solver running state
+        if (navMode) solveRES(); 
+      } else {
+        alert("Please click a node on the map to set your start point first!");
+      }
+    }
+  }
+
+  // 3. REPORT / DOWNLOAD MODE
+  if (mode === downloadGPXmode) {
+    // Calculate the button bounds exactly as they appear in showReportOut()
+    let boxW = 400;
+    let boxH = 450;
+    let x = width / 2 - boxW / 2;
+    let y = height / 2 - boxH / 2;
+
+    let btnW = 300;
+    let btnH = 50;
+    let btnX = width / 2 - btnW / 2;
+    let btnY = y + 350;
+
+    // DOWNLOAD BUTTON CLICK
+    if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+      generateAndDownloadGPX(bestroute);
+      return; // Exit so we don't trigger other clicks
     }
 
-    // C. START SOLVER Button (Left-most)
-    if (isInside(mouseX, mouseY, width - 480, 10, width - 330, 50)) {
+    // RESTART/CLOSE CLICK (Optional: clicking outside the box to go back)
+    if (mouseX < x || mouseX > x + boxW || mouseY < y || mouseY > y + boxH) {
       mode = solveRESmode;
       navMode = false;
-      showMessage('Calculating… Click to stop when satisfied');
-      solveRES();
-      return;
-    }
-
-    // D. Road Trim Logic
-    if (!navMode && mouseY < mapHeight) {
-      trimSelectedEdge();
+      resetEdges();
     }
   }
+}
 
-  // 4. MODE: SOLVING (Stop Logic)
-  if (mode == solveRESmode && isInside(mouseX, mouseY, btnTLx, btnTLy, btnBRx, btnBRy)) {
-    finalizeSession();
-    return;
-  }
-
-  // 5. MODE: DOWNLOAD SUMMARY
-  if (mode == downloadGPXmode) {
-    // Large "Download Route" button at the bottom of the summary
-    if (isInside(mouseX, mouseY, width / 2 - 140, height / 2 + 200, width / 2 + 140, height / 2 + 240)) {
-      downloadGPX(); // Use the robust Blob-based downloader
-      return;
-    }
-  }
+/**
+ * Helper to check if mouse is over the start/solve button
+ * Adjust coordinates based on your specific UI placement
+ */
+function isOverStartButton(mx, my) {
+  // Example: Button is at bottom center
+  return (mx > width/2 - 50 && mx < width/2 + 50 && my > height - 60 && my < height - 20);
 }
 
 /** * HELPER FUNCTIONS FOR CLEANER CODE
@@ -838,66 +860,90 @@ function drawProgressGraph() {
 }
 
 function showReportOut() {
-    // 1. Background Panel
     push();
-    fill(30, 30, 30, 220); // Darker, more professional semi-transparent gray
-    noStroke();
-    rectMode(CENTER);
-    rect(width / 2, height / 2, 320, 520, 10); // Added rounded corners
-    
-    // 2. Title Section
+    resetMatrix(); // Keep the UI fixed on screen while the map is behind it
+
+    // 1. DIM THE BACKGROUND
+    fill(0, 0, 0, 150);
+    rect(0, 0, width, height);
+
+    // 2. DRAW THE DIALOG BOX
+    let boxW = 400;
+    let boxH = 450;
+    let x = width / 2 - boxW / 2;
+    let y = height / 2 - boxH / 2;
+
+    fill(45, 40, 35); // Dark chocolate brown to match your theme
+    stroke(255, 50);
     strokeWeight(2);
-    stroke(255, 165, 0); // Orange accent line
-    line(width / 2 - 140, height / 2 - 200, width / 2 + 140, height / 2 - 200);
-    
-    noStroke();
+    rect(x, y, boxW, boxH, 15);
+
+    // 3. TITLE
     fill(255);
+    noStroke();
+    textAlign(CENTER, TOP);
     textSize(28);
-    textAlign(CENTER, CENTER);
     textStyle(BOLD);
-    text('Route Summary', width / 2, height / 2 - 225);
-    pop();
+    text("Route Summary", width / 2, y + 30);
 
-    // 3. Stats Labels and Values
-    let labels = ['Total roads covered', 'Total length of all roads', 'Length of final route', 'Efficiency'];
-    
-    // Ensure we don't divide by zero if bestroute is somehow missing
-    let finalDist = (bestroute && bestroute.distance > 0) ? bestroute.distance : 1;
-    let efficiency = round(100 * totaledgedistance / finalDist);
-    
-    let values = [
-        totaluniqueroads, 
-        nf(totaledgedistance, 0, 1) + "km", 
-        nf(finalDist, 0, 1) + "km", 
-        efficiency + "%"
-    ];
+    // Decorative underline
+    stroke(255, 100);
+    line(width / 2 - 50, y + 70, width / 2 + 50, y + 70);
+    noStroke();
 
-    for (let i = 0; i < 4; i++) {
-        let yPos = height / 2 - 150 + (i * 90);
-        
-        // Label
-        fill(200);
-        textSize(16);
-        textAlign(CENTER);
-        text(labels[i], width / 2, yPos);
-        
-        // Value
-        fill(255, 165, 0); // High-contrast Orange
-        textSize(42);
-        textStyle(BOLD);
-        text(values[i], width / 2, yPos + 45);
-    }
-
-    // 4. Download Button
-    push();
-    fill(255, 165, 0); // Orange button
-    rectMode(CENTER);
-    rect(width / 2, height / 2 + 225, 280, 50, 5);
+    // 4. STATS (Converting meters to km)
+    textSize(16);
+    fill(200);
     
+    // Total Unique Roads
+    text("Total unique distance", width / 2, y + 100);
     fill(255);
     textSize(24);
-    textStyle(BOLD);
-    text('Download Route', width / 2, height / 2 + 233);
+    let totalDistKm = (totalRoadsDist / 1000).toFixed(1);
+    text(`${totalDistKm} km`, width / 2, y + 130);
+
+    // Final Route Length
+    fill(200);
+    textSize(16);
+    text("Length of final route", width / 2, y + 180);
+    fill(255);
+    textSize(24);
+    let finalRouteKm = (bestdistance / 1000).toFixed(1);
+    text(`${finalRouteKm} km`, width / 2, y + 210);
+
+    // Efficiency
+    fill(200);
+    textSize(16);
+    text("Efficiency", width / 2, y + 260);
+    fill(0, 255, 120); // Bright green
+    textSize(32);
+    let efficiency = (bestdistance === 0) ? 0 : (totalRoadsDist / bestdistance * 100).toFixed(0);
+    text(`${efficiency}%`, width / 2, y + 300);
+
+    // 5. THE BUTTON
+    // We draw the button here, but mouse click logic goes in mousePressed()
+    let btnW = 300;
+    let btnH = 50;
+    let btnX = width / 2 - btnW / 2;
+    let btnY = y + 350;
+
+    // Hover effect
+    if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+        fill(60, 55, 50); 
+        cursor(HAND);
+    } else {
+        fill(20, 15, 10);
+        cursor(ARROW);
+    }
+
+    stroke(255);
+    rect(btnX, btnY, btnW, btnH, 8);
+    
+    fill(255);
+    noStroke();
+    textSize(18);
+    text("Download GPX Route", width / 2, btnY + 32);
+
     pop();
 }
 function showStatus() {
@@ -1135,4 +1181,48 @@ function applyDoublings(pairs) {
         }
     }
     console.log(`Step 4: Strategy applied. Doubled ${totaledgedoublings} segments.`);
+}
+function generateAndDownloadGPX(route) {
+    // 1. Safety Check: Make sure there is actually a path to save
+    if (!route || !route.waypoints || route.waypoints.length === 0) {
+        alert("No route has been found yet. Please wait for the solver to finish!");
+        return;
+    }
+
+    // 2. Build the GPX Header
+    let gpxContent = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="RunEveryStreet-Gemini" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>RunEveryStreet - Optimal Route</name>
+    <desc>Calculated with ${((totalRoadsDist / bestdistance) * 100).toFixed(1)}% efficiency</desc>
+    <trkseg>`;
+
+    // 3. Add every coordinate point in order
+    // We use waypoints which were recorded in the Route class during the solve
+    for (let i = 0; i < route.waypoints.length; i++) {
+        let pt = route.waypoints[i];
+        gpxContent += `\n      <trkpt lat="${pt.lat}" lon="${pt.lon}"></trkpt>`;
+    }
+
+    // 4. Close the tags
+    gpxContent += `\n    </trkseg>\n  </trk>\n</gpx>`;
+
+    // 5. Trigger the Browser Download
+    let blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
+    let url = URL.createObjectURL(blob);
+    let a = document.createElement('a');
+    
+    // Give it a timestamp so files don't overwrite each other
+    let timestamp = new Date().getTime();
+    a.href = url;
+    a.download = `RES_Route_${timestamp}.gpx`;
+    
+    document.body.appendChild(a);
+    a.click();
+    
+    // Cleanup
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log("GPX File Generated Successfully.");
 }
