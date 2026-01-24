@@ -287,22 +287,19 @@ function handleSolverEngine() {
  * Handles all Route-related drawing
  */
 function renderRouteGraphics() {
-    if (bestroute != null) {
-        // High-priority: Show the best valid route found so far
-        bestroute.show(); 
-    } else if (mode === solveRESmode && displayRoute != null) {
-        // While solving, show the last completed attempt as a faint "ghost"
-        push();
-        stroke(255, 120); 
-        strokeWeight(2);
-        displayRoute.show();
-        pop();
-    } else if (mode === solveRESmode && currentroute != null) {
-        // If no full solution exists yet, show the live "snake"
-        push();
-        stroke(200, 100);
-        strokeWeight(1);
+    // 1. Draw the current path being explored (Rainbow/Active)
+    if (currentroute) {
         currentroute.show();
+    }
+
+    // 2. Draw the best route found so far (White/Ghost)
+    // We draw this with a different color/alpha to distinguish it
+    if (bestroute) {
+        push();
+        // Custom styling for the "Best Record" path
+        stroke(255, 255, 255, 100); // Semi-transparent white
+        strokeWeight(8); // Slightly thicker
+        bestroute.show();
         pop();
     }
 }
