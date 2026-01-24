@@ -9,16 +9,22 @@ class Node {
 
 // Helper function to get the current screen position
   getScreenPos() {
-    const coords = ol.proj.fromLonLat([parseFloat(this.lon), parseFloat(this.lat)]);
+    // Ensure we have numbers to work with
+    const lon = parseFloat(this.lon);
+    const lat = parseFloat(this.lat);
+    
+    if (isNaN(lon) || isNaN(lat)) return { x: 0, y: 0 };
+
+    const coords = ol.proj.fromLonLat([lon, lat]);
     const pix = openlayersmap.getPixelFromCoordinate(coords);
+    
     if (pix) {
-      return {
-        x: pix[0],
-        y: pix[1] // Removed the - 34 to align with the basemap
-      };
+        return { x: pix[0], y: pix[1] };
     }
-    return null;
-  }
+    // Return a far-off coordinate instead of null to prevent 
+    // line() from complaining about "empty variables"
+    return { x: -1000, y: -1000 }; 
+}
  
 
   show() {
