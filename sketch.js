@@ -1030,9 +1030,8 @@ function mousePressed() {
         let btnY = y + 350;
 
         if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-            // USER CHOICE: only download when clicked
             if (typeof downloadGPX === "function") {
-                downloadGPX();
+                downloadGPX(); // user choice only
                 showMessage("Downloading GPX...");
             } else {
                 console.error("downloadGPX() not found.");
@@ -1048,7 +1047,7 @@ function mousePressed() {
     // 1) UI GUARD: Don't click through the top toolbar area
     if (mouseY < 60) return;
 
-    // 2) START/STOP BUTTON (Bottom Left) — works in ANY mode
+    // 2) START/STOP BUTTON (Bottom Left)
     let btnW = 140;
     let btnH = 40;
     let btnX = 20;
@@ -1060,7 +1059,7 @@ function mousePressed() {
             return;
         }
 
-        // --- STOP SOLVER: switch to summary modal (NO auto-download) ---
+        // STOP (shows summary) — only meaningful if navMode was running
         if (navMode === true) {
             navMode = false;
             solverRunning = false;
@@ -1075,22 +1074,22 @@ function mousePressed() {
             return;
         }
 
-        // --- START / RESUME SOLVER ---
-        if (mode !== solveRESmode || !currentroute || !currentnode || remainingedges === undefined) {
-            navMode = true;
-            solverRunning = true;
-            mode = solveRESmode;
-            solveRES(); // should call loop()
-            showMessage("Solver Running...");
-            return;
-        } else {
-            navMode = true;
-            solverRunning = true;
-            mode = solveRESmode;
-            showMessage("Solver Running...");
-            loop();
-            return;
-        }
+        // START SOLVER (Euler build, NOT iterative)
+        // IMPORTANT: do NOT set navMode=true here
+        mode = solveRESmode;
+        navMode = false;
+        solverRunning = false;
+
+        // Build the route immediately (Euler tour version)
+        solveRES();
+
+        // Ensure we render once so the user sees the route
+        noLoop();
+        redraw();
+        openlayersmap.render();
+
+        showMessage("Route built. Click STOP SOLVER for summary/export.");
+        return;
     }
 
     // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
@@ -1199,6 +1198,7 @@ function mousePressed() {
         return;
     }
 }
+
 
 
 
