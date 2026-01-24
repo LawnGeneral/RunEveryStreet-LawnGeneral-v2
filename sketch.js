@@ -1017,13 +1017,10 @@ function solveRES() {
 function mousePressed() {
     // 0) If the Route Summary modal is up, ONLY handle its button click
     if (mode === downloadGPXmode) {
-        // These must match showReportOut()
         let boxW = 400;
         let boxH = 450;
-        let x = width / 2 - boxW / 2;
         let y = height / 2 - boxH / 2;
 
-        // Button geometry from showReportOut()
         let btnW = 300;
         let btnH = 50;
         let btnX = width / 2 - btnW / 2;
@@ -1039,9 +1036,7 @@ function mousePressed() {
             }
             return;
         }
-
-        // Click outside button: do nothing (keeps modal open)
-        return;
+        return; // keep modal open
     }
 
     // 1) UI GUARD: Don't click through the top toolbar area
@@ -1059,36 +1054,43 @@ function mousePressed() {
             return;
         }
 
-        // STOP (shows summary) — only meaningful if navMode was running
-        if (navMode === true) {
+        // If we already have a built route, STOP should open the summary modal
+        const routeReady = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) || (bestdistance !== Infinity && bestdistance > 0);
+
+        if (navMode === true || routeReady) {
+            // STOP -> show summary/export modal (no auto-download)
             navMode = false;
             solverRunning = false;
 
             noLoop();
-
             mode = downloadGPXmode;
-            showMessage("Solver Paused — review & export when ready.");
+            showMessage("Route Summary (export when ready).");
 
             redraw();
             openlayersmap.render();
             return;
         }
 
-        // START SOLVER (Euler build, NOT iterative)
-        // IMPORTANT: do NOT set navMode=true here
+        // START -> Build the route immediately (Euler version of solveRES)
         mode = solveRESmode;
-        navMode = false;
+
+        // IMPORTANT: prevent the old iterative engine
         solverRunning = false;
 
-        // Build the route immediately (Euler tour version)
+        // Build route now
         solveRES();
 
-        // Ensure we render once so the user sees the route
+        // Freeze animation/iterations; we just want a static result
         noLoop();
-        redraw();
-        openlayersmap.render();
+
+        // UI trick: set navMode true so the button shows "STOP SOLVER"
+        // (But solverRunning remains false so nothing iterates.)
+        navMode = true;
 
         showMessage("Route built. Click STOP SOLVER for summary/export.");
+
+        redraw();
+        openlayersmap.render();
         return;
     }
 
@@ -1128,6 +1130,12 @@ function mousePressed() {
             if (typeof Route === "function") {
                 currentroute = new Route(startnode, null);
             }
+
+            // Clear any old solve results
+            bestroute = null;
+            bestdistance = Infinity;
+            navMode = false;
+            solverRunning = false;
 
             showMessage("Start Locked! Toggle PAN/ZOOM to move, or TRIM/EDIT to trim roads.");
             mode = trimmodemode;
@@ -1198,6 +1206,7 @@ function mousePressed() {
         return;
     }
 }
+
 
 
 
