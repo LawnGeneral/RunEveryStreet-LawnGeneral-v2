@@ -65,12 +65,12 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
+	// 1. Geolocation Logic: Centers the map on the user if permission is granted
 	if (navigator.geolocation) {
-		// This tries to grab your GPS location immediately
 		navigator.geolocation.getCurrentPosition(function (position) {
 			let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
 			openlayersmap.getView().setCenter(userCoords);
-			openlayersmap.getView().setZoom(15); // Zoom in close to your house
+			openlayersmap.getView().setZoom(15); 
 		}, function(error) {
 			console.warn("Geolocation blocked or failed. Using default center.");
 		}, {
@@ -78,25 +78,45 @@ function setup() {
 			timeout: 5000
 		});
 	}
-    // ... rest of your setup code
+
+	// 2. Canvas & Sizing Setup
 	mapWidth = windowWidth;
 	mapHeight = windowHeight;
 	windowX = windowWidth;
 	windowY = mapHeight;
+	
+	// Create the canvas. Note: windowY - 34 accounts for your header/footer height
 	canvas = createCanvas(windowX, windowY - 34);
 	colorMode(HSB);
+	
+	// 3. Application State
 	mode = choosemapmode;
 	iterationsperframe = 1;
-	margin = 0.05; // Slightly smaller margin so you see more of what you zoomed into
+	margin = 0.05; 
+	
+	// Display the initial instruction message
 	showMessage("Zoom to selected area, then click here");
 
-	// --- THE FIX ---
-	// 1. Allow mouse events to pass through the canvas to the map by default
-	canvas.elt.style.pointerEvents = 'none'; 
+	// --- THE ESSENTIAL INTERACTION FIXES ---
+	
+	// A. Re-enable Pointer Events: 
+	// This makes sure your clicks actually HIT the canvas so mousePressed() can run.
+	canvas.elt.style.pointerEvents = 'auto'; 
 
-	// 2. Tell the map to redraw p5 roads every time you zoom or pan
+	// B. Map-Canvas Sync:
+	// This tells the map to force p5.js to redraw the roads whenever you pan or zoom.
 	openlayersmap.on('postrender', function() {
 		redraw(); 
+	});
+
+	// C. Smart Interaction Toggling:
+	// When you start dragging the map, we disable the canvas so the map moves smoothly.
+	// When you stop moving, we re-enable the canvas so you can click roads/buttons.
+	openlayersmap.on('movestart', function() {
+		canvas.elt.style.pointerEvents = 'none';
+	});
+	openlayersmap.on('moveend', function() {
+		canvas.elt.style.pointerEvents = 'auto';
 	});
 }
 function draw() {
