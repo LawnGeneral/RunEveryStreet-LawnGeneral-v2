@@ -838,61 +838,181 @@ function floodfill(startNode) {
 }
 
 function solveRES() {
-    // 1. Safety
+    // 1) Safety
     if (!startnode) {
         showMessage("Error: No start node selected.");
         return;
     }
 
-    // 2. Ensure solver state flags are correct
-    // Your draw() / handleSolverEngine() currently keys off navMode.
-    navMode = true;           // <-- CRITICAL: actually start solver engine
-    solverRunning = true;     // keep if you still want it for future refactor
+    showMessage("Building route (Euler tour)...");
 
-    // 3. Clean and prep the graph
+    // Ensure solver is not "running"
+    navMode = false;
+    solverRunning = false;
+
+    // 2) Clean graph (remove disconnected parts), rebuild adjacency, reset counters
     removeOrphans();
     resetEdges();
 
-    // 4. Doubling strategy
-    let myOddNodes = getOddDegreeNodes();
-    let myMatrix = buildOddNodeMatrix(myOddNodes);
-    let optimalPairs = findPairs(myOddNodes, myMatrix);
-    applyDoublings(optimalPairs);
+    // 3) Greedy Chinese-Postman prep:
+    //    Pair odd degree nodes using shortest-path distances and "duplicate" those paths.
+    //    (This is still greedy pairing, not Blossom, but much better than random walking.)
+    const oddNodes = [];
+    for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].edges && (nodes[i].edges.length % 2 !== 0)) oddNodes.push(nodes[i]);
+    }
 
-    // 5. Enter solver mode
-    setMode(solveRESmode);
+    // Clear doubling flags
+    for (let e of edges) e.isDoubled = false;
 
-    // 6. Distance synchronization
-    totalRoadsDist = 0;
-    let validRoadsCount = 0;
+    // Helper: get distances Map from your dijkstra()
+    function getDistancesFrom(node) {
+        const res = dijkstra(node);
+        // your dijkstra returns { distances, parents }
+        return res && res.distances ? res.distances : null;
+    }
 
-    for (let e of edges) {
-        let d = parseFloat(e.distance) || 0;
-        if (d > 0) {
-            totalRoadsDist += d;
-            validRoadsCount++;
+    // Build greedy pairs based on shortest path distances
+    const unmatched = new Set();
+    for (let i = 0; i < oddNodes.length; i++) unmatched.add(i);
+
+    const pairs = [];
+    if (oddNodes.length > 0) {
+        // Precompute distance maps for each odd node (faster)
+        const distMaps = [];
+        for (let i = 0; i < oddNodes.length; i++) {
+            distMaps[i] = getDistancesFrom(oddNodes[i]);
+        }
+
+        while (unmatched.size > 1) {
+            const it = unmatched.values().next();
+            const i = it.value;
+            unmatched.delete(i);
+
+            let bestJ = -1;
+            let bestD = Infinity;
+
+            for (let j of unmatched) {
+                const dm = distMaps[i];
+                const d = dm ? dm.get(oddNodes[j]) : Infinity;
+                if (d !== undefined && d < bestD) {
+                    bestD = d;
+                    bestJ = j;
+                }
+            }
+
+            if (bestJ !== -1) {
+                pairs.push([oddNodes[i], oddNodes[bestJ]]);
+                unmatched.delete(bestJ);
+            } else {
+                // couldn't find a partner (disconnected graph)
+                break;
+            }
         }
     }
 
-    remainingedges = validRoadsCount;
+    // Apply doubling along shortest paths for each pair
+    totaledgedoublings = 0;
+    for (let p of pairs) {
+        const pathEdges = getPathEdges(p[0], p[1]); // uses your dijkstra parents
+        for (let e of pathEdges) {
+            if (!e) continue;
+            e.isDoubled = true;
+            totaledgedoublings++;
+        }
+    }
 
-    // 7. Solver initialization
-    currentnode = startnode;
-    currentroute = new Route(currentnode, null);
+    // 4) Build Euler tour (Hierholzer) on the multigraph (edge multiplicity = 1 or 2)
+    // Multiplicity of each edge: 2 if isDoubled else 1
+    const usedCount = new Map();
+    function requiredTraversals(edge) {
+        return edge && edge.distance > 0 ? (edge.isDoubled ? 2 : 1) : 0;
+    }
+    function getUnusedIncidentEdge(node) {
+        if (!node || !node.edges) return null;
+        for (let k = 0; k < node.edges.length; k++) {
+            const e = node.edges[k];
+            const req = requiredTraversals(e);
+            if (req <= 0) continue;
+            const used = usedCount.get(e) || 0;
+            if (used < req) return e;
+        }
+        return null;
+    }
+
+    // Important: ensure adjacency is accurate (in case prior operations drifted)
+    resetEdges(); // your resetEdges now rebuilds node.edges from edges[]
+
+    const nodeStack = [startnode];
+    const edgeStack = [];
+    const circuitEdges = []; // edges in reverse order from backtracking
+
+    while (nodeStack.length > 0) {
+        const v = nodeStack[nodeStack.length - 1];
+        const e = getUnusedIncidentEdge(v);
+
+        if (e) {
+            // use this edge one more time
+            usedCount.set(e, (usedCount.get(e) || 0) + 1);
+
+            const w = e.OtherNodeofEdge(v);
+            if (!w) break;
+
+            nodeStack.push(w);
+            edgeStack.push(e);
+        } else {
+            // dead end: add the edge that brought us here to the circuit
+            nodeStack.pop();
+            if (edgeStack.length > 0) {
+                circuitEdges.push(edgeStack.pop());
+            }
+        }
+    }
+
+    // circuitEdges is in reverse traversal order
+    circuitEdges.reverse();
+
+    // 5) Convert Euler edge sequence into a Route
+    mode = solveRESmode;
 
     bestdistance = Infinity;
     bestroute = null;
-    iterations = 0;
-    lastRecordTime = millis();
 
-    // 8. IMPORTANT: Your sketch uses noLoop() in setup.
-    // The solver needs frames to tick continuously.
-    loop();
+    currentnode = startnode;
+    currentroute = new Route(startnode, null);
+
+    let curr = startnode;
+    for (let i = 0; i < circuitEdges.length; i++) {
+        const e = circuitEdges[i];
+        const next = e.OtherNodeofEdge(curr);
+        if (!next) break;
+
+        // Route accounting: treat every traversal as normal distance; extraDist not needed here
+        currentroute.addWaypoint(next, e.distance, 0);
+        curr = next;
+    }
+
+    // This is now our "best" (deterministic) route
+    bestdistance = currentroute.distance;
+    bestroute = currentroute.copy ? currentroute.copy() : currentroute;
+
+    // Remaining edges should be 0 because Euler tour covers everything required
+    remainingedges = 0;
+
+    // UI refresh
+    showMessage("Route built. Click STOP SOLVER for summary/export.");
+    redraw();
     openlayersmap.render();
 
-    console.log("--- SOLVER RUNNING ---");
-    console.log(`Target: ${(totalRoadsDist / 1000).toFixed(2)}km across ${validRoadsCount} roads.`);
+    // Helpful console output
+    if (bestdistance && totalRoadsDist) {
+        const eff = (totalRoadsDist / bestdistance) * 100;
+        console.log(`Euler route built: ${(bestdistance / 1000).toFixed(2)} km | Efficiency: ${eff.toFixed(1)}% | Doubled segments: ${totaledgedoublings}`);
+    } else {
+        console.log("Euler route built (distance values missing).");
+    }
 }
+
 
 function mousePressed() {
     // 0) If the Route Summary modal is up, ONLY handle its button click
