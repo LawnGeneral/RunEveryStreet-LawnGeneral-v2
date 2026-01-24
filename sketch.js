@@ -956,40 +956,80 @@ function mousePressed() {
         return;
     }
 
-    // 4) TRIMMING LOGIC (CLICK-TIME PICK, MORE FORGIVING)
+    // 4) TRIMMING LOGIC (PIXEL-SPACE PICK)
     if (mode === trimmodemode) {
-        // Base pick radius in pixels
-        let PICK_PX = 25;
+        // point-to-segment distance squared in pixels
+        function pointSegDist2(px, py, ax, ay, bx, by) {
+            const abx = bx - ax;
+            const aby = by - ay;
+            const apx = px - ax;
+            const apy = py - ay;
 
-        // Make it a bit easier when zoomed out
-        const z = openlayersmap?.getView?.().getZoom?.();
-        if (typeof z === "number") {
-            // At zoom 12 => +10px, zoom 16 => +0px (roughly)
-            PICK_PX += Math.max(0, Math.min(12, (16 - z) * 5));
+            const abLen2 = abx * abx + aby * aby;
+            if (abLen2 === 0) {
+                // A and B are the same point
+                const dx = px - ax;
+                const dy = py - ay;
+                return dx * dx + dy * dy;
+            }
+
+            let t = (apx * abx + apy * aby) / abLen2;
+            t = Math.max(0, Math.min(1, t));
+
+            const cx = ax + t * abx;
+            const cy = ay + t * aby;
+
+            const dx = px - cx;
+            const dy = py - cy;
+            return dx * dx + dy * dy;
         }
 
+        // How close (in pixels) the click must be to a road segment
+        const PICK_PX = 22;
+        const PICK_PX2 = PICK_PX * PICK_PX;
+
         let bestIdx = -1;
-        let bestDist = Infinity;
+        let bestD2 = Infinity;
 
         for (let i = 0; i < edges.length; i++) {
-            const d = edges[i].distanceToPoint(mouseX, mouseY);
-            if (d < bestDist) {
-                bestDist = d;
+            const e = edges[i];
+            if (!e || !e.from || !e.to) continue;
+
+            // Convert endpoints to pixel coordinates
+            const aCoord = ol.proj.fromLonLat([e.from.lon, e.from.lat]);
+            const bCoord = ol.proj.fromLonLat([e.to.lon, e.to.lat]);
+
+            const aPix = openlayersmap.getPixelFromCoordinate(aCoord);
+            const bPix = openlayersmap.getPixelFromCoordinate(bCoord);
+            if (!aPix || !bPix) continue;
+
+            // Quick reject if totally off-screen (optional small padding)
+            const pad = 30;
+            const minX = Math.min(aPix[0], bPix[0]) - pad;
+            const maxX = Math.max(aPix[0], bPix[0]) + pad;
+            const minY = Math.min(aPix[1], bPix[1]) - pad;
+            const maxY = Math.max(aPix[1], bPix[1]) + pad;
+            if (mouseX < minX || mouseX > maxX || mouseY < minY || mouseY > maxY) continue;
+
+            const d2 = pointSegDist2(mouseX, mouseY, aPix[0], aPix[1], bPix[0], bPix[1]);
+            if (d2 < bestD2) {
+                bestD2 = d2;
                 bestIdx = i;
             }
         }
 
-        if (bestIdx !== -1 && bestDist <= PICK_PX) {
+        if (bestIdx !== -1 && bestD2 <= PICK_PX2) {
             closestedgetomouse = bestIdx;
             handleTrimming();
         } else {
             showMessage("Click closer to the road line (or zoom in a bit).");
-            console.log("Trim miss:", { bestDist, PICK_PX });
+            console.log("Trim miss (pixel)", { bestPx: Math.sqrt(bestD2), PICK_PX });
         }
 
         return;
     }
 }
+
 
 
 
