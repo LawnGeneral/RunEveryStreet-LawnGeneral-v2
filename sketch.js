@@ -532,41 +532,50 @@ function floodfill(node, stepssofar) {
 
 function solveRES() {
     // 1. Initial Cleanup
+    // Ensure we are working with a clean, connected graph
     removeOrphans();
     resetEdges();
     
     // 2. The Strategy (The "Genius" Math)
-    // This identifies the odd nodes and decides which roads to double
+    // Find odd nodes and calculate the shortest paths to pair them up
     let myOddNodes = getOddDegreeNodes(); 
     let myMatrix = buildOddNodeMatrix(myOddNodes); 
     let optimalPairs = findPairs(myOddNodes, myMatrix); 
-    applyDoublings(optimalPairs); // This marks edges with .isDoubled = true
+    applyDoublings(optimalPairs); // Marks edges as .isDoubled = true
 
     // 3. UI and State Reset
-    showRoads = false; // Hide the blue lines to show the solver trail
+    showRoads = false; // Switch view to the solver's path
     currentnode = startnode; 
     
-    // 4. Distance Synchronization
-    // Calculate total unique distance ONCE for the efficiency UI
+    // 4. Distance Synchronization & Road Counting
     totalRoadsDist = 0;
+    let validRoadsCount = 0;
+
     for (let e of edges) {
-        totalRoadsDist += e.distance;
+        // Force conversion to number to prevent "0.00 km" bug
+        let d = parseFloat(e.distance);
+        if (!isNaN(d) && d > 0) {
+            totalRoadsDist += d;
+            validRoadsCount++;
+        }
     }
 
-    // IMPORTANT: The counter only tracks the first time we hit a road.
-    // It must match the number of physical roads, not the doubled ones.
-    remainingedges = edges.length; 
+    // Set the "Finish Line" based on actual physical roads found
+    remainingedges = validRoadsCount; 
     
     // 5. Solver Variables Reset
+    // We initialize these to start a fresh search for the best circuit
     currentroute = new Route(currentnode, null);
     bestroute = new Route(currentnode, null);
     bestdistance = Infinity;
     iterations = 0;
     lastRecordTime = millis();
     
-    console.log("Solver Initialized:");
-    console.log("- Total Unique Distance: " + (totalRoadsDist/1000).toFixed(2) + " km");
-    console.log("- Physical Roads to visit: " + remainingedges);
+    // Debugging logs to verify the numbers in the Console (F12)
+    console.log("--- SOLVER INITIALIZED ---");
+    console.log("Total Unique Distance: " + (totalRoadsDist / 1000).toFixed(2) + " km");
+    console.log("Physical Roads to Visit: " + remainingedges);
+    console.log("Start Node ID: " + (startnode ? startnode.nodeId : "NOT SET"));
 }
 function mousePressed() {
   // Ensure the canvas can catch clicks unless we are explicitly in Navigation (Pan/Zoom) mode
