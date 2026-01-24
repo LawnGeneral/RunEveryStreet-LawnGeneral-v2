@@ -65,7 +65,7 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 
 function setup() {
-	// 1. Geolocation Logic: Centers the map on the user if permission is granted
+	// 1. Geolocation Logic
 	if (navigator.geolocation) {
 		navigator.geolocation.getCurrentPosition(function (position) {
 			let userCoords = ol.proj.fromLonLat([position.coords.longitude, position.coords.latitude]);
@@ -80,15 +80,12 @@ function setup() {
 	}
 
 	// 2. Canvas & Sizing Setup
-	// We use windowHeight - 40 to match the 40px header in your index.html
 	mapWidth = windowWidth;
 	mapHeight = windowHeight - 40;
 	windowX = windowWidth;
 	windowY = mapHeight;
 	
 	canvas = createCanvas(windowX, windowY);
-	
-	// Ensure the canvas sits exactly at the start of the map (below the 40px header)
 	canvas.position(0, 40);
 	
 	colorMode(HSB);
@@ -97,28 +94,27 @@ function setup() {
 	mode = choosemapmode;
 	iterationsperframe = 1;
 	margin = 0.05; 
-	
-	// We comment this out because your Red Button is the new instruction
-	// showMessage("Zoom to selected area, then click here");
 
-	// --- THE ESSENTIAL INTERACTION FIXES ---
+	// --- THE FIXES ---
 	
-	// A. Re-enable Pointer Events: 
-	canvas.elt.style.pointerEvents = 'auto'; 
+	// A. Default to NONE: 
+	// This allows you to pan and zoom the map without the canvas blocking you.
+	canvas.elt.style.pointerEvents = 'none'; 
 
 	// B. Map-Canvas Sync:
 	openlayersmap.on('postrender', function() {
 		redraw(); 
 	});
 
-	// C. Smart Interaction Toggling:
-	// This allows you to drag the map (pointerEvents off) 
-	// and then click roads when you stop (pointerEvents on).
-	openlayersmap.on('movestart', function() {
-		canvas.elt.style.pointerEvents = 'none';
-	});
+	// C. Smart Toggling:
+	// The canvas should only "swallow" clicks if we are in selectnodemode.
+	// Otherwise, it stays 'none' so the map remains interactive.
 	openlayersmap.on('moveend', function() {
-		canvas.elt.style.pointerEvents = 'auto';
+		if (mode === selectnodemode) {
+			canvas.elt.style.pointerEvents = 'auto';
+		} else {
+			canvas.elt.style.pointerEvents = 'none';
+		}
 	});
 }
 function draw() {
@@ -1278,11 +1274,23 @@ function getClosestNode(mx, my) {
     }
 }
 function triggerIngest() {
-    console.log("Button clicked! Triggering getOverpassData...");
+    console.log("Button clicked: Waking up canvas and fetching roads...");
     
-    // Call the specific function we found
-    getOverpassData();
+    // 1. Wake up the canvas so you can click the roads once they load
+    if (canvas && canvas.elt) {
+        canvas.elt.style.pointerEvents = 'auto';
+    }
     
-    // Hide the button UI immediately so it's not blocking the map
-    document.getElementById('ui-panel').style.display = 'none';
+    // 2. Trigger the road data download function we found earlier
+    if (typeof getOverpassData === "function") {
+        getOverpassData();
+    } else {
+        console.error("Error: getOverpassData function not found in sketch.js");
+    }
+    
+    // 3. Hide the button panel so it's out of your way
+    let ui = document.getElementById('ui-panel');
+    if (ui) {
+        ui.style.display = 'none';
+    }
 }
