@@ -9,23 +9,23 @@ class Node {
 
 // Helper function to get the current screen position
   getScreenPos() {
-    // Ensure we have numbers to work with
     const lon = parseFloat(this.lon);
     const lat = parseFloat(this.lat);
-    
-    if (isNaN(lon) || isNaN(lat)) return { x: 0, y: 0 };
+    if (isNaN(lon) || isNaN(lat)) return { x: -1000, y: -1000 };
 
+    // Convert Lat/Lon to the map's internal "Meters" projection
     const coords = ol.proj.fromLonLat([lon, lat]);
+    
+    // Get the exact pixel on the screen
     const pix = openlayersmap.getPixelFromCoordinate(coords);
     
     if (pix) {
+        // IMPORTANT: We must subtract the map's container position 
+        // if your canvas is offset by a header
         return { x: pix[0], y: pix[1] };
     }
-    // Return a far-off coordinate instead of null to prevent 
-    // line() from complaining about "empty variables"
     return { x: -1000, y: -1000 }; 
 }
- 
 
   show() {
     let pos = this.getScreenPos();
