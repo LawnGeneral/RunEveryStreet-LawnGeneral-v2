@@ -22,21 +22,6 @@
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-
-      /* ---- OpenLayers UI cleanup ---- */
-
-/* Hide zoom + rotate buttons */
-.ol-zoom,
-.ol-rotate {
-  display: none !important;
-}
-
-/* Optional: keep attribution but make it subtle */
-.ol-attribution {
-  font-size: 10px !important;
-  opacity: 0.6 !important;
-}
-
     }
 
     body {
@@ -49,9 +34,9 @@
     .header-bar {
       background-color: #380702;
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 0 15px;
+      justify-content: space-between;
+      padding: 0 12px;
       position: fixed;
       top: 0;
       left: 0;
@@ -59,18 +44,28 @@
       z-index: 1000;
       height: 40px;
       box-sizing: border-box;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .nav-links {
+    .left-group, .center-group, .right-group {
       display: flex;
-      gap: 20px;
-      font-size: 13px;
       align-items: center;
+      gap: 10px;
     }
 
-    a:link, a:visited { color: white; text-decoration: none; }
-    a:hover { text-decoration: underline; }
+    .center-group {
+      flex: 1;
+      justify-content: center;
+    }
+
+    /* Links in header */
+    .right-group a {
+      color: white;
+      text-decoration: none;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .right-group a:hover { text-decoration: underline; }
 
     /* Header toggle button (ALWAYS clickable) */
     #mode-toggle {
@@ -82,8 +77,36 @@
       font-weight: bold;
       cursor: pointer;
       white-space: nowrap;
+      font-size: 12px;
     }
     #mode-toggle:hover { background: #333; }
+
+    /* Header "LOAD ROADS" button */
+    #ingest-btn {
+      padding: 6px 10px;
+      background: #7a0f05;
+      color: white;
+      border: 1px solid rgba(255,255,255,0.85);
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 12px;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    }
+    #ingest-btn:hover { background: #a31407; }
+
+    /* Attribution in header */
+    .osm-attrib {
+      font-size: 12px;
+      opacity: 0.85;
+      white-space: nowrap;
+    }
+    .osm-attrib a:link, .osm-attrib a:visited {
+      color: white;
+      text-decoration: none;
+    }
+    .osm-attrib a:hover { text-decoration: underline; }
 
     /* Map fills viewport under the header */
     #map {
@@ -95,20 +118,6 @@
       height: calc(100vh - 40px);
       z-index: 1;
     }
-    /* OpenLayers attribution: keep it (required), but make it small + unobtrusive */
-.ol-attribution {
-  font-size: 11px !important;
-  opacity: 0.85;
-  right: 8px !important;
-  left: auto !important;
-  bottom: 8px !important;
-  max-width: 45% !important;
-}
-
-.ol-attribution button {
-  font-size: 12px !important;
-}
-
 
     /* ONLY style the p5 canvas (do NOT affect OpenLayers canvases) */
     canvas.p5Canvas, #defaultCanvas0 {
@@ -122,50 +131,37 @@
       pointer-events: none;                  /* JS will flip this when editing */
     }
 
-    #ui-panel {
-      position: fixed;
-      top: 60px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10001;
-      text-align: center;
-    }
-
-    #ingest-btn {
-      padding: 12px 30px;
-      background: #7a0f05;
-      color: white;
-      border: 2px solid #ffffff;
-      border-radius: 5px;
-      cursor: pointer;
-      font-weight: bold;
-      font-size: 16px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-    }
-
-    #ingest-btn:hover {
-      background: #a31407;
+    /* Hide OpenLayers attribution overlay (we show it in header instead) */
+    .ol-attribution {
+      display: none !important;
     }
   </style>
 </head>
 
 <body>
   <div class="header-bar">
-    <img src="assets/logosmalllit.png" alt="Logo" style="height: 25px;" />
+    <div class="left-group">
+      <img src="assets/logosmalllit.png" alt="Logo" style="height: 25px;" />
+    </div>
 
-    <!-- Always-clickable mode toggle -->
-    <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
+    <div class="center-group">
+      <!-- Always-clickable mode toggle -->
+      <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
 
-    <div class="nav-links">
+      <!-- Load roads now lives in the header -->
+      <button id="ingest-btn" onclick="triggerIngest()">LOAD ROADS</button>
+    </div>
+
+    <div class="right-group">
+      <span class="osm-attrib">
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">
+          © OpenStreetMap contributors
+        </a>
+      </span>
+
       <a href="https://codeberg.org/lejun/RunEveryStreet/" target="_blank">Source Code</a>
       <a href=".">Restart</a>
     </div>
-  </div>
-
-  <div id="ui-panel">
-    <button id="ingest-btn" onclick="triggerIngest()">
-      ZOOM IN, THEN CLICK HERE TO LOAD ROADS
-    </button>
   </div>
 
   <div id="map"></div>
