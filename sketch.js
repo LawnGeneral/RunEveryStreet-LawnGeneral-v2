@@ -1415,30 +1415,6 @@ function drawMask() {
 	rect(windowWidth * margin, windowHeight * margin, windowWidth * (1 - 2 * margin), windowHeight * (1 - 2 * margin));
 }
 
-function trimSelectedEdge() {
-    // Prevent trimming if we are currently in Nav Mode
-    if (navMode) return;
-
-    if (closestedgetomouse >= 0) {
-        let edgetodelete = edges[closestedgetomouse];
-
-        // --- NEW LINE: Save the edge to our history stack before deleting ---
-        deletedEdgesStack.push(edgetodelete);
-
-        edges.splice(edges.findIndex((element) => element == edgetodelete), 1);
-        
-        for (let i = 0; i < nodes.length; i++) { 
-            if (nodes[i].edges.includes(edgetodelete)) {
-                nodes[i].edges.splice(nodes[i].edges.findIndex((element) => element == edgetodelete), 1);
-            }
-        }
-        
-        removeOrphans(); 
-        closestedgetomouse = -1;
-    }
-}
-
-
 function showReportOut() {
     push();
     resetMatrix(); // Keep the UI fixed on screen while the map is behind it
