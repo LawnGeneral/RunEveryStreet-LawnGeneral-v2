@@ -335,57 +335,58 @@ function drawToolbar() {
   pop();
 }
 
-
-
-
-
 function getOverpassData() {
-    showMessage("Loading map data...");
+  showMessage("Loading map data...");
 
-    // Keep canvas aligned with map (below header)
-    canvas.position(0, HEADER_H);
+  // Keep canvas aligned with map (below header)
+  canvas.position(0, HEADER_H);
 
-    // Reset global state
-    bestroute = null;
-    totaledgedistance = 0;
-    totalRoadsDist = 0;
-    totaluniqueroads = 0;
-    showRoads = true;
+  // Reset global state
+  bestroute = null;
+  totaledgedistance = 0;
+  totalRoadsDist = 0;
+  totaluniqueroads = 0;
+  showRoads = true;
 
-    nodes = [];
-    edges = [];
+  nodes = [];
+  edges = [];
 
-    // 1. Get current map bounds (EPSG:4326)
-    let extent = ol.proj.transformExtent(
-        openlayersmap.getView().calculateExtent(openlayersmap.getSize()),
-        'EPSG:3857',
-        'EPSG:4326'
-    );
+  // 1. Get current map bounds (EPSG:4326)
+  let extent = ol.proj.transformExtent(
+    openlayersmap.getView().calculateExtent(openlayersmap.getSize()),
+    "EPSG:3857",
+    "EPSG:4326"
+  );
 
-    mapminlat = extent[1];
-    mapminlon = extent[0];
-    mapmaxlat = extent[3];
-    mapmaxlon = extent[2];
+  mapminlat = extent[1];
+  mapminlon = extent[0];
+  mapmaxlat = extent[3];
+  mapmaxlon = extent[2];
 
-    // Apply margin
-    let latSize = mapmaxlat - mapminlat;
-    let lonSize = mapmaxlon - mapminlon;
+  // Apply margin
+  let latSize = mapmaxlat - mapminlat;
+  let lonSize = mapmaxlon - mapminlon;
 
-    let dataminlat = mapminlat + latSize * margin;
-    let dataminlon = mapminlon + lonSize * margin;
-    let datamaxlat = mapmaxlat - latSize * margin;
-    let datamaxlon = mapmaxlon - lonSize * margin;
+  let dataminlat = mapminlat + latSize * margin;
+  let dataminlon = mapminlon + lonSize * margin;
+  let datamaxlat = mapmaxlat - latSize * margin;
+  let datamaxlon = mapmaxlon - lonSize * margin;
 
-    // Safety guard against giant queries
-    let area = (datamaxlat - dataminlat) * (datamaxlon - dataminlon);
-    if (area > 0.02) {
-        showMessage("Zoom in more before loading roads");
-        setMode(choosemapmode);
-        return;
-    }
+  // Safety guard against giant queries
+  let area = (datamaxlat - dataminlat) * (datamaxlon - dataminlon);
+  if (area > 0.02) {
+    showMessage("Zoom in more before loading roads");
 
-    // 2. Build Overpass query (POST)
-    let overpassquery = `
+    // IMPORTANT: keep ingest button visible so user can retry
+    const panel = document.getElementById("ui-panel");
+    if (panel) panel.style.display = "block";
+
+    setMode(choosemapmode);
+    return;
+  }
+
+  // 2. Build Overpass query (POST)
+  let overpassquery = `
 [out:xml][timeout:180];
 (
   way(${dataminlat},${dataminlon},${datamaxlat},${datamaxlon})
@@ -404,78 +405,93 @@ function getOverpassData() {
 out;
 `;
 
-    // 3. Execute Overpass query via POST
-    runOverpassQuery(
-        overpassquery,
-        function (responseText) {
-            let parser = new DOMParser();
-            OSMxml = parser.parseFromString(responseText, "text/xml");
+  // 3. Execute Overpass query via POST
+  runOverpassQuery(
+    overpassquery,
+    function (responseText) {
+      let parser = new DOMParser();
+      OSMxml = parser.parseFromString(responseText, "text/xml");
 
-            let XMLnodes = OSMxml.getElementsByTagName("node");
-            let XMLways = OSMxml.getElementsByTagName("way");
+      let XMLnodes = OSMxml.getElementsByTagName("node");
+      let XMLways = OSMxml.getElementsByTagName("way");
 
-            if (XMLways.length === 0) {
-                showMessage("No named roads found. Zoom in!");
-                setMode(choosemapmode);
-                return;
-            }
+      if (XMLways.length === 0) {
+        showMessage("No named roads found. Zoom in and try again.");
 
-            numnodes = XMLnodes.length;
-            numways = XMLways.length;
+        // Re-show ingest panel so user can retry
+        const panel = document.getElementById("ui-panel");
+        if (panel) panel.style.display = "block";
 
-            minlat = Infinity; maxlat = -Infinity;
-            minlon = Infinity; maxlon = -Infinity;
+        setMode(choosemapmode);
+        return;
+      }
 
-            // 4. Parse Nodes
-            for (let i = 0; i < numnodes; i++) {
-                let lat = parseFloat(XMLnodes[i].getAttribute("lat"));
-                let lon = parseFloat(XMLnodes[i].getAttribute("lon"));
-                let id  = XMLnodes[i].getAttribute("id");
+      numnodes = XMLnodes.length;
+      numways = XMLways.length;
 
-                minlat = min(minlat, lat);
-                maxlat = max(maxlat, lat);
-                minlon = min(minlon, lon);
-                maxlon = max(maxlon, lon);
+      minlat = Infinity; maxlat = -Infinity;
+      minlon = Infinity; maxlon = -Infinity;
 
-                nodes.push(new Node(id, lat, lon));
-            }
+      // 4. Parse Nodes
+      for (let i = 0; i < numnodes; i++) {
+        let lat = parseFloat(XMLnodes[i].getAttribute("lat"));
+        let lon = parseFloat(XMLnodes[i].getAttribute("lon"));
+        let id  = XMLnodes[i].getAttribute("id");
 
-            // 5. Parse Ways → Edges
-            for (let i = 0; i < numways; i++) {
-                let wayid = XMLways[i].getAttribute("id");
-                let nds = XMLways[i].getElementsByTagName("nd");
+        minlat = min(minlat, lat);
+        maxlat = max(maxlat, lat);
+        minlon = min(minlon, lon);
+        maxlon = max(maxlon, lon);
 
-                for (let j = 0; j < nds.length - 1; j++) {
-                    let from = getNodebyId(nds[j].getAttribute("ref"));
-                    let to   = getNodebyId(nds[j + 1].getAttribute("ref"));
+        nodes.push(new Node(id, lat, lon));
+      }
 
-                    if (from && to) {
-                        let edge = new Edge(from, to, wayid);
-                        edges.push(edge);
-                        totaledgedistance += edge.distance;
-                    }
-                }
-            }
+      // 5. Parse Ways → Edges
+      for (let i = 0; i < numways; i++) {
+        let wayid = XMLways[i].getAttribute("id");
+        let nds = XMLways[i].getElementsByTagName("nd");
 
-            totalRoadsDist = totaledgedistance;
-            totaluniqueroads = edges.length;
+        for (let j = 0; j < nds.length - 1; j++) {
+          let from = getNodebyId(nds[j].getAttribute("ref"));
+          let to   = getNodebyId(nds[j + 1].getAttribute("ref"));
 
-            // 6. Wake up UI
-            setMode(selectnodemode);
-            showMessage("Click a red node to set Start");
-
-            // Force immediate draw (prevents “roads appear only after zoom”)
-            redraw();
-
-            console.log(`Loaded ${edges.length} road segments`);
-        },
-        function (err) {
-            console.error("Overpass failed:", err);
-            showMessage("Overpass failed (try smaller area).");
-            setMode(choosemapmode);
+          if (from && to) {
+            let edge = new Edge(from, to, wayid);
+            edges.push(edge);
+            totaledgedistance += edge.distance;
+          }
         }
-    );
+      }
+
+      totalRoadsDist = totaledgedistance;
+      totaluniqueroads = edges.length;
+
+      // ✅ SUCCESS: hide ingest button ONLY now
+      const panel = document.getElementById("ui-panel");
+      if (panel) panel.style.display = "none";
+
+      // 6. Wake up UI
+      setMode(selectnodemode);
+      showMessage("Click a red node to set Start");
+
+      // Force immediate draw (prevents “roads appear only after zoom”)
+      redraw();
+
+      console.log(`Loaded ${edges.length} road segments`);
+    },
+    function (err) {
+      console.error("Overpass failed:", err);
+      showMessage("Overpass failed (zoom in more and try again).");
+
+      // Re-show ingest panel so user can retry
+      const panel = document.getElementById("ui-panel");
+      if (panel) panel.style.display = "block";
+
+      setMode(choosemapmode);
+    }
+  );
 }
+
 
 
 
@@ -1545,20 +1561,22 @@ function getPathEdges(startNode, endNode) {
 }
 
 function triggerIngest() {
+  // Show loading UI (and make sure panel stays available)
+  const panel = document.getElementById('ui-panel');
+  if (panel) panel.style.display = 'block';
+
   getOverpassData();
 
-  const panel = document.getElementById('ui-panel');
-  if (panel) panel.style.display = 'none';
-
-  // After loading roads, user should be able to pan/zoom to choose start
+  // After clicking load, user should be able to pan/zoom immediately
   mapPanZoomMode = true;
-  setMode(selectnodemode); // nodes visible; clicks pass to map until you toggle to TRIM/EDIT
+  setMode(choosemapmode);
 
   openlayersmap.updateSize();
   setTimeout(() => openlayersmap.updateSize(), 0);
 
   console.log("Ingest triggered: start in PAN/ZOOM, toggle to TRIM/EDIT to click nodes/roads.");
 }
+
 
 function handleTrimming() {
   if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) return;
