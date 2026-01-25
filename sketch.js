@@ -1192,46 +1192,50 @@ function getNodebyId(id) {
 	return null;
 }
 
+// Single reusable toast (no stacked boxes)
+let msgToast = null;
+let msgToastTimer = null;
+
 function showMessage(msg) {
-	if (msgDiv) {
-		hideMessage();
-	}
-	let ypos = 20;
-	let btnwidth = 320;
-	msgbckDiv = createDiv('');
-	msgbckDiv.style('position', 'fixed');
-	msgbckDiv.style('width', btnwidth + 'px');
-	msgbckDiv.style('top', ypos + 45 + 'px');
-	msgbckDiv.style('left', '50%');
-	msgbckDiv.style('background', 'black');
-	msgbckDiv.style('opacity', '0.3');
-	msgbckDiv.style('-webkit-transform', 'translate(-50%, -50%)');
-	msgbckDiv.style('transform', 'translate(-50%, -50%)');
-	msgbckDiv.style('height', '30px');
-	msgbckDiv.style('border-radius', '7px');
-	msgDiv = createDiv('');
-	msgDiv.style('position', 'fixed');
-	msgDiv.style('width', btnwidth + 'px');
-	msgDiv.style('top', ypos + 57 + 'px');
-	msgDiv.style('left', '50%');
-	msgDiv.style('color', 'white');
-	msgDiv.style('background', 'none');
-	msgDiv.style('opacity', '1');
-	msgDiv.style('-webkit-transform', 'translate(-50%, -50%)');
-	msgDiv.style('transform', 'translate(-50%, -50%)');
-	msgDiv.style('font-family', '"Lucida Sans Unicode", "Lucida Grande", sans-serif');
-	msgDiv.style('font-size', '16px');
-	msgDiv.style('text-align', 'center');
-	msgDiv.style('vertical-align', 'middle');
-	msgDiv.style('height', '50px');
-	msgDiv.html(msg);
-	
+  // Create once
+  if (!msgToast) {
+    msgToast = createDiv('');
+    msgToast.id('statusMsg');
+    msgToast.style('position', 'fixed');
+    msgToast.style('top', (HEADER_H + 12) + 'px');   // just below the header
+    msgToast.style('left', '50%');
+    msgToast.style('transform', 'translateX(-50%)');
+    msgToast.style('padding', '8px 14px');
+    msgToast.style('border-radius', '10px');
+    msgToast.style('background', 'rgba(0,0,0,0.70)');
+    msgToast.style('color', 'white');
+    msgToast.style('font-family', '"Lucida Sans Unicode", "Lucida Grande", sans-serif');
+    msgToast.style('font-size', '14px');
+    msgToast.style('line-height', '1.2');
+    msgToast.style('text-align', 'center');
+    msgToast.style('z-index', '10002');
+    msgToast.style('max-width', '70vw');
+    msgToast.style('pointer-events', 'none'); // never blocks map clicks
+  }
+
+  msgToast.html(msg);
+  msgToast.show();
+
+  // Auto-hide after a bit (prevents permanent clutter)
+  if (msgToastTimer) clearTimeout(msgToastTimer);
+  msgToastTimer = setTimeout(() => {
+    hideMessage();
+  }, 2500);
 }
 
 function hideMessage() {
-	msgbckDiv.remove();
-	msgDiv.remove();
+  if (msgToast) msgToast.hide();
+  if (msgToastTimer) {
+    clearTimeout(msgToastTimer);
+    msgToastTimer = null;
+  }
 }
+
 
 function showReportOut() {
     push();
