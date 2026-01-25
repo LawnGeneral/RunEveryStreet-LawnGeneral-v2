@@ -768,52 +768,46 @@ function solveRES() {
     return;
   }
 
-  showMessage("Building route (closed Euler tour, dead-end-first pairing)...");
+  showMessage("Building route (closed Euler tour)...");
 
   navMode = false;
   solverRunning = false;
 
+  // Clean graph & rebuild adjacency
   removeOrphans();
   resetEdges();
 
-  // ---- 1) Split odd nodes into dead-ends (deg=1) and other odds ----
-  const deadEnds = [];
-  const otherOdds = [];
-
+  // ---- 1) Odd nodes ----
+  const oddNodes = [];
   for (let i = 0; i < nodes.length; i++) {
     const deg = nodes[i].edges ? nodes[i].edges.length : 0;
-    if (deg % 2 !== 0) {
-      if (deg === 1) deadEnds.push(nodes[i]);
-      else otherOdds.push(nodes[i]);
-    }
+    if (deg % 2 !== 0) oddNodes.push(nodes[i]);
   }
 
-  // ---- 2) Multiplicity counts ----
+  // ---- 2) Multiplicity counts (NOT boolean) ----
   for (let e of edges) e.extraTraversals = 0;
 
-  // ---- helpers for pairing using multi-start greedy + local swaps ----
-  function buildMatrix(oddList) {
-    const n = oddList.length;
-    const matrix = Array.from({ length: n }, () => Array(n).fill(0));
-    const distMaps = [];
+  // ---- 3) Build distance matrix between odd nodes ----
+  const nOdd = oddNodes.length;
+  const matrix = Array.from({ length: nOdd }, () => Array(nOdd).fill(0));
 
-    for (let i = 0; i < n; i++) {
-      const res = dijkstra(oddList[i]);
-      distMaps[i] = res && res.distances ? res.distances : new Map();
-    }
-
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++) {
-        if (i === j) matrix[i][j] = 0;
-        else {
-          const d = distMaps[i].get(oddList[j]);
-          matrix[i][j] = (d === undefined) ? 1e15 : d;
-        }
-      }
-    }
-    return matrix;
+  const distMaps = [];
+  for (let i = 0; i < nOdd; i++) {
+    const res = dijkstra(oddNodes[i]);
+    distMaps[i] = res && res.distances ? res.distances : new Map();
   }
 
+  for (let i = 0; i < nOdd; i++) {
+    for (let j = 0; j < nOdd; j++) {
+      if (i === j) matrix[i][j] = 0;
+      else {
+        const d = distMaps[i].get(oddNodes[j]);
+        matrix[i][j] = (d === undefined) ? 1e15 : d;
+      }
+    }
+  }
+
+  // ---- 4) Multi-start greedy pairing + local swap improvement (GLOBAL pool) ----
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -822,7 +816,7 @@ function solveRES() {
     return arr;
   }
 
-  function totalCost(matrix, pairsIdx) {
+  function totalCostIdx(pairsIdx) {
     let sum = 0;
     for (let k = 0; k < pairsIdx.length; k++) {
       sum += matrix[pairsIdx[k][0]][pairsIdx[k][1]];
@@ -830,7 +824,7 @@ function solveRES() {
     return sum;
   }
 
-  function greedyPairingFromOrder(matrix, orderIdx) {
+  function greedyPairingFromOrder(orderIdx) {
     const unmatched = new Set(orderIdx);
     const pairsIdx = [];
 
@@ -843,16 +837,17 @@ function solveRES() {
       unmatched.delete(i);
 
       let bestJ = -1;
-      let bestC = Infinity;
+      let bestCost = Infinity;
+
       for (const j of unmatched) {
         const c = matrix[i][j];
-        if (c < bestC) {
-          bestC = c;
+        if (c < bestCost) {
+          bestCost = c;
           bestJ = j;
         }
       }
 
-      if (bestJ !== -1 && bestC < 1e14) {
+      if (bestJ !== -1 && bestCost < 1e14) {
         pairsIdx.push([i, bestJ]);
         unmatched.delete(bestJ);
       } else {
@@ -862,7 +857,7 @@ function solveRES() {
     return pairsIdx;
   }
 
-  function localSwapImprove(matrix, pairsIdx) {
+  function localSwapImprove(pairsIdx) {
     let improved = true;
     let passes = 0;
     const MAX_PASSES = 80;
@@ -896,49 +891,33 @@ function solveRES() {
     return { pairsIdx, passes };
   }
 
-  function findPairsImproved(oddList, tries) {
-    const n = oddList.length;
-    if (n < 2) return [];
+  const baseOrder = [];
+  for (let i = 0; i < nOdd; i++) baseOrder.push(i);
 
-    const matrix = buildMatrix(oddList);
-    const baseOrder = [];
-    for (let i = 0; i < n; i++) baseOrder.push(i);
+  const TRIES = 200; // you can raise later; keep this stable for now
+  let bestPairsIdx = [];
+  let bestCost = Infinity;
+  let bestPasses = 0;
 
-    let bestPairsIdx = [];
-    let bestCost = Infinity;
-    let bestPasses = 0;
+  for (let t = 0; t < TRIES; t++) {
+    const order = shuffle(baseOrder.slice());
+    let pairsIdx = greedyPairingFromOrder(order);
 
-    for (let t = 0; t < tries; t++) {
-      const order = shuffle(baseOrder.slice());
-      let pairsIdx = greedyPairingFromOrder(matrix, order);
+    const improved = localSwapImprove(pairsIdx);
+    pairsIdx = improved.pairsIdx;
 
-      const improved = localSwapImprove(matrix, pairsIdx);
-      pairsIdx = improved.pairsIdx;
-
-      const cost = totalCost(matrix, pairsIdx);
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestPairsIdx = pairsIdx.slice();
-        bestPasses = improved.passes;
-      }
+    const cost = totalCostIdx(pairsIdx);
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestPairsIdx = pairsIdx.slice();
+      bestPasses = improved.passes;
     }
-
-    const pairs = bestPairsIdx.map(([i, j]) => [oddList[i], oddList[j]]);
-    console.log(`Pairing(${oddList.length}) tries=${tries} swapPasses=${bestPasses} cost=${bestCost.toFixed(2)}`);
-    return pairs;
   }
 
-  // ---- 3) Dead-end-first pairing, then remaining odds ----
-  // Pair dead ends aggressively (often biggest ROI)
-  const pairs1 = findPairsImproved(deadEnds, 220);
+  const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
+  console.log(`Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`);
 
-  // Remove paired nodes from deadEnds set, but since we pair within the list, it's already consumed.
-  // Now pair the remaining odd nodes (non-dead-end odds)
-  const pairs2 = findPairsImproved(otherOdds, 220);
-
-  const pairs = pairs1.concat(pairs2);
-
-  // ---- 4) Apply doubling counts along shortest paths ----
+  // ---- 5) Apply doublings via shortest paths (increment counts) ----
   totaledgedoublings = 0;
   for (const [a, b] of pairs) {
     const pathEdges = getPathEdges(a, b);
@@ -949,7 +928,7 @@ function solveRES() {
     }
   }
 
-  // ---- 5) Hierholzer on multigraph ----
+  // ---- 6) Hierholzer on multigraph ----
   const usedCount = new Map();
 
   function requiredTraversals(edge) {
@@ -969,6 +948,14 @@ function solveRES() {
     return null;
   }
 
+  // SAFE other-node: prevents phantom teleport lines
+  function safeOtherNode(edge, node) {
+    if (!edge || !node) return null;
+    if (edge.from === node) return edge.to;
+    if (edge.to === node) return edge.from;
+    return null; // not incident -> indicates a discontinuity bug
+  }
+
   resetEdges();
 
   const nodeStack = [startnode];
@@ -981,8 +968,13 @@ function solveRES() {
 
     if (e) {
       usedCount.set(e, (usedCount.get(e) || 0) + 1);
-      const w = e.OtherNodeofEdge(v);
-      if (!w) break;
+
+      const w = safeOtherNode(e, v);
+      if (!w) {
+        console.warn("Discontinuity during Euler build: edge not incident to current node", e, v);
+        break;
+      }
+
       nodeStack.push(w);
       edgeStack.push(e);
     } else {
@@ -995,7 +987,7 @@ function solveRES() {
 
   circuitEdges.reverse();
 
-  // ---- 6) Convert to Route ----
+  // ---- 7) Convert to Route (with safety) ----
   mode = solveRESmode;
 
   bestdistance = Infinity;
@@ -1006,8 +998,13 @@ function solveRES() {
   let curr = startnode;
   for (let i = 0; i < circuitEdges.length; i++) {
     const e = circuitEdges[i];
-    const next = e.OtherNodeofEdge(curr);
-    if (!next) break;
+
+    const next = safeOtherNode(e, curr);
+    if (!next) {
+      console.warn("Discontinuity during route conversion: edge not incident to curr", e, curr);
+      break;
+    }
+
     currentroute.addWaypoint(next, e.distance, 0);
     curr = next;
   }
@@ -1027,8 +1024,6 @@ function solveRES() {
     console.log(`Euler route built: ${(bestdistance / 1000).toFixed(2)} km | Efficiency: ${eff.toFixed(1)}% | Added traversals: ${totaledgedoublings} | Closed: ${endedAtStart}`);
   }
 }
-
-
 
 
 function mousePressed() {
