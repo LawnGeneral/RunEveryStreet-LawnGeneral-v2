@@ -894,7 +894,7 @@ function solveRES() {
   const baseOrder = [];
   for (let i = 0; i < nOdd; i++) baseOrder.push(i);
 
-  const TRIES = 200;
+  const TRIES = 800;
   let bestPairsIdx = [];
   let bestCost = Infinity;
   let bestPasses = 0;
