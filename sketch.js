@@ -1335,14 +1335,6 @@ function mouseReleased() {
     }
 }
 
-// Ensure pointerEvents reset when moving mouse so zoom works
-function mouseReleased() {
-    // If we are just in "browsing" mode, let clicks pass back to the map
-    if (mode == choosemapmode) {
-        canvas.elt.style.pointerEvents = 'none';
-    }
-}
-
 function positionMap(minlon_, minlat_, maxlon_, maxlat_) {
 	extent = [minlon_, minlat_, maxlon_, maxlat_];
 	//try to fit the map to these coordinates
