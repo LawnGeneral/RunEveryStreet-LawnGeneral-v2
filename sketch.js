@@ -1957,50 +1957,7 @@ function applyDoublings(pairs) {
     }
     console.log(`Step 4: Strategy applied. Doubled ${totaledgedoublings} segments.`);
 }
-function generateAndDownloadGPX(route) {
-    // 1. Safety Check: Make sure there is actually a path to save
-    if (!route || !route.waypoints || route.waypoints.length === 0) {
-        alert("No route has been found yet. Please wait for the solver to finish!");
-        return;
-    }
 
-    // 2. Build the GPX Header
-    let gpxContent = `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="RunEveryStreet-Gemini" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk>
-    <name>RunEveryStreet - Optimal Route</name>
-    <desc>Calculated with ${((totalRoadsDist / bestdistance) * 100).toFixed(1)}% efficiency</desc>
-    <trkseg>`;
-
-    // 3. Add every coordinate point in order
-    // We use waypoints which were recorded in the Route class during the solve
-    for (let i = 0; i < route.waypoints.length; i++) {
-        let pt = route.waypoints[i];
-        gpxContent += `\n      <trkpt lat="${pt.lat}" lon="${pt.lon}"></trkpt>`;
-    }
-
-    // 4. Close the tags
-    gpxContent += `\n    </trkseg>\n  </trk>\n</gpx>`;
-
-    // 5. Trigger the Browser Download
-    let blob = new Blob([gpxContent], { type: 'application/gpx+xml' });
-    let url = URL.createObjectURL(blob);
-    let a = document.createElement('a');
-    
-    // Give it a timestamp so files don't overwrite each other
-    let timestamp = new Date().getTime();
-    a.href = url;
-    a.download = `RES_Route_${timestamp}.gpx`;
-    
-    document.body.appendChild(a);
-    a.click();
-    
-    // Cleanup
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    console.log("GPX File Generated Successfully.");
-}
 function getClosestNode(mx, my) {
     // 1. IMPORTANT: Adjust for the Header!
     // Since the map starts 40px down, we must subtract the header height
