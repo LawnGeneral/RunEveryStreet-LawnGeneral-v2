@@ -282,49 +282,30 @@ function drawStatsBox(title, line1, line2, line3) {
 
 function drawToolbar() {
   push();
-  colorMode(HSB);
+  colorMode(RGB);
+
+  const pillW = 180;
+  const pillH = 28;
+
+  // Place it just below the header, centered (adjust if you want)
+  const x = (width / 2) - (pillW / 2);
+  const y = 8; // inside the canvas area (canvas starts below header)
+
+  // Background pill
+  fill(0, 0, 0, 190);
+  noStroke();
+  rect(x, y, pillW, pillH, 8);
+
+  // Text
+  fill(255);
   textAlign(CENTER, CENTER);
   textSize(12);
   textStyle(BOLD);
-
-  const btnW = 170;
-  const btnH = 40;
-  const margin = 10;
-  const y = 10;
-
-  // --- LEFT: FIT ROADS (only useful after ingest) ---
-  const fitX = margin;
-
-  const hasRoadData =
-    (edges && edges.length > 0) ||
-    (nodes && nodes.length > 0 && isFinite(minlat) && isFinite(minlon) && isFinite(maxlat) && isFinite(maxlon));
-
-  // Blue-ish when available, gray when not
-  fill(hasRoadData ? 200 : 0, hasRoadData ? 80 : 0, hasRoadData ? 255 : 180);
-  stroke(0); strokeWeight(2);
-  rect(fitX, y, btnW, btnH, 5);
-
-  fill(0); noStroke();
-  text("FIT ROADS", fitX + btnW / 2, y + btnH / 2);
-
-  // NOTE: click logic happens in mousePressed() now (because noLoop()).
-  // If you were clicking this inside drawToolbar() previously, that caused weirdness.
-  // We'll keep it draw-only here.
-
-  // --- RIGHT: UNDO button only while trimming ---
-  if (mode === trimmodemode) {
-    const undoX = width - (btnW + margin);
-
-    fill(200, 20, 255);
-    stroke(0); strokeWeight(2);
-    rect(undoX, y, btnW, btnH, 5);
-
-    fill(0); noStroke();
-    text("UNDO TRIM", undoX + btnW / 2, y + btnH / 2);
-  }
+  text(`MODE: ${mapPanZoomMode ? "PAN/ZOOM" : "TRIM/EDIT"}`, x + pillW / 2, y + pillH / 2);
 
   pop();
 }
+
 
 
 function getOverpassData() {
