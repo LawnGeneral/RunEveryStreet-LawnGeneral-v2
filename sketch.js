@@ -1,12 +1,9 @@
-
-let mapInteractive = true;  // controls whether map receives mouse events
+let navMode = false; // TRUE = Solver Active, FALSE = Prep Mode
 const HEADER_H = 40; // height of your top bar/logo area
-let mapInteractionMode = true; // true = MAP pan/zoom, false = EDIT (canvas clicks)
 let mapPanZoomMode = true; // true = pan/zoom map, false = edit/trim on canvas
 let currentroute = null;
 let totalRoadsDist = 0; 
 let totaledgedoublings = 0;
-let navMode = false; // TRUE = Solver Active, FALSE = Prep Mode
 var deletedEdgesStack = [];
 var remainingedges;
 var bestdistance = Infinity;
