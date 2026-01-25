@@ -840,7 +840,6 @@ function solveRES() {
   console.log(`Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`);
 
   // ---- 5) Apply doublings via shortest paths (increment counts) ----
-  // NOTE: totaledgedoublings (count) isn't the right stat for efficiency; we'll compute addedDistance below.
   for (const [a, b] of pairs) {
     const pathEdges = getPathEdges(a, b);
     for (const e of pathEdges) {
@@ -849,24 +848,12 @@ function solveRES() {
     }
   }
 
-  // ---- 6) Hierholzer on multigraph ----
+  // ---- 6) Hierholzer on multigraph (TURN-AWARE) ----
   const usedCount = new Map();
 
   function requiredTraversals(edge) {
     if (!edge || edge.distance <= 0) return 0;
     return 1 + (edge.extraTraversals || 0);
-  }
-
-  function getUnusedIncidentEdge(node) {
-    if (!node || !node.edges) return null;
-    for (let k = 0; k < node.edges.length; k++) {
-      const e = node.edges[k];
-      const req = requiredTraversals(e);
-      if (req <= 0) continue;
-      const used = usedCount.get(e) || 0;
-      if (used < req) return e;
-    }
-    return null;
   }
 
   function safeOtherNode(edge, node) {
@@ -876,15 +863,98 @@ function solveRES() {
     return null;
   }
 
+  // Bearing in degrees from A -> B (0..360)
+  function bearingDeg(a, b) {
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x =
+      Math.cos(lat1) * Math.sin(lat2) -
+      Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+    let brng = (Math.atan2(y, x) * 180) / Math.PI;
+    brng = (brng + 360) % 360;
+    return brng;
+  }
+
+  // Smallest absolute turn between two bearings (0..180)
+  function turnAngleDeg(prevBear, nextBear) {
+    let d = Math.abs(nextBear - prevBear);
+    if (d > 180) d = 360 - d;
+    return d;
+  }
+
+  // Choose next edge to minimize turning / avoid U-turns; tiny preference for same wayid
+  function getBestNextEdgeTurnAware(node, prevNode, prevEdge) {
+    if (!node || !node.edges || node.edges.length === 0) return null;
+
+    const hasIncoming = !!(prevNode && prevNode !== node);
+    const incomingBearing = hasIncoming ? bearingDeg(prevNode, node) : null;
+
+    let best = null;
+    let bestScore = Infinity;
+
+    for (let k = 0; k < node.edges.length; k++) {
+      const e = node.edges[k];
+      const req = requiredTraversals(e);
+      if (req <= 0) continue;
+
+      const used = usedCount.get(e) || 0;
+      if (used >= req) continue;
+
+      const other = safeOtherNode(e, node);
+      if (!other) continue;
+
+      let score = 0;
+
+      // Prefer straight continuation when we have an incoming direction
+      if (hasIncoming) {
+        const outBearing = bearingDeg(node, other);
+        const ang = turnAngleDeg(incomingBearing, outBearing);
+
+        // Turn penalty: 0 is perfect straight
+        score += ang;
+
+        // Strong penalty for near U-turns
+        if (ang > 150) score += 200;
+      }
+
+      // Tiny preference for staying on the same OSM way id (often means same street segment group)
+      if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) {
+        score -= 15;
+      }
+
+      // Mild preference to consume edges with more remaining required traversals
+      const remaining = req - used;
+      score -= Math.min(5, remaining);
+
+      if (score < bestScore) {
+        bestScore = score;
+        best = e;
+      }
+    }
+
+    return best;
+  }
+
   resetEdges();
 
   const nodeStack = [startnode];
   const edgeStack = [];
   const circuitEdges = [];
 
+  // Track incoming direction for turn-aware choice
+  const prevNodeStack = [null];
+  const prevEdgeStack = [null];
+
   while (nodeStack.length > 0) {
     const v = nodeStack[nodeStack.length - 1];
-    const e = getUnusedIncidentEdge(v);
+    const prevV = prevNodeStack[prevNodeStack.length - 1];
+    const prevE = prevEdgeStack[prevEdgeStack.length - 1];
+
+    const e = getBestNextEdgeTurnAware(v, prevV, prevE);
 
     if (e) {
       usedCount.set(e, (usedCount.get(e) || 0) + 1);
@@ -897,8 +967,14 @@ function solveRES() {
 
       nodeStack.push(w);
       edgeStack.push(e);
+
+      prevNodeStack.push(v);
+      prevEdgeStack.push(e);
     } else {
       nodeStack.pop();
+      prevNodeStack.pop();
+      prevEdgeStack.pop();
+
       if (edgeStack.length > 0) {
         circuitEdges.push(edgeStack.pop());
       }
@@ -968,6 +1044,7 @@ function solveRES() {
     console.warn("Sanity check: bestdistance differs from expectedFinal by", diff.toFixed(2), "meters");
   }
 }
+
 
 
 
