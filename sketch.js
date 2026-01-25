@@ -860,7 +860,7 @@ function solveRES() {
   function localSwapImprove(pairsIdx) {
     let improved = true;
     let passes = 0;
-    const MAX_PASSES = 80;
+    const MAX_PASSES = 200;
 
     while (improved && passes < MAX_PASSES) {
       improved = false;
