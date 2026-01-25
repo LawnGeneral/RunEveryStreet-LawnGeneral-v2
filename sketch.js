@@ -51,16 +51,13 @@ var bestroute = null;
 var bestarea;
 var bestdoublingsup;
 
-// Visualization Settings
-var showSteps = false;
+
 var showRoads = true;
-var iterations = 0, iterationsperframe = 100;
+
 var msgbckDiv, msgDiv, reportbckDiv, reportmsgDiv;
 var margin;
 var btnTLx, btnTLy, btnBRx, btnBRy;
-var starttime;
-var efficiencyhistory = [], distancehistory = [];
-var totalefficiencygains = 0;
+
 var isTouchScreenDevice = false;
 var totaluniqueroads;
 
@@ -97,7 +94,6 @@ function setup() {
 
     // 3) Initial app state
     mode = choosemapmode;
-    iterationsperframe = 1;
     margin = 0.05;
 
     // 4) Redraw canvas whenever OpenLayers renders
@@ -163,53 +159,6 @@ function draw() {
 }
 
 
-
-/**
- * Helper function to keep the draw() loop clean.
- * This draws the black box with real-time efficiency data.
- */
-function drawSolverStats() {
-    push();
-    // 1. Ensure we are using RGB for this specific UI box
-    colorMode(RGB); 
-    resetMatrix(); 
-
-    // 2. Background Box
-    fill(0, 0, 0, 180); 
-    noStroke();
-    rect(15, 15, 260, 130, 12); 
-
-    fill(255);
-    textSize(15);
-    textAlign(LEFT, TOP);
-    textFont('monospace');
-
-    // 3. MATH: Use totalRoadsDist (Target) / bestdistance (Actual)
-    // If totalRoadsDist is 5km and you walked 10km, efficiency is 50%.
-    let efficiency = (bestdistance === Infinity || bestdistance === 0) ? 0 : (totalRoadsDist / bestdistance) * 100;
-
-    text(`ITERATIONS  : ${iterations}`, 30, 35);
-    text(`TO VISIT    : ${remainingedges} roads`, 30, 55);
-    
-    // Convert bestdistance (meters) to KM for display
-    let kmDisplay = (bestdistance === Infinity) ? "0.00" : (bestdistance / 1000).toFixed(2);
-    text(`BEST ROUTE  : ${kmDisplay} km`, 30, 75);
-
-    // 4. Color Feedback (RGB values)
-    if (efficiency > 85) fill(0, 255, 120);      // Bright Green
-    else if (efficiency > 70) fill(255, 230, 0); // Bright Yellow
-    else fill(255, 100, 100);                    // Soft Red
-
-    textSize(18);
-    textStyle(BOLD);
-    text(`EFFICIENCY  : ${efficiency.toFixed(1)}%`, 30, 105);
-    
-    pop();
-}
-
-/**
- * Encapsulated Solver Logic
- */
 
 /**
  * Handles all Route-related drawing
