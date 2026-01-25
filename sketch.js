@@ -56,7 +56,6 @@ var showRoads = true;
 
 var msgbckDiv, msgDiv, reportbckDiv, reportmsgDiv;
 var margin;
-var btnTLx, btnTLy, btnBRx, btnBRy;
 
 var isTouchScreenDevice = false;
 var totaluniqueroads;
@@ -1265,10 +1264,7 @@ function showMessage(msg) {
 	msgDiv.style('vertical-align', 'middle');
 	msgDiv.style('height', '50px');
 	msgDiv.html(msg);
-	btnTLx = windowWidth / 2 - 200; // area that is touch/click sensitive
-	btnTLy = ypos - 4;
-	btnBRx = btnTLx + 400;
-	btnBRy = btnTLy + 32;
+	
 }
 
 function hideMessage() {
