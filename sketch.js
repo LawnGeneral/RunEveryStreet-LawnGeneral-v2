@@ -894,7 +894,7 @@ function solveRES() {
   const baseOrder = [];
   for (let i = 0; i < nOdd; i++) baseOrder.push(i);
 
-  const TRIES = 200; // you can raise later; keep this stable for now
+  const TRIES = 200;
   let bestPairsIdx = [];
   let bestCost = Infinity;
   let bestPasses = 0;
@@ -918,13 +918,12 @@ function solveRES() {
   console.log(`Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`);
 
   // ---- 5) Apply doublings via shortest paths (increment counts) ----
-  totaledgedoublings = 0;
+  // NOTE: totaledgedoublings (count) isn't the right stat for efficiency; we'll compute addedDistance below.
   for (const [a, b] of pairs) {
     const pathEdges = getPathEdges(a, b);
     for (const e of pathEdges) {
       if (!e) continue;
       e.extraTraversals = (e.extraTraversals || 0) + 1;
-      totaledgedoublings++;
     }
   }
 
@@ -948,12 +947,11 @@ function solveRES() {
     return null;
   }
 
-  // SAFE other-node: prevents phantom teleport lines
   function safeOtherNode(edge, node) {
     if (!edge || !node) return null;
     if (edge.from === node) return edge.to;
     if (edge.to === node) return edge.from;
-    return null; // not incident -> indicates a discontinuity bug
+    return null;
   }
 
   resetEdges();
@@ -987,7 +985,7 @@ function solveRES() {
 
   circuitEdges.reverse();
 
-  // ---- 7) Convert to Route (with safety) ----
+  // ---- 7) Convert to Route ----
   mode = solveRESmode;
 
   bestdistance = Infinity;
@@ -1019,11 +1017,36 @@ function solveRES() {
   redraw();
   openlayersmap.render();
 
-  if (bestdistance && totalRoadsDist) {
-    const eff = (totalRoadsDist / bestdistance) * 100;
-    console.log(`Euler route built: ${(bestdistance / 1000).toFixed(2)} km | Efficiency: ${eff.toFixed(1)}% | Added traversals: ${totaledgedoublings} | Closed: ${endedAtStart}`);
+  // ---- 8) Correct stats: added distance (meters) and sanity check ----
+  let addedDistance = 0;
+  let addedTraversals = 0;
+  for (const e of edges) {
+    const extra = (e.extraTraversals || 0);
+    if (extra > 0) {
+      addedTraversals += extra;
+      addedDistance += extra * e.distance;
+    }
+  }
+
+  const expectedFinal = totalRoadsDist + addedDistance; // meters
+  const eff = (bestdistance && bestdistance > 0) ? (totalRoadsDist / bestdistance) * 100 : 0;
+
+  console.log(
+    `Euler route built: ${(bestdistance / 1000).toFixed(2)} km | ` +
+    `Efficiency: ${eff.toFixed(1)}% | ` +
+    `Added distance: ${(addedDistance / 1000).toFixed(2)} km | ` +
+    `Extra traversals: ${addedTraversals} | ` +
+    `Expected final: ${(expectedFinal / 1000).toFixed(2)} km | ` +
+    `Closed: ${endedAtStart}`
+  );
+
+  // Sanity check: bestdistance should be very close to expectedFinal (floating error aside)
+  const diff = Math.abs(bestdistance - expectedFinal);
+  if (diff > 5) { // >5 meters discrepancy is worth noting
+    console.warn("Sanity check: bestdistance differs from expectedFinal by", diff.toFixed(2), "meters");
   }
 }
+
 
 
 function mousePressed() {
