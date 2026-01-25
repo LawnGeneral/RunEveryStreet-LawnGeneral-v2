@@ -9,17 +9,27 @@ var remainingedges;
 var bestdistance = Infinity;
 // Map Initialization
 var openlayersmap = new ol.Map({
-    target: 'map',
-    layers: [
-        new ol.layer.Tile({
-            source: new ol.source.OSM(),
-            opacity: 0.5
-        })
-    ],
-    view: new ol.View({
-        center: ol.proj.fromLonLat([-76.88, 40.27]), 
-        zoom: 14 
+  target: 'map',
+
+  // ✅ Make attribution a small collapsible control (required by OSM, but not huge)
+  controls: ol.control.defaults({
+    attributionOptions: {
+      collapsible: true,
+      collapsed: true
+    }
+  }),
+
+  layers: [
+    new ol.layer.Tile({
+      source: new ol.source.OSM(),
+      opacity: 0.5
     })
+  ],
+
+  view: new ol.View({
+    center: ol.proj.fromLonLat([-76.88, 40.27]),
+    zoom: 14
+  })
 });
 
 var canvas;
