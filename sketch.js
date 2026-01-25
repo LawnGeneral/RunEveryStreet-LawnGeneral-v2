@@ -1602,49 +1602,6 @@ function getPathEdges(startNode, endNode) {
     return path;
 }
 
-function getClosestNode(mx, my) {
-    // 1. IMPORTANT: Adjust for the Header!
-    // Since the map starts 40px down, we must subtract the header height
-    // from the mouse position so the map knows where we actually clicked.
-    let adjustedY = my - 40; 
-    
-    // 2. Get the map coordinate from the adjusted pixel
-    let pixelCoords = openlayersmap.getCoordinateFromPixel([mx, adjustedY]);
-    if (!pixelCoords) return null;
-
-    // 3. Convert to Lat/Lon for comparison with Node data
-    let lonLat = ol.proj.toLonLat(pixelCoords);
-    let mouseLon = lonLat[0];
-    let mouseLat = lonLat[1];
-
-    let closest = null;
-    let minDist = Infinity;
-
-    // 4. Loop through nodes
-    for (let i = 0; i < nodes.length; i++) {
-        let n = nodes[i];
-        
-        // Manual Distance Calculation (Lon/Lat units)
-        let dx = mouseLon - n.lon;
-        let dy = mouseLat - n.lat;
-        let d = Math.sqrt(dx * dx + dy * dy);
-        
-        if (d < minDist) {
-            minDist = d;
-            closest = n;
-        }
-    }
-
-    // 5. Threshold check 
-    // Increased slightly to 0.001 to make it easier to click on mobile/touch
-    if (minDist < 0.001) {
-        console.log("Success! Found Node: " + closest.nodeId);
-        return closest;
-    } else {
-        console.warn("Too far! Distance: " + minDist.toFixed(6) + ". Try clicking closer to a red dot.");
-        return null;
-    }
-}
 function triggerIngest() {
   getOverpassData();
 
