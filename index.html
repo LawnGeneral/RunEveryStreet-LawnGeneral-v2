@@ -15,7 +15,6 @@
   <script src="https://cdn.jsdelivr.net/npm/ol@v7.1.0/dist/ol.js"></script>
 
   <style>
-    /* Force the document to be viewport-sized */
     html, body {
       margin: 0;
       padding: 0;
@@ -30,7 +29,6 @@
       font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif;
     }
 
-    /* Fixed 40px Header */
     .header-bar {
       background-color: #380702;
       display: flex;
@@ -58,7 +56,6 @@
       justify-content: center;
     }
 
-    /* Links in header */
     .right-group a {
       color: white;
       text-decoration: none;
@@ -67,7 +64,6 @@
     }
     .right-group a:hover { text-decoration: underline; }
 
-    /* Header toggle button (ALWAYS clickable) */
     #mode-toggle {
       background: #222;
       color: white;
@@ -81,10 +77,8 @@
     }
     #mode-toggle:hover { background: #333; }
 
-    /* Header "LOAD ROADS" button */
-    #ingest-btn {
+    #ingest-btn, #undo-btn {
       padding: 6px 10px;
-      background: #7a0f05;
       color: white;
       border: 1px solid rgba(255,255,255,0.85);
       border-radius: 6px;
@@ -94,9 +88,18 @@
       white-space: nowrap;
       box-shadow: 0 2px 8px rgba(0,0,0,0.35);
     }
+
+    #ingest-btn {
+      background: #7a0f05;
+    }
     #ingest-btn:hover { background: #a31407; }
 
-    /* Attribution in header */
+    #undo-btn {
+      background: #4b0b7a;
+      display: none; /* shown only in trim mode */
+    }
+    #undo-btn:hover { background: #5f1096; }
+
     .osm-attrib {
       font-size: 12px;
       opacity: 0.85;
@@ -108,7 +111,6 @@
     }
     .osm-attrib a:hover { text-decoration: underline; }
 
-    /* Map fills viewport under the header */
     #map {
       position: fixed;
       top: 40px;
@@ -119,19 +121,17 @@
       z-index: 1;
     }
 
-    /* ONLY style the p5 canvas (do NOT affect OpenLayers canvases) */
     canvas.p5Canvas, #defaultCanvas0 {
       position: fixed !important;
-      top: 40px !important;                  /* match header height */
+      top: 40px !important;
       left: 0 !important;
       width: 100% !important;
-      height: calc(100vh - 40px) !important; /* match #map height */
+      height: calc(100vh - 40px) !important;
       z-index: 5;
       display: block;
-      pointer-events: none;                  /* JS will flip this when editing */
+      pointer-events: none;
     }
 
-    /* Hide OpenLayers attribution overlay (we show it in header instead) */
     .ol-attribution {
       display: none !important;
     }
@@ -145,11 +145,9 @@
     </div>
 
     <div class="center-group">
-      <!-- Always-clickable mode toggle -->
       <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
-
-      <!-- Load roads now lives in the header -->
       <button id="ingest-btn" onclick="triggerIngest()">LOAD ROADS</button>
+      <button id="undo-btn" onclick="undoTrim()">UNDO TRIM</button>
     </div>
 
     <div class="right-group">
@@ -158,7 +156,6 @@
           © OpenStreetMap contributors
         </a>
       </span>
-
       <a href="https://codeberg.org/lejun/RunEveryStreet/" target="_blank">Source Code</a>
       <a href=".">Restart</a>
     </div>
@@ -166,7 +163,6 @@
 
   <div id="map"></div>
 
-  <!-- Load your app scripts -->
   <script src="sketch.js"></script>
   <script src="Edge.js"></script>
   <script src="Node.js"></script>
