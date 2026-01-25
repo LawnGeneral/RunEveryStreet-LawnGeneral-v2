@@ -198,38 +198,30 @@ function renderRouteGraphics() {
 /**
  * Handles Stats Boxes and Toolbars
  */
+
 function renderUIOverlays() {
-    // 1) ALWAYS DRAW THE TOOLBAR (mode toggle, undo, etc.)
-    drawToolbar();
+  // 1) MAP PREPARATION STATS (Selection / Trimming)
+  if (mode === trimmodemode || mode === selectnodemode) {
+    let liveDist = getLiveTotalDistance();
+    let displayDist = liveDist > 1000
+      ? (liveDist / 1000).toFixed(2) + "km"
+      : liveDist.toFixed(0) + "m";
 
-    // 2) MAP PREPARATION STATS (Selection / Trimming)
-    if (mode === trimmodemode || mode === selectnodemode) {
-        let liveDist = getLiveTotalDistance();
-        let displayDist = liveDist > 1000
-            ? (liveDist / 1000).toFixed(2) + "km"
-            : liveDist.toFixed(0) + "m";
+    drawStatsBox(
+      "MAP PREPARATION",
+      `Total Road: ${displayDist}`,
+      mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE",
+      ""
+    );
+  }
 
-        drawStatsBox(
-            "MAP PREPARATION",
-            `Total Road: ${displayDist}`,
-            mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE",
-            ""
-        );
-    }
-
-    // 3) ROUTE READY / EXPORT FLOW
-    // If a route exists (bestroute built), show a "STOP SOLVER" button
-    // that opens the summary/export modal. (No solver is actually running.)
-    if (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) {
-        drawSolverToggleButton(); // This button should open summary mode in mousePressed()
-    }
-    // If no route yet, but a start node is selected, still show the action button
-    // so the user can build the route.
-    else if (startnode) {
-        drawSolverToggleButton();
-    }
+  // 2) ROUTE READY / EXPORT FLOW
+  if (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) {
+    drawSolverToggleButton();
+  } else if (startnode) {
+    drawSolverToggleButton();
+  }
 }
-
 
 // Helper to draw the Start/Stop button at the bottom
 function drawSolverToggleButton() {
