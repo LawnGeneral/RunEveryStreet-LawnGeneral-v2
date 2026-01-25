@@ -22,6 +22,21 @@
       width: 100vw;
       height: 100vh;
       overflow: hidden;
+
+      /* ---- OpenLayers UI cleanup ---- */
+
+/* Hide zoom + rotate buttons */
+.ol-zoom,
+.ol-rotate {
+  display: none !important;
+}
+
+/* Optional: keep attribution but make it subtle */
+.ol-attribution {
+  font-size: 10px !important;
+  opacity: 0.6 !important;
+}
+
     }
 
     body {
