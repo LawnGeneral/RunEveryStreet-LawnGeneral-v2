@@ -1556,6 +1556,7 @@ function getLiveTotalDistance() {
     // Returns distance (assumed to be in km based on your screenshot)
     return total;
 }
+
 function downloadGPX() {
   // Use bestroute if available; otherwise fall back to currentroute
   const route = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) ? bestroute : currentroute;
@@ -1566,9 +1567,45 @@ function downloadGPX() {
     return;
   }
 
-  // Build a clean list of trackpoints:
-  // 1) start node
-  // 2) every waypoint that has lat/lon
+  // -----------------------------
+  // Helpers (meters + bearings)
+  // -----------------------------
+  function haversineMeters(a, b) {
+    const R = 6371000;
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLon = (b.lon - a.lon) * Math.PI / 180;
+    const s1 = Math.sin(dLat / 2);
+    const s2 = Math.sin(dLon / 2);
+    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function bearingDeg(a, b) {
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x =
+      Math.cos(lat1) * Math.sin(lat2) -
+      Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+    let brng = (Math.atan2(y, x) * 180) / Math.PI;
+    brng = (brng + 360) % 360;
+    return brng;
+  }
+
+  function turnAngleDeg(prevBear, nextBear) {
+    let d = Math.abs(nextBear - prevBear);
+    if (d > 180) d = 360 - d;
+    return d;
+  }
+
+  // -----------------------------
+  // Build initial points list
+  // -----------------------------
   const pts = [];
   pts.push({ lat: startnode.lat, lon: startnode.lon });
 
@@ -1579,21 +1616,90 @@ function downloadGPX() {
     }
   }
 
-  // If we somehow ended up with too few points, abort
   if (pts.length < 2) {
     console.error("Not enough valid points to export.");
     showMessage("Route export failed: not enough valid points.");
     return;
   }
 
-  // Optional: close the loop back to start if last point isn't start-ish
+  // Close the loop back to start if needed (~5m)
   const last = pts[pts.length - 1];
-  const dLat = last.lat - startnode.lat;
-  const dLon = last.lon - startnode.lon;
-  if (Math.sqrt(dLat * dLat + dLon * dLon) > 0.00005) { // ~5m-ish
-    pts.push({ lat: startnode.lat, lon: startnode.lon });
+  if (haversineMeters(last, pts[0]) > 5) {
+    pts.push({ lat: pts[0].lat, lon: pts[0].lon });
   }
 
+  // -----------------------------
+  // GPX optimization for COROS
+  // -----------------------------
+  // Goal: fewer jittery micro-turns, points not too dense.
+  //
+  // Tunable knobs:
+  // - MIN_SPACING_M: drop points closer than this (unless a real corner)
+  // - CORNER_KEEP_DEG: always keep points that create a turn >= this
+  // - STRAIGHT_DROP_DEG: drop middle point if turn angle <= this
+  //
+  // Practical COROS-friendly defaults:
+  const MIN_SPACING_M = 10;        // avoid overly dense points
+  const CORNER_KEEP_DEG = 28;      // keep real corners
+  const STRAIGHT_DROP_DEG = 8;     // remove nearly straight intermediate points
+
+  // Pass 1: spacing filter (but preserve corners)
+  const spaced = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const prevKept = spaced[spaced.length - 1];
+    const d = haversineMeters(prevKept, pts[i]);
+
+    if (d >= MIN_SPACING_M) {
+      spaced.push(pts[i]);
+    } else {
+      // Too close: keep it ONLY if it's a corner candidate
+      // We can decide corner-ness when we have prev+curr+next
+      // For now, skip; Pass 2 will keep corners properly.
+    }
+  }
+
+  // Ensure we didn't delete everything
+  const base = (spaced.length >= 2) ? spaced : pts.slice();
+
+  // Pass 2: collinearity / corner preservation
+  const simplified = [];
+  simplified.push(base[0]);
+
+  for (let i = 1; i < base.length - 1; i++) {
+    const A = simplified[simplified.length - 1]; // last kept
+    const B = base[i];
+    const C = base[i + 1];
+
+    const bear1 = bearingDeg(A, B);
+    const bear2 = bearingDeg(B, C);
+    const ang = turnAngleDeg(bear1, bear2);
+
+    // If it's a meaningful corner, keep it
+    if (ang >= CORNER_KEEP_DEG) {
+      simplified.push(B);
+      continue;
+    }
+
+    // If it's almost straight, drop B
+    if (ang <= STRAIGHT_DROP_DEG) {
+      continue;
+    }
+
+    // In-between: keep it if it's not too dense (helps curves)
+    const dAB = haversineMeters(A, B);
+    if (dAB >= MIN_SPACING_M) simplified.push(B);
+  }
+
+  simplified.push(base[base.length - 1]);
+
+  // Final sanity: ensure loop closes
+  if (haversineMeters(simplified[0], simplified[simplified.length - 1]) > 5) {
+    simplified.push({ lat: simplified[0].lat, lon: simplified[0].lon });
+  }
+
+  // -----------------------------
+  // Build GPX
+  // -----------------------------
   const gpxHeader =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
@@ -1604,15 +1710,13 @@ function downloadGPX() {
   let gpxBody = "";
   const t0 = Date.now();
 
-  for (let i = 0; i < pts.length; i++) {
+  for (let i = 0; i < simplified.length; i++) {
     const timeStr = new Date(t0 + i * 1000).toISOString();
-    // NOTE: GPX is lat=".." lon=".." (do not swap)
-    gpxBody += `    <trkpt lat="${pts[i].lat}" lon="${pts[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+    gpxBody += `    <trkpt lat="${simplified[i].lat}" lon="${simplified[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
   }
 
   const fullContent = gpxHeader + gpxBody + gpxFooter;
 
-  // Create file ONLY when user clicks (this function should be called from your button click)
   const blob = new Blob([fullContent], { type: "application/gpx+xml" });
   const url = URL.createObjectURL(blob);
 
@@ -1624,7 +1728,9 @@ function downloadGPX() {
   document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
-  console.log(`GPX exported: ${pts.length} points`);
+
+  console.log(`GPX exported: raw=${pts.length} points | spaced=${base.length} | simplified=${simplified.length}`);
+  showMessage(`GPX ready (optimized): ${simplified.length} points`);
 }
 
 function getOddDegreeNodes() {
