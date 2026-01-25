@@ -1050,197 +1050,218 @@ function solveRES() {
 
 
 function mousePressed() {
-    // 0) If the Route Summary modal is up, ONLY handle its button click
-    if (mode === downloadGPXmode) {
-        let boxW = 400;
-        let boxH = 450;
-        let y = height / 2 - boxH / 2;
+  // 0) If the Route Summary modal is up, ONLY handle its button click
+  if (mode === downloadGPXmode) {
+    let boxW = 400;
+    let boxH = 450;
+    let y = height / 2 - boxH / 2;
 
-        let btnW = 300;
-        let btnH = 50;
-        let btnX = width / 2 - btnW / 2;
-        let btnY = y + 350;
-
-        if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-            if (typeof downloadGPX === "function") {
-                downloadGPX(); // user choice only
-                showMessage("Downloading GPX...");
-            } else {
-                console.error("downloadGPX() not found.");
-                showMessage("Download failed: missing downloadGPX()");
-            }
-            return;
-        }
-        return; // keep modal open
-    }
-
-    // 1) UI GUARD: Don't click through the top toolbar area
-    if (mouseY < 60) return;
-
-    // 2) START/STOP BUTTON (Bottom Left)
-    let btnW = 140;
-    let btnH = 40;
-    let btnX = 20;
-    let btnY = height - 60;
+    let btnW = 300;
+    let btnH = 50;
+    let btnX = width / 2 - btnW / 2;
+    let btnY = y + 350;
 
     if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-        if (!startnode) {
-            showMessage("Click a red node to set Start first!");
-            return;
-        }
+      if (typeof downloadGPX === "function") {
+        downloadGPX();
+        showMessage("Downloading GPX...");
+      } else {
+        console.error("downloadGPX() not found.");
+        showMessage("Download failed: missing downloadGPX()");
+      }
+      return;
+    }
+    return; // keep modal open
+  }
 
-        // If we already have a built route, STOP should open the summary modal
-        const routeReady = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) || (bestdistance !== Infinity && bestdistance > 0);
+  // 0.5) TOP TOOLBAR CLICK: UNDO TRIM (must be handled here because draw() is not looping)
+  // These values MUST match drawToolbar()
+  const toolBtnW = 170;
+  const toolBtnH = 40;
+  const toolMargin = 10;
+  const toolY = 10;
 
-        if (navMode === true || routeReady) {
-            // STOP -> show summary/export modal (no auto-download)
-            navMode = false;
-            solverRunning = false;
+  // Undo button exists only while trimming
+  if (mode === trimmodemode) {
+    const undoX = width - (toolBtnW * 2 + toolMargin * 2); // matches drawToolbar()
+    const undoY = toolY;
 
-            noLoop();
-            mode = downloadGPXmode;
-            showMessage("Route Summary (export when ready).");
+    if (mouseX > undoX && mouseX < undoX + toolBtnW && mouseY > undoY && mouseY < undoY + toolBtnH) {
+      if (typeof undoTrim === "function") {
+        undoTrim();
+        showMessage("Undo trim");
+      } else {
+        console.error("undoTrim() not found.");
+        showMessage("Undo failed: missing undoTrim()");
+      }
 
-            redraw();
-            openlayersmap.render();
-            return;
-        }
+      // force refresh (because noLoop())
+      redraw();
+      openlayersmap.render();
+      return;
+    }
+  }
 
-        // START -> Build the route immediately (Euler version of solveRES)
-        mode = solveRESmode;
+  // 1) UI GUARD: Don't click through the top toolbar area
+  // (We already handled undo above.)
+  if (mouseY < 60) return;
 
-        // IMPORTANT: prevent the old iterative engine
-        solverRunning = false;
+  // 2) START/STOP BUTTON (Bottom Left)
+  let btnW = 140;
+  let btnH = 40;
+  let btnX = 20;
+  let btnY = height - 60;
 
-        // Build route now
-        solveRES();
-
-        // Freeze animation/iterations; we just want a static result
-        noLoop();
-
-        // UI trick: set navMode true so the button shows "STOP SOLVER"
-        // (But solverRunning remains false so nothing iterates.)
-        navMode = true;
-
-        showMessage("Route built. Click STOP SOLVER for summary/export.");
-
-        redraw();
-        openlayersmap.render();
-        return;
+  if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+    if (!startnode) {
+      showMessage("Click a red node to set Start first!");
+      return;
     }
 
-    // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
-    if (mapPanZoomMode) return;
+    const routeReady =
+      (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) ||
+      (bestdistance !== Infinity && bestdistance > 0);
 
-    // 4) NODE PICKING (CLICK-BASED)
-    if (mode === selectnodemode) {
-        const R = 18;
-        const R2 = R * R;
+    if (navMode === true || routeReady) {
+      navMode = false;
+      solverRunning = false;
 
-        let best = null;
-        let bestD2 = R2;
+      noLoop();
+      mode = downloadGPXmode;
+      showMessage("Route Summary (export when ready).");
 
-        for (let i = 0; i < nodes.length; i++) {
-            let n = nodes[i];
-            let coord = ol.proj.fromLonLat([n.lon, n.lat]);
-            let pix = openlayersmap.getPixelFromCoordinate(coord);
-            if (!pix) continue;
-
-            if (pix[0] < -20 || pix[0] > width + 20 || pix[1] < -20 || pix[1] > height + 20) continue;
-
-            let dx = pix[0] - mouseX;
-            let dy = pix[1] - mouseY;
-            let d2 = dx * dx + dy * dy;
-
-            if (d2 < bestD2) {
-                bestD2 = d2;
-                best = n;
-            }
-        }
-
-        if (best) {
-            startnode = best;
-            currentnode = startnode;
-
-            if (typeof Route === "function") {
-                currentroute = new Route(startnode, null);
-            }
-
-            // Clear any old solve results
-            bestroute = null;
-            bestdistance = Infinity;
-            navMode = false;
-            solverRunning = false;
-
-            showMessage("Start Locked! Toggle PAN/ZOOM to move, or TRIM/EDIT to trim roads.");
-            mode = trimmodemode;
-
-            redraw();
-            openlayersmap.render();
-        } else {
-            showMessage("No node close enough—zoom in and click nearer a red dot.");
-        }
-        return;
+      redraw();
+      openlayersmap.render();
+      return;
     }
 
-    // 5) TRIMMING (PIXEL-SPACE PICK)
-    if (mode === trimmodemode) {
-        function pointSegDist2(px, py, ax, ay, bx, by) {
-            const abx = bx - ax, aby = by - ay;
-            const apx = px - ax, apy = py - ay;
-            const abLen2 = abx * abx + aby * aby;
-            if (abLen2 === 0) {
-                const dx = px - ax, dy = py - ay;
-                return dx * dx + dy * dy;
-            }
-            let t = (apx * abx + apy * aby) / abLen2;
-            t = Math.max(0, Math.min(1, t));
-            const cx = ax + t * abx;
-            const cy = ay + t * aby;
-            const dx = px - cx, dy = py - cy;
-            return dx * dx + dy * dy;
-        }
+    mode = solveRESmode;
+    solverRunning = false;
 
-        const PICK_PX = 22;
-        const PICK_PX2 = PICK_PX * PICK_PX;
+    solveRES();
 
-        let bestIdx = -1;
-        let bestD2 = Infinity;
+    noLoop();
+    navMode = true;
 
-        for (let i = 0; i < edges.length; i++) {
-            const e = edges[i];
-            if (!e || !e.from || !e.to) continue;
+    showMessage("Route built. Click STOP SOLVER for summary/export.");
 
-            const aCoord = ol.proj.fromLonLat([e.from.lon, e.from.lat]);
-            const bCoord = ol.proj.fromLonLat([e.to.lon, e.to.lat]);
-            const aPix = openlayersmap.getPixelFromCoordinate(aCoord);
-            const bPix = openlayersmap.getPixelFromCoordinate(bCoord);
-            if (!aPix || !bPix) continue;
+    redraw();
+    openlayersmap.render();
+    return;
+  }
 
-            const pad = 30;
-            const minX = Math.min(aPix[0], bPix[0]) - pad;
-            const maxX = Math.max(aPix[0], bPix[0]) + pad;
-            const minY = Math.min(aPix[1], bPix[1]) - pad;
-            const maxY = Math.max(aPix[1], bPix[1]) + pad;
-            if (mouseX < minX || mouseX > maxX || mouseY < minY || mouseY > maxY) continue;
+  // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
+  if (mapPanZoomMode) return;
 
-            const d2 = pointSegDist2(mouseX, mouseY, aPix[0], aPix[1], bPix[0], bPix[1]);
-            if (d2 < bestD2) {
-                bestD2 = d2;
-                bestIdx = i;
-            }
-        }
+  // 4) NODE PICKING
+  if (mode === selectnodemode) {
+    const R = 18;
+    const R2 = R * R;
 
-        if (bestIdx !== -1 && bestD2 <= PICK_PX2) {
-            closestedgetomouse = bestIdx;
-            handleTrimming();
-        } else {
-            showMessage("Click closer to the road line (or zoom in a bit).");
-        }
+    let best = null;
+    let bestD2 = R2;
 
-        return;
+    for (let i = 0; i < nodes.length; i++) {
+      let n = nodes[i];
+      let coord = ol.proj.fromLonLat([n.lon, n.lat]);
+      let pix = openlayersmap.getPixelFromCoordinate(coord);
+      if (!pix) continue;
+
+      if (pix[0] < -20 || pix[0] > width + 20 || pix[1] < -20 || pix[1] > height + 20) continue;
+
+      let dx = pix[0] - mouseX;
+      let dy = pix[1] - mouseY;
+      let d2 = dx * dx + dy * dy;
+
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        best = n;
+      }
     }
+
+    if (best) {
+      startnode = best;
+      currentnode = startnode;
+
+      if (typeof Route === "function") {
+        currentroute = new Route(startnode, null);
+      }
+
+      bestroute = null;
+      bestdistance = Infinity;
+      navMode = false;
+      solverRunning = false;
+
+      showMessage("Start Locked! Toggle PAN/ZOOM to move, or TRIM/EDIT to trim roads.");
+      mode = trimmodemode;
+
+      redraw();
+      openlayersmap.render();
+    } else {
+      showMessage("No node close enough—zoom in and click nearer a red dot.");
+    }
+    return;
+  }
+
+  // 5) TRIMMING (PIXEL-SPACE PICK)
+  if (mode === trimmodemode) {
+    function pointSegDist2(px, py, ax, ay, bx, by) {
+      const abx = bx - ax, aby = by - ay;
+      const apx = px - ax, apy = py - ay;
+      const abLen2 = abx * abx + aby * aby;
+      if (abLen2 === 0) {
+        const dx = px - ax, dy = py - ay;
+        return dx * dx + dy * dy;
+      }
+      let t = (apx * abx + apy * aby) / abLen2;
+      t = Math.max(0, Math.min(1, t));
+      const cx = ax + t * abx;
+      const cy = ay + t * aby;
+      const dx = px - cx, dy = py - cy;
+      return dx * dx + dy * dy;
+    }
+
+    const PICK_PX = 22;
+    const PICK_PX2 = PICK_PX * PICK_PX;
+
+    let bestIdx = -1;
+    let bestD2 = Infinity;
+
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
+      if (!e || !e.from || !e.to) continue;
+
+      const aCoord = ol.proj.fromLonLat([e.from.lon, e.from.lat]);
+      const bCoord = ol.proj.fromLonLat([e.to.lon, e.to.lat]);
+      const aPix = openlayersmap.getPixelFromCoordinate(aCoord);
+      const bPix = openlayersmap.getPixelFromCoordinate(bCoord);
+      if (!aPix || !bPix) continue;
+
+      const pad = 30;
+      const minX = Math.min(aPix[0], bPix[0]) - pad;
+      const maxX = Math.max(aPix[0], bPix[0]) + pad;
+      const minY = Math.min(aPix[1], bPix[1]) - pad;
+      const maxY = Math.max(aPix[1], bPix[1]) + pad;
+      if (mouseX < minX || mouseX > maxX || mouseY < minY || mouseY > maxY) continue;
+
+      const d2 = pointSegDist2(mouseX, mouseY, aPix[0], aPix[1], bPix[0], bPix[1]);
+      if (d2 < bestD2) {
+        bestD2 = d2;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx !== -1 && bestD2 <= PICK_PX2) {
+      closestedgetomouse = bestIdx;
+      handleTrimming();
+    } else {
+      showMessage("Click closer to the road line (or zoom in a bit).");
+    }
+
+    return;
+  }
 }
+
 
 
 
