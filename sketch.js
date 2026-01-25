@@ -1215,18 +1215,6 @@ function mouseReleased() {
     }
 }
 
-function positionMap(minlon_, minlat_, maxlon_, maxlat_) {
-	extent = [minlon_, minlat_, maxlon_, maxlat_];
-	//try to fit the map to these coordinates
-	openlayersmap.getView().fit(ol.proj.transformExtent(extent, 'EPSG:4326', 'EPSG:3857'), openlayersmap.getSize());
-	//capture the exact coverage of the map after fitting
-	var extent = ol.proj.transformExtent(openlayersmap.getView().calculateExtent(openlayersmap.getSize()), 'EPSG:3857', 'EPSG:4326');
-	mapminlat = extent[1];
-	mapminlon = extent[0];
-	mapmaxlat = extent[3];
-	mapmaxlon = extent[2];
-}
-
 function calcdistance(lat1, long1, lat2, long2) {
 	lat1 = radians(lat1);
 	long1 = radians(long1);
@@ -1286,13 +1274,6 @@ function showMessage(msg) {
 function hideMessage() {
 	msgbckDiv.remove();
 	msgDiv.remove();
-}
-
-function drawMask() {
-	noFill();
-	stroke(0, 000, 255, 0.4);
-	strokeWeight(0.5);
-	rect(windowWidth * margin, windowHeight * margin, windowWidth * (1 - 2 * margin), windowHeight * (1 - 2 * margin));
 }
 
 function showReportOut() {
