@@ -1894,14 +1894,20 @@ function runOverpassQuery(overpassQuery, onSuccess, onFail) {
     .then(onSuccess)
     .catch(onFail);
 }
+
 function applyInputMode() {
   if (!canvas || !canvas.elt) return;
+
+  // 0) Header UI (Undo button visibility)
+  const undoBtn = document.getElementById("undo-btn");
+  if (undoBtn) {
+    undoBtn.style.display = (mode === trimmodemode && !mapPanZoomMode) ? "inline-block" : "none";
+  }
 
   // 1) Route input: PAN lets map receive events; EDIT lets canvas receive events
   canvas.elt.style.pointerEvents = mapPanZoomMode ? 'none' : 'auto';
 
-  // 2) IMPORTANT: Never override solver/report modes.
-  // setMode(solveRESmode) must "stick" or the solver will never run.
+  // 2) Never override solver/report modes
   if (mode === solveRESmode || mode === downloadGPXmode) {
     redraw();
     openlayersmap.render();
@@ -1909,7 +1915,6 @@ function applyInputMode() {
   }
 
   // 3) If we're in PAN/ZOOM, do not force any p5 mode.
-  // User is just navigating the map.
   if (mapPanZoomMode) {
     redraw();
     openlayersmap.render();
@@ -1923,6 +1928,11 @@ function applyInputMode() {
   } else {
     mode = trimmodemode;
     showMessage("Trim mode: click a road to remove (Undo available)");
+  }
+
+  // Update Undo visibility again (mode might have changed above)
+  if (undoBtn) {
+    undoBtn.style.display = (mode === trimmodemode && !mapPanZoomMode) ? "inline-block" : "none";
   }
 
   redraw();
