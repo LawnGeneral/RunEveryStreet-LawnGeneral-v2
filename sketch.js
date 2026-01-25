@@ -848,7 +848,7 @@ function solveRES() {
     }
   }
 
-  // ---- 6) Hierholzer on multigraph (TURN-AWARE) ----
+  // ---- 6) Hierholzer on multigraph (TURN-AWARE + SPUR-CLEARING) ----
   const usedCount = new Map();
 
   function requiredTraversals(edge) {
@@ -886,8 +886,22 @@ function solveRES() {
     return d;
   }
 
-  // Choose next edge to minimize turning / avoid U-turns; tiny preference for same wayid
-  function getBestNextEdgeTurnAware(node, prevNode, prevEdge) {
+  // How many incident edges at node still have remaining required traversals?
+  function remainingChoicesAtNode(node) {
+    if (!node || !node.edges) return 0;
+    let count = 0;
+    for (let i = 0; i < node.edges.length; i++) {
+      const e = node.edges[i];
+      const req = requiredTraversals(e);
+      const used = usedCount.get(e) || 0;
+      if (used < req) count++;
+    }
+    return count;
+  }
+
+  // Choose next edge to minimize turning / avoid U-turns;
+  // PLUS: prefer clearing spurs/cul-de-sacs as soon as you encounter them.
+  function getBestNextEdge(node, prevNode, prevEdge) {
     if (!node || !node.edges || node.edges.length === 0) return null;
 
     const hasIncoming = !!(prevNode && prevNode !== node);
@@ -898,6 +912,7 @@ function solveRES() {
 
     for (let k = 0; k < node.edges.length; k++) {
       const e = node.edges[k];
+
       const req = requiredTraversals(e);
       if (req <= 0) continue;
 
@@ -909,19 +924,25 @@ function solveRES() {
 
       let score = 0;
 
-      // Prefer straight continuation when we have an incoming direction
+      // --- Turn minimization ---
       if (hasIncoming) {
         const outBearing = bearingDeg(node, other);
         const ang = turnAngleDeg(incomingBearing, outBearing);
-
-        // Turn penalty: 0 is perfect straight
         score += ang;
-
-        // Strong penalty for near U-turns
-        if (ang > 150) score += 200;
+        if (ang > 150) score += 200; // strong U-turn penalty
       }
 
-      // Tiny preference for staying on the same OSM way id (often means same street segment group)
+      // --- Spur-clearing bonus ---
+      // If going to "other" leaves it with only 1 remaining choice,
+      // it's effectively a spur / cul-de-sac situation. Prefer to clear it now.
+      const otherChoices = remainingChoicesAtNode(other);
+      if (otherChoices <= 1) {
+        score -= 120; // big preference to clear spurs immediately
+      } else if (otherChoices === 2) {
+        score -= 20;  // mild preference for low-branch nodes
+      }
+
+      // Prefer staying on same wayid (often same street)
       if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) {
         score -= 15;
       }
@@ -954,7 +975,7 @@ function solveRES() {
     const prevV = prevNodeStack[prevNodeStack.length - 1];
     const prevE = prevEdgeStack[prevEdgeStack.length - 1];
 
-    const e = getBestNextEdgeTurnAware(v, prevV, prevE);
+    const e = getBestNextEdge(v, prevV, prevE);
 
     if (e) {
       usedCount.set(e, (usedCount.get(e) || 0) + 1);
@@ -1038,14 +1059,11 @@ function solveRES() {
     `Closed: ${endedAtStart}`
   );
 
-  // Sanity check: bestdistance should be very close to expectedFinal (floating error aside)
   const diff = Math.abs(bestdistance - expectedFinal);
-  if (diff > 5) { // >5 meters discrepancy is worth noting
+  if (diff > 5) {
     console.warn("Sanity check: bestdistance differs from expectedFinal by", diff.toFixed(2), "meters");
   }
 }
-
-
 
 
 function mousePressed() {
