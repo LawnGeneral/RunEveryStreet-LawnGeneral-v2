@@ -134,40 +134,40 @@ function setMode(newMode) {
 }
 
 function draw() {
-    if (touches.length > 0) isTouchScreenDevice = true;
+  if (touches && touches.length > 0) isTouchScreenDevice = true;
 
-    // Keep the canvas transparent over the OpenLayers map
-    clear();
+  // Keep the canvas transparent over the OpenLayers map
+  clear();
 
-    // 1. RENDER MAP DATA
-    if (edges.length > 0 && showRoads) {
-        showEdges();
-    }
+  // SAFETY: During resize / early lifecycle, these can be undefined briefly
+  const safeEdges = Array.isArray(edges) ? edges : [];
+  const safeNodes = Array.isArray(nodes) ? nodes : [];
 
-    // 2. NODES / START HIGHLIGHT
-    // Show nodes in BOTH selection and trimming modes.
-    // Hover detection only runs when mode === selectnodemode (inside showNodes()).
-    if (mode === selectnodemode || mode === trimmodemode) {
-        showNodes();
-    } else if (startnode) {
-        drawStartNodeHighlight();
-    }
+  // 1. RENDER MAP DATA
+  if (showRoads && safeEdges.length > 0) {
+    showEdges();
+  }
 
+  // 2. NODES / START HIGHLIGHT
+  // Show nodes in BOTH selection and trimming modes.
+  // Hover detection only runs when mode === selectnodemode (inside showNodes()).
+  if ((mode === selectnodemode || mode === trimmodemode) && safeNodes.length > 0) {
+    showNodes();
+  } else if (startnode) {
+    drawStartNodeHighlight();
+  }
 
-    // 4. THE PATHS
-    renderRouteGraphics();
+  // 4. THE PATHS
+  renderRouteGraphics();
 
-    // 5. THE INTERFACE (Always draw last)
-    renderUIOverlays();
+  // 5. THE INTERFACE (Always draw last)
+  renderUIOverlays();
 
-    // 6. MODAL OVERLAYS
- 
-    if (mode === downloadGPXmode) {
-        showReportOut();
-    }
+  // 6. MODAL OVERLAYS
+  if (mode === downloadGPXmode) {
+    showReportOut();
+  }
 }
-
-
 
 /**
  * Handles all Route-related drawing
