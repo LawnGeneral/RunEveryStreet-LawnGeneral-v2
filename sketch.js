@@ -300,40 +300,40 @@ function drawToolbar() {
   const margin = 10;
   const y = 10;
 
-  // --- RIGHT: PAN/ZOOM <-> TRIM TOGGLE ---
-  const toggleX = width - (btnW + margin);
+  // --- LEFT: FIT ROADS (only useful after ingest) ---
+  const fitX = margin;
 
-  // Green when PAN/ZOOM, Orange when TRIM/EDIT
-  fill(mapPanZoomMode ? 120 : 15, 80, 255);
-  stroke(0); 
-  strokeWeight(2);
-  rect(toggleX, y, btnW, btnH, 5);
+  const hasRoadData =
+    (edges && edges.length > 0) ||
+    (nodes && nodes.length > 0 && isFinite(minlat) && isFinite(minlon) && isFinite(maxlat) && isFinite(maxlon));
 
-  fill(0); 
-  noStroke();
-  text(mapPanZoomMode ? "MODE: PAN / ZOOM" : "MODE: TRIM / EDIT", toggleX + btnW / 2, y + btnH / 2);
+  // Blue-ish when available, gray when not
+  fill(hasRoadData ? 200 : 0, hasRoadData ? 80 : 0, hasRoadData ? 255 : 180);
+  stroke(0); strokeWeight(2);
+  rect(fitX, y, btnW, btnH, 5);
 
-  // NOTE: Click handling for this button should remain in mousePressed()
-  // (We are only drawing here.)
+  fill(0); noStroke();
+  text("FIT ROADS", fitX + btnW / 2, y + btnH / 2);
 
-  // --- OPTIONAL: UNDO button only while trimming ---
+  // NOTE: click logic happens in mousePressed() now (because noLoop()).
+  // If you were clicking this inside drawToolbar() previously, that caused weirdness.
+  // We'll keep it draw-only here.
+
+  // --- RIGHT: UNDO button only while trimming ---
   if (mode === trimmodemode) {
-    const undoX = width - (btnW * 2 + margin * 2);
+    const undoX = width - (btnW + margin);
 
     fill(200, 20, 255);
-    stroke(0); 
-    strokeWeight(2);
+    stroke(0); strokeWeight(2);
     rect(undoX, y, btnW, btnH, 5);
 
-    fill(0); 
-    noStroke();
+    fill(0); noStroke();
     text("UNDO TRIM", undoX + btnW / 2, y + btnH / 2);
-
-    // NOTE: Click handling for Undo stays in mousePressed()
   }
 
   pop();
 }
+
 
 function getOverpassData() {
   showMessage("Loading map data...");
@@ -1141,7 +1141,7 @@ function mousePressed() {
 
   // Undo button exists only while trimming
   if (mode === trimmodemode) {
-    const undoX = width - (toolBtnW * 2 + toolMargin * 2); // matches drawToolbar()
+   const undoX = width - (toolBtnW + toolMargin); // matches new drawToolbar()
     const undoY = toolY;
 
     if (mouseX > undoX && mouseX < undoX + toolBtnW && mouseY > undoY && mouseY < undoY + toolBtnH) {
