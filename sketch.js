@@ -763,90 +763,176 @@ function floodfill(startNode) {
 }
 
 function solveRES() {
-  // 1) Safety
   if (!startnode) {
     showMessage("Error: No start node selected.");
     return;
   }
 
-  showMessage("Building route (closed Euler tour)...");
+  showMessage("Building route (closed Euler tour, improved pairing)...");
 
-  // Ensure solver is not "running"
   navMode = false;
   solverRunning = false;
 
-  // 2) Clean graph (remove disconnected parts), rebuild adjacency, reset counters
+  // Clean graph and rebuild adjacency
   removeOrphans();
   resetEdges();
 
-  // 3) Find odd-degree nodes
+  // ---- 1) Odd nodes ----
   const oddNodes = [];
   for (let i = 0; i < nodes.length; i++) {
     const deg = nodes[i].edges ? nodes[i].edges.length : 0;
     if (deg % 2 !== 0) oddNodes.push(nodes[i]);
   }
 
-  // 4) IMPORTANT: use multiplicity counts, not boolean doubling
-  // extraTraversals = how many ADDITIONAL times this edge must be traversed (beyond the base 1)
+  // ---- 2) Multiplicity counts (NOT boolean) ----
   for (let e of edges) e.extraTraversals = 0;
 
-  // Helper: run dijkstra and return distances map
-  function getDistancesFrom(node) {
-    const res = dijkstra(node);
-    return res && res.distances ? res.distances : null;
+  // ---- 3) Build distance matrix between odd nodes ----
+  // matrix[i][j] = shortest distance between oddNodes[i] and oddNodes[j]
+  const nOdd = oddNodes.length;
+  const matrix = Array.from({ length: nOdd }, () => Array(nOdd).fill(0));
+
+  // Run dijkstra from each odd node once
+  const distMaps = [];
+  for (let i = 0; i < nOdd; i++) {
+    const res = dijkstra(oddNodes[i]);
+    distMaps[i] = res && res.distances ? res.distances : new Map();
   }
 
-  // Greedy pair odd nodes using shortest path distances (same strategy you had)
-  const unmatched = new Set();
-  for (let i = 0; i < oddNodes.length; i++) unmatched.add(i);
-
-  const pairs = [];
-  if (oddNodes.length > 0) {
-    // Precompute distance maps
-    const distMaps = [];
-    for (let i = 0; i < oddNodes.length; i++) {
-      distMaps[i] = getDistancesFrom(oddNodes[i]);
+  for (let i = 0; i < nOdd; i++) {
+    for (let j = 0; j < nOdd; j++) {
+      if (i === j) matrix[i][j] = 0;
+      else {
+        const d = distMaps[i].get(oddNodes[j]);
+        matrix[i][j] = (d === undefined) ? 1e15 : d; // big number if disconnected
+      }
     }
+  }
+
+  // ---- 4) Multi-start greedy pairing + local swap improvement ----
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function totalCost(pairsIdx) {
+    let sum = 0;
+    for (let k = 0; k < pairsIdx.length; k++) {
+      sum += matrix[pairsIdx[k][0]][pairsIdx[k][1]];
+    }
+    return sum;
+  }
+
+  function greedyPairingFromOrder(orderIdx) {
+    const unmatched = new Set(orderIdx);
+    const pairsIdx = [];
 
     while (unmatched.size > 1) {
-      const it = unmatched.values().next();
-      const i = it.value;
+      // pick first remaining from the order
+      let i = null;
+      for (const v of orderIdx) {
+        if (unmatched.has(v)) { i = v; break; }
+      }
+      if (i === null) break;
       unmatched.delete(i);
 
       let bestJ = -1;
-      let bestD = Infinity;
-
-      for (let j of unmatched) {
-        const dm = distMaps[i];
-        const d = dm ? dm.get(oddNodes[j]) : Infinity;
-        if (d !== undefined && d < bestD) {
-          bestD = d;
+      let bestCost = Infinity;
+      for (const j of unmatched) {
+        const c = matrix[i][j];
+        if (c < bestCost) {
+          bestCost = c;
           bestJ = j;
         }
       }
 
-      if (bestJ !== -1) {
-        pairs.push([oddNodes[i], oddNodes[bestJ]]);
+      if (bestJ !== -1 && bestCost < 1e14) {
+        pairsIdx.push([i, bestJ]);
         unmatched.delete(bestJ);
       } else {
-        break; // disconnected graph (shouldn't happen after removeOrphans)
+        break;
       }
+    }
+
+    return pairsIdx;
+  }
+
+  function localSwapImprove(pairsIdx) {
+    let improved = true;
+    let passes = 0;
+    const MAX_PASSES = 80;
+
+    while (improved && passes < MAX_PASSES) {
+      improved = false;
+      passes++;
+
+      for (let p = 0; p < pairsIdx.length; p++) {
+        for (let q = p + 1; q < pairsIdx.length; q++) {
+          const a = pairsIdx[p][0], b = pairsIdx[p][1];
+          const c = pairsIdx[q][0], d = pairsIdx[q][1];
+
+          const current = matrix[a][b] + matrix[c][d];
+          const swap1 = matrix[a][c] + matrix[b][d];
+          const swap2 = matrix[a][d] + matrix[b][c];
+
+          if (swap1 + 1e-9 < current || swap2 + 1e-9 < current) {
+            if (swap1 <= swap2) {
+              pairsIdx[p] = [a, c];
+              pairsIdx[q] = [b, d];
+            } else {
+              pairsIdx[p] = [a, d];
+              pairsIdx[q] = [b, c];
+            }
+            improved = true;
+          }
+        }
+      }
+    }
+
+    return { pairsIdx, passes };
+  }
+
+  const baseOrder = [];
+  for (let i = 0; i < nOdd; i++) baseOrder.push(i);
+
+  const TRIES = 160; // bump to 300 if you want, but this is a good start
+  let bestPairsIdx = [];
+  let bestCost = Infinity;
+  let bestPasses = 0;
+
+  for (let t = 0; t < TRIES; t++) {
+    const order = shuffle(baseOrder.slice());
+    let pairsIdx = greedyPairingFromOrder(order);
+
+    const improved = localSwapImprove(pairsIdx);
+    pairsIdx = improved.pairsIdx;
+
+    const cost = totalCost(pairsIdx);
+    if (cost < bestCost) {
+      bestCost = cost;
+      bestPairsIdx = pairsIdx.slice();
+      bestPasses = improved.passes;
     }
   }
 
-  // Apply "doublings": increment extraTraversals along each shortest path
+  const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
+  console.log(`Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`);
+
+  // ---- 5) Apply doublings via shortest paths (increment counts) ----
   totaledgedoublings = 0;
-  for (let p of pairs) {
-    const pathEdges = getPathEdges(p[0], p[1]);
-    for (let e of pathEdges) {
+  for (const [a, b] of pairs) {
+    const pathEdges = getPathEdges(a, b);
+    for (const e of pathEdges) {
       if (!e) continue;
-      e.extraTraversals = (e.extraTraversals || 0) + 1; // COUNT, not boolean
+      e.extraTraversals = (e.extraTraversals || 0) + 1;
       totaledgedoublings++;
     }
   }
 
-  // 5) Build Euler tour using Hierholzer on multigraph:
-  // requiredTraversals = 1 + extraTraversals
+  // ---- 6) Hierholzer on multigraph ----
   const usedCount = new Map();
 
   function requiredTraversals(edge) {
@@ -866,7 +952,6 @@ function solveRES() {
     return null;
   }
 
-  // Rebuild adjacency from edges[] to ensure correctness
   resetEdges();
 
   const nodeStack = [startnode];
@@ -893,13 +978,12 @@ function solveRES() {
 
   circuitEdges.reverse();
 
-  // 6) Convert Euler edge sequence into a Route
+  // ---- 7) Convert to Route ----
   mode = solveRESmode;
 
   bestdistance = Infinity;
   bestroute = null;
 
-  currentnode = startnode;
   currentroute = new Route(startnode, null);
 
   let curr = startnode;
@@ -907,7 +991,6 @@ function solveRES() {
     const e = circuitEdges[i];
     const next = e.OtherNodeofEdge(curr);
     if (!next) break;
-
     currentroute.addWaypoint(next, e.distance, 0);
     curr = next;
   }
@@ -916,29 +999,18 @@ function solveRES() {
   bestroute = currentroute.copy ? currentroute.copy() : currentroute;
   remainingedges = 0;
 
-  // 7) GUARANTEE: Closed circuit check
-  // If we didn't end at start, report it loudly (this should now almost always pass)
   const endedAtStart = (curr === startnode);
-  if (!endedAtStart) {
-    console.warn("WARNING: Euler tour did not end at the start node. GPX closure would create a long straight segment.");
-    showMessage("Route built, but not closed — zoom in and try again (graph may still be non-Eulerian).");
-  } else {
-    showMessage("Closed route built. Click STOP SOLVER for summary/export.");
-  }
+  showMessage(endedAtStart ? "Closed route built. Click STOP SOLVER for summary/export." : "Route built but not closed (unexpected).");
 
   redraw();
   openlayersmap.render();
 
-  // Helpful console output
   if (bestdistance && totalRoadsDist) {
     const eff = (totalRoadsDist / bestdistance) * 100;
-    console.log(
-      `Euler route built: ${(bestdistance / 1000).toFixed(2)} km | Efficiency: ${eff.toFixed(1)}% | Added traversals: ${totaledgedoublings} | Closed: ${endedAtStart}`
-    );
-  } else {
-    console.log("Euler route built (distance values missing).");
+    console.log(`Euler route built: ${(bestdistance / 1000).toFixed(2)} km | Efficiency: ${eff.toFixed(1)}% | Added traversals: ${totaledgedoublings} | Closed: ${endedAtStart}`);
   }
 }
+
 
 
 function mousePressed() {
