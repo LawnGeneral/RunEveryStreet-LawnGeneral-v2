@@ -80,6 +80,20 @@
       height: calc(100vh - 40px);
       z-index: 1;
     }
+    /* OpenLayers attribution: keep it (required), but make it small + unobtrusive */
+.ol-attribution {
+  font-size: 11px !important;
+  opacity: 0.85;
+  right: 8px !important;
+  left: auto !important;
+  bottom: 8px !important;
+  max-width: 45% !important;
+}
+
+.ol-attribution button {
+  font-size: 12px !important;
+}
+
 
     /* ONLY style the p5 canvas (do NOT affect OpenLayers canvases) */
     canvas.p5Canvas, #defaultCanvas0 {
