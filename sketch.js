@@ -1615,30 +1615,42 @@ function keyReleased() {
     }
 }
 function undoTrim() {
-  if (deletedEdgesStack.length > 0) {
-    // 1. Take the most recently deleted road out of the memory bank
-    let restoredEdge = deletedEdgesStack.pop();
-    
-    // 2. Put it back into the main edges array so it draws again
-    edges.push(restoredEdge);
-    
-    // 3. Re-link the road to its start and end nodes
-    // This is crucial so the routing algorithm knows the road exists
-    restoredEdge.from.edges.push(restoredEdge);
-    restoredEdge.to.edges.push(restoredEdge);
-    
-    // 4. If the nodes were hidden because they had no roads, bring them back
-    if (!nodes.includes(restoredEdge.from)) nodes.push(restoredEdge.from);
-    if (!nodes.includes(restoredEdge.to)) nodes.push(restoredEdge.to);
-    
-    // 5. Refresh the connection logic
-    removeOrphans(); 
-    
-    console.log("Restored the last deleted road.");
-  } else {
+  if (deletedEdgesStack.length === 0) {
     console.log("Nothing to undo!");
+    showMessage("Nothing to undo.");
+    return;
   }
+
+  // Pop the most recent batch
+  const batch = deletedEdgesStack.pop();
+  if (!Array.isArray(batch) || batch.length === 0) return;
+
+  // Restore edges
+  for (const e of batch) {
+    if (!edges.includes(e)) {
+      edges.push(e);
+    }
+
+    if (e.from && Array.isArray(e.from.edges) && !e.from.edges.includes(e)) {
+      e.from.edges.push(e);
+    }
+    if (e.to && Array.isArray(e.to.edges) && !e.to.edges.includes(e)) {
+      e.to.edges.push(e);
+    }
+
+    if (e.from && !nodes.includes(e.from)) nodes.push(e.from);
+    if (e.to && !nodes.includes(e.to)) nodes.push(e.to);
+  }
+
+  // Rebuild adjacency & counts cleanly
+  resetEdges();
+
+  showMessage(`Undo restored ${batch.length} segment(s).`);
+
+  redraw();
+  openlayersmap.render();
 }
+
 function getLiveTotalDistance() {
     let total = 0;
     for (let i = 0; i < edges.length; i++) {
@@ -2057,42 +2069,54 @@ function triggerIngest() {
 }
 
 function handleTrimming() {
-    // Only act if we have a valid closest edge index
-    if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) return;
+  if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) return;
 
-    // 1) Remove the edge from the master list
-    const removedEdge = edges.splice(closestedgetomouse, 1)[0];
-    if (!removedEdge) return;
+  // --- BEGIN UNDO BATCH ---
+  const undoBatch = [];
 
-    // 2) Add to undo stack
-    deletedEdgesStack.push(removedEdge);
+  // 1) Remove the explicitly clicked edge
+  const removedEdge = edges.splice(closestedgetomouse, 1)[0];
+  if (!removedEdge) return;
 
-    // 3) Unlink from node adjacency lists (IMPORTANT so floodfill/orphan logic is correct)
-    if (removedEdge.from && Array.isArray(removedEdge.from.edges)) {
-        const idx = removedEdge.from.edges.indexOf(removedEdge);
-        if (idx !== -1) removedEdge.from.edges.splice(idx, 1);
+  undoBatch.push(removedEdge);
+
+  // Unlink from adjacency
+  if (removedEdge.from && Array.isArray(removedEdge.from.edges)) {
+    const idx = removedEdge.from.edges.indexOf(removedEdge);
+    if (idx !== -1) removedEdge.from.edges.splice(idx, 1);
+  }
+  if (removedEdge.to && Array.isArray(removedEdge.to.edges)) {
+    const idx = removedEdge.to.edges.indexOf(removedEdge);
+    if (idx !== -1) removedEdge.to.edges.splice(idx, 1);
+  }
+
+  // 2) Capture current edge set BEFORE orphan cleanup
+  const edgesBefore = new Set(edges);
+
+  // 3) Remove orphaned components
+  if (startnode) {
+    removeOrphans();
+  }
+
+  // 4) Anything that existed before but is gone now = orphan-removed
+  for (const e of edgesBefore) {
+    if (!edges.includes(e)) {
+      undoBatch.push(e);
     }
-    if (removedEdge.to && Array.isArray(removedEdge.to.edges)) {
-        const idx = removedEdge.to.edges.indexOf(removedEdge);
-        if (idx !== -1) removedEdge.to.edges.splice(idx, 1);
-    }
+  }
 
-    // 4) Reset hover index so we don't "ghost delete"
-    closestedgetomouse = -1;
+  // 5) Push the WHOLE batch as one undo step
+  deletedEdgesStack.push(undoBatch);
 
-    // 5) AUTO-CLEAN: Remove any disconnected components not reachable from startnode
-    // This will rebuild edges/nodes and re-calc totals internally.
-    if (startnode) {
-        removeOrphans();
-    }
+  // Reset hover index
+  closestedgetomouse = -1;
 
-    console.log("Road removed + orphans cleaned.");
-    showMessage("Road removed. Orphaned areas cleaned. Use Undo if needed.");
+  showMessage(`Road removed. ${undoBatch.length} segment(s) affected. Undo available.`);
 
-    // 6) FORCE VISUAL UPDATE (because you use noLoop())
-    redraw();
-    openlayersmap.render();
+  redraw();
+  openlayersmap.render();
 }
+
 
 
 
