@@ -1438,28 +1438,6 @@ function trimSelectedEdge() {
     }
 }
 
-function drawProgressGraph() {
-	if (efficiencyhistory.length > 0) {
-		noStroke();
-		fill(0, 0, 0, 0.3);
-		let graphHeight = 100;
-		rect(0, height - graphHeight, windowWidth, graphHeight);
-		fill(0, 5, 225, 255);
-		textAlign(LEFT);
-		textSize(12);
-		text("Routes tried: " + (iterations.toLocaleString()) + ", Length of all roads: " + nf(totaledgedistance, 0, 1) + "km, Best route: " + nf(bestroute.distance, 0, 1) + "km (" + round(efficiencyhistory[efficiencyhistory.length - 1] * 100) + "%)", 15, height - graphHeight + 18);
-		textAlign(CENTER);
-		textSize(12);
-		for (let i = 0; i < efficiencyhistory.length; i++) {
-			fill(i * 128 / efficiencyhistory.length, 255, 205, 1);
-			let startx = map(i, 0, efficiencyhistory.length, 0, windowWidth);
-			let starty = height - graphHeight * efficiencyhistory[i];
-			rect(startx, starty, windowWidth / efficiencyhistory.length, graphHeight * efficiencyhistory[i]);
-			fill(0, 5, 0);
-			text(round(distancehistory[i]) + "km", startx + windowWidth / efficiencyhistory.length / 2, height - 5);
-		}
-	}
-}
 
 function showReportOut() {
     push();
@@ -1548,31 +1526,7 @@ function showReportOut() {
 
     pop();
 }
-function showStatus() {
-	if (startnode != null) {
-		let textx = 2;
-		let texty = mapHeight - 400;
-		fill(0, 5, 225);
-		noStroke();
-		textSize(12);
-		textAlign(LEFT);
-		text("Total number nodes: " + nodes.length, textx, texty);
-		text("Total number road sections: " + edges.length, textx, texty + 20);
-		text("Length of roads: " + nf(totaledgedistance, 0, 3) + "km", textx, texty + 40);
-		if (bestroute != null) {
-			if (bestroute.waypoints.length > 0) {
-				text("Best route: " + nf(bestroute.distance, 0, 3) + "km, " + nf(100 * totaledgedistance / bestroute.distance, 0, 2) + "%", textx, texty + 60);
-			}
-			text("Routes tried: " + iterations, textx, texty + 80);
-			text("Frame rate: " + frameRate(), textx, texty + 100);
-			text("Solutions per frame: " + iterationsperframe, textx, texty + 120);
-			text("Iterations/second: " + iterations / (millis() - starttime) * 1000, textx, texty + 140);
-			text("best routes: " + efficiencyhistory.length, textx, texty + 160);
-			text("efficiency gains: " + nf(100 * totalefficiencygains, 0, 2) + "% and " + nf(100 * totalefficiencygains / (millis() - starttime) * 1000, 0, 2) + "% gains/sec:", textx, texty + 180); //
-			text("isTouchScreenDevice: " + isTouchScreenDevice, textx, texty + 200);
-		}
-	}
-}
+
 function windowResized() {
     // Resize p5 canvas
     resizeCanvas(windowWidth, windowHeight - HEADER_H);
