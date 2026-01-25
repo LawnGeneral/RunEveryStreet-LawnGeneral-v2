@@ -11,8 +11,8 @@ var bestdistance = Infinity;
 var openlayersmap = new ol.Map({
   target: 'map',
 
-  // ✅ Make attribution a small collapsible control (required by OSM, but not huge)
-  controls: ol.control.defaults({
+  // ✅ OpenLayers v7 legacy build: defaults.defaults(...)
+  controls: ol.control.defaults.defaults({
     attributionOptions: {
       collapsible: true,
       collapsed: true
@@ -31,6 +31,7 @@ var openlayersmap = new ol.Map({
     zoom: 14
   })
 });
+
 
 var canvas;
 var mapHeight;
