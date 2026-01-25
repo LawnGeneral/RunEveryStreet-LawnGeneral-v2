@@ -729,7 +729,7 @@ function solveRES() {
     }
   }
 
-  // ---- 4) Multi-start greedy pairing + local swap improvement (GLOBAL pool) ----
+  // ---- 4) Multi-start greedy pairing + local swap improvement ----
   function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -839,7 +839,7 @@ function solveRES() {
   const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
   console.log(`Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`);
 
-  // ---- 5) Apply doublings via shortest paths (increment counts) ----
+  // ---- 5) Apply doublings via shortest paths ----
   for (const [a, b] of pairs) {
     const pathEdges = getPathEdges(a, b);
     for (const e of pathEdges) {
@@ -848,7 +848,7 @@ function solveRES() {
     }
   }
 
-  // ---- 6) Hierholzer on multigraph (TURN-AWARE + SPUR-CLEARING) ----
+  // ---- 6) Hierholzer on multigraph (TURN-AWARE + POCKET-CLEARING) ----
   const usedCount = new Map();
 
   function requiredTraversals(edge) {
@@ -863,7 +863,6 @@ function solveRES() {
     return null;
   }
 
-  // Bearing in degrees from A -> B (0..360)
   function bearingDeg(a, b) {
     const lat1 = (a.lat * Math.PI) / 180;
     const lat2 = (b.lat * Math.PI) / 180;
@@ -879,29 +878,69 @@ function solveRES() {
     return brng;
   }
 
-  // Smallest absolute turn between two bearings (0..180)
   function turnAngleDeg(prevBear, nextBear) {
     let d = Math.abs(nextBear - prevBear);
     if (d > 180) d = 360 - d;
     return d;
   }
 
-  // How many incident edges at node still have remaining required traversals?
-  function remainingChoicesAtNode(node) {
-    if (!node || !node.edges) return 0;
-    let count = 0;
-    for (let i = 0; i < node.edges.length; i++) {
-      const e = node.edges[i];
+  // Count how many traversals remain globally (rough scale factor)
+  function totalRemainingTraversals() {
+    let total = 0;
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i];
       const req = requiredTraversals(e);
       const used = usedCount.get(e) || 0;
-      if (used < req) count++;
+      if (used < req) total += (req - used);
+    }
+    return total;
+  }
+
+  // Estimate "pocket size" reachable from startNode WITHOUT crossing blockedEdge
+  // We count remaining-traversal edges in that reachable region.
+  function pocketSizeTraversals(startNode, blockedEdge) {
+    if (!startNode) return 0;
+
+    const visitedNodes = new Set();
+    const visitedEdges = new Set();
+    const stack = [startNode];
+    visitedNodes.add(startNode);
+
+    let count = 0;
+
+    while (stack.length > 0) {
+      const u = stack.pop();
+      if (!u.edges) continue;
+
+      for (let i = 0; i < u.edges.length; i++) {
+        const e = u.edges[i];
+        if (!e) continue;
+        if (e === blockedEdge) continue;
+
+        const req = requiredTraversals(e);
+        const used = usedCount.get(e) || 0;
+        if (used >= req) continue; // no remaining need => ignore for pocket sizing
+
+        if (!visitedEdges.has(e)) {
+          visitedEdges.add(e);
+          count += (req - used);
+        }
+
+        const v = safeOtherNode(e, u);
+        if (v && !visitedNodes.has(v)) {
+          visitedNodes.add(v);
+          stack.push(v);
+        }
+      }
     }
     return count;
   }
 
-  // Choose next edge to minimize turning / avoid U-turns;
-  // PLUS: prefer clearing spurs/cul-de-sacs as soon as you encounter them.
-  function getBestNextEdge(node, prevNode, prevEdge) {
+  // Choose next edge:
+  //  - minimize turning
+  //  - avoid U-turns
+  //  - BUT if an edge leads into a small "pocket", clear it now
+  function getBestNextEdge(node, prevNode, prevEdge, globalRemaining) {
     if (!node || !node.edges || node.edges.length === 0) return null;
 
     const hasIncoming = !!(prevNode && prevNode !== node);
@@ -910,9 +949,11 @@ function solveRES() {
     let best = null;
     let bestScore = Infinity;
 
+    // Define "small pocket" as: pocket traversal count <= max(6, 6% of remaining)
+    const pocketThresh = Math.max(6, Math.floor(globalRemaining * 0.06));
+
     for (let k = 0; k < node.edges.length; k++) {
       const e = node.edges[k];
-
       const req = requiredTraversals(e);
       if (req <= 0) continue;
 
@@ -932,14 +973,13 @@ function solveRES() {
         if (ang > 150) score += 200; // strong U-turn penalty
       }
 
-      // --- Spur-clearing bonus ---
-      // If going to "other" leaves it with only 1 remaining choice,
-      // it's effectively a spur / cul-de-sac situation. Prefer to clear it now.
-      const otherChoices = remainingChoicesAtNode(other);
-      if (otherChoices <= 1) {
-        score -= 120; // big preference to clear spurs immediately
-      } else if (otherChoices === 2) {
-        score -= 20;  // mild preference for low-branch nodes
+      // --- Pocket clearing ---
+      // If treating e as a doorway, and the far side is a small pocket, clear it now.
+      const pocket = pocketSizeTraversals(other, e);
+      if (pocket > 0 && pocket <= pocketThresh) {
+        // Bigger bonus for smaller pockets
+        // (e.g., pocket=2 gets huge bonus, pocket=10 smaller bonus)
+        score -= (220 - Math.min(200, pocket * 20));
       }
 
       // Prefer staying on same wayid (often same street)
@@ -966,7 +1006,6 @@ function solveRES() {
   const edgeStack = [];
   const circuitEdges = [];
 
-  // Track incoming direction for turn-aware choice
   const prevNodeStack = [null];
   const prevEdgeStack = [null];
 
@@ -975,7 +1014,8 @@ function solveRES() {
     const prevV = prevNodeStack[prevNodeStack.length - 1];
     const prevE = prevEdgeStack[prevEdgeStack.length - 1];
 
-    const e = getBestNextEdge(v, prevV, prevE);
+    const globalRem = totalRemainingTraversals();
+    const e = getBestNextEdge(v, prevV, prevE, globalRem);
 
     if (e) {
       usedCount.set(e, (usedCount.get(e) || 0) + 1);
@@ -1064,6 +1104,7 @@ function solveRES() {
     console.warn("Sanity check: bestdistance differs from expectedFinal by", diff.toFixed(2), "meters");
   }
 }
+
 
 
 function mousePressed() {
