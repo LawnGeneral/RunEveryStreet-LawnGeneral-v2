@@ -443,12 +443,17 @@ out;
       const panel = document.getElementById("ui-panel");
       if (panel) panel.style.display = "none";
 
-      // 6. Wake up UI
-      setMode(selectnodemode);
-      showMessage("Click a red node to set Start");
+     // 6. Wake up UI
+setMode(selectnodemode);
 
-      // Force immediate draw (prevents “roads appear only after zoom”)
-      redraw();
+// 🔎 DIAGNOSTIC #1: graph degrees right after ingest
+logDegreeHistogram("after overpass ingest");
+
+showMessage("Click a red node to set Start");
+
+// Force immediate draw (prevents “roads appear only after zoom”)
+redraw();
+
 
       console.log(`Loaded ${edges.length} road segments`);
     },
@@ -627,9 +632,13 @@ function removeOrphans() {
     totaluniqueroads = edges.length;
     totalRoadsDist = totaledgedistance; // Update your efficiency target
     resetEdges(); 
+
+    // 🔎 DIAGNOSTIC #2: graph degrees after orphan removal
+    logDegreeHistogram("after removeOrphans");
     
     showMessage("Map Cleaned: " + edges.length + " roads remaining.");
 }
+
 
 function floodfill(startNode) {
     // 1. Our "To-Do List" (Stack)
@@ -2090,5 +2099,126 @@ function logOptimizationStats(label, graph, route, addedDist, oddNodes) {
     console.log("====================================");
   } catch (e) {
     console.warn("RES DEBUG failed:", e);
+  }
+}
+// ---- Degree histogram diagnostics (drop-in) ----
+
+// Attempts to extract a stable node id from many common node shapes.
+function _deg_getNodeId(node) {
+  if (node == null) return null;
+
+  if (typeof node === "number" || typeof node === "string") return node;
+
+  if (node.id != null) return node.id;
+  if (node.uid != null) return node.uid;
+  if (node.index != null) return node.index;
+  if (node.key != null) return node.key;
+  if (node.osm_id != null) return node.osm_id;
+  if (node.osmId != null) return node.osmId;
+
+  // Coordinate fallback
+  const x = node.x ?? node.lon ?? node.lng;
+  const y = node.y ?? node.lat;
+  if (x != null && y != null) return `${x},${y}`;
+
+  return null;
+}
+
+// Attempts to extract edge endpoints from many common shapes.
+function _deg_getEdgeEndpoints(edge) {
+  if (edge == null) return [null, null];
+
+  const aNode =
+    edge.a ?? edge.n1 ?? edge.u ?? edge.from ?? edge.start ?? edge.nodeA ?? edge.node1 ?? edge.src;
+  const bNode =
+    edge.b ?? edge.n2 ?? edge.v ?? edge.to ?? edge.end ?? edge.nodeB ?? edge.node2 ?? edge.dst;
+
+  let a = _deg_getNodeId(aNode);
+  let b = _deg_getNodeId(bNode);
+
+  if (a == null) a = edge.aId ?? edge.n1Id ?? edge.uId ?? edge.fromId ?? edge.startId ?? edge.nodeAId;
+  if (b == null) b = edge.bId ?? edge.n2Id ?? edge.vId ?? edge.toId ?? edge.endId ?? edge.nodeBId;
+
+  if ((a == null || b == null) && Array.isArray(edge.nodes) && edge.nodes.length >= 2) {
+    a = a ?? _deg_getNodeId(edge.nodes[0]);
+    b = b ?? _deg_getNodeId(edge.nodes[1]);
+  }
+
+  if ((a == null || b == null) && Array.isArray(edge.n) && edge.n.length >= 2) {
+    a = a ?? _deg_getNodeId(edge.n[0]);
+    b = b ?? _deg_getNodeId(edge.n[1]);
+  }
+
+  return [a, b];
+}
+
+// Treats trimmed/deleted edges as inactive.
+function _deg_isEdgeActive(edge) {
+  if (edge == null) return false;
+
+  if (edge.deleted === true) return false;
+  if (edge.isDeleted === true) return false;
+  if (edge.removed === true) return false;
+  if (edge.isRemoved === true) return false;
+  if (edge.trimmed === true) return false;
+  if (edge.isTrimmed === true) return false;
+  if (edge.active === false) return false;
+  if (edge.enabled === false) return false;
+
+  return true;
+}
+
+// Prints counts for degree 0/1/2/3/4/5+ plus odd/deadEnds summary.
+// Also returns an object if you ever want to use it programmatically.
+function logDegreeHistogram(label = "degreeHistogram") {
+  try {
+    if (!Array.isArray(edges)) {
+      console.warn(`[${label}] 'edges' is not an array. If your edge list has a different name, update this function.`);
+      return null;
+    }
+
+    const deg = new Map(); // nodeId -> degree
+    let activeEdges = 0;
+    let skippedEdges = 0;
+
+    for (const e of edges) {
+      if (!_deg_isEdgeActive(e)) continue;
+
+      const [a, b] = _deg_getEdgeEndpoints(e);
+      if (a == null || b == null) {
+        skippedEdges++;
+        continue;
+      }
+
+      activeEdges++;
+      deg.set(a, (deg.get(a) || 0) + 1);
+      deg.set(b, (deg.get(b) || 0) + 1);
+    }
+
+    // Buckets
+    let d0 = 0, d1 = 0, d2 = 0, d3 = 0, d4 = 0, d5p = 0;
+    let odd = 0;
+
+    for (const d of deg.values()) {
+      if (d === 0) d0++;
+      else if (d === 1) d1++;
+      else if (d === 2) d2++;
+      else if (d === 3) d3++;
+      else if (d === 4) d4++;
+      else d5p++;
+
+      if (d % 2 === 1) odd++;
+    }
+
+    const nodes = deg.size;
+
+    console.log(
+      `[${label}] nodes=${nodes} activeEdges=${activeEdges} skippedEdges=${skippedEdges} | deg1(deadEnds)=${d1} deg2=${d2} deg3=${d3} deg4=${d4} deg5+=${d5p} | odd=${odd}`
+    );
+
+    return { label, nodes, activeEdges, skippedEdges, d0, d1, d2, d3, d4, d5p, odd };
+  } catch (err) {
+    console.error(`logDegreeHistogram failed for label='${label}':`, err);
+    return null;
   }
 }
