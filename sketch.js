@@ -1003,17 +1003,41 @@ function solveRES() {
       bestPasses = improved.passes;
     }
   }
+  
+  // NEW: multi-start ILS (stronger, still browser-safe)
+let ilsMoves = 0;
+let ilsPasses = 0;
 
-  // NEW: one short stronger improvement pass on the best solution
-  let ilsMoves = 0;
-  let ilsPasses = 0;
-  if (nOdd > 0) {
-    const ils = improvePairingILS(bestPairsIdx, 140); // ~0.14s budget
-    bestPairsIdx = ils.pairsIdx;
-    bestCost = totalCostIdx(bestPairsIdx);
-    ilsMoves = ils.moves;
-    ilsPasses = ils.passes;
+if (nOdd > 0) {
+  let bestILS = bestPairsIdx.slice();
+  let bestILSCost = totalCostIdx(bestILS);
+
+  const ILS_RUNS = 8;   // number of restarts
+  const ILS_MS   = 80;  // ms per restart (~640ms total)
+
+  for (let r = 0; r < ILS_RUNS; r++) {
+    // Shuffle pair order to change basin
+    const seed = bestPairsIdx.slice();
+    for (let i = seed.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [seed[i], seed[j]] = [seed[j], seed[i]];
+    }
+
+    const ils = improvePairingILS(seed, ILS_MS);
+    ilsMoves += ils.moves || 0;
+    ilsPasses += ils.passes || 0;
+
+    const c = totalCostIdx(ils.pairsIdx);
+    if (c + 1e-9 < bestILSCost) {
+      bestILSCost = c;
+      bestILS = ils.pairsIdx.slice();
+    }
   }
+
+  bestPairsIdx = bestILS;
+  bestCost = bestILSCost;
+}
+
 
   const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
   console.log(
