@@ -664,7 +664,6 @@ function solveRES() {
   }
 
   showMessage("Building route (closed Euler tour)...");
-
   navMode = false;
   solverRunning = false;
 
@@ -672,50 +671,75 @@ function solveRES() {
   removeOrphans();
   resetEdges();
 
-  // ---- 1) Odd nodes ----
+  // -----------------------------
+  // 1) Odd-degree nodes
+  // -----------------------------
   const oddNodes = [];
+  let deadEnds = 0;
+
   for (let i = 0; i < nodes.length; i++) {
     const deg = nodes[i].edges ? nodes[i].edges.length : 0;
+    if (deg === 1) deadEnds++;
     if (deg % 2 !== 0) oddNodes.push(nodes[i]);
   }
 
-  // ---- 2) Multiplicity counts (NOT boolean) ----
+  // Graph "tree-ishness" signal: low => repeats unavoidable
+  const cycleSignal = edges.length - nodes.length + 1;
+
+  // Reset multiplicity counters (NOT boolean)
   for (let e of edges) e.extraTraversals = 0;
 
-  // ---- 3) Build distance matrix between odd nodes ----
   const nOdd = oddNodes.length;
-  const matrix = Array.from({ length: nOdd }, () => Array(nOdd).fill(0));
 
+  // If already Eulerian, skip pairing entirely
+  if (nOdd === 0) {
+    console.log("Graph already Eulerian (0 odd nodes). Skipping pairing/doubling.");
+  }
+
+  // -----------------------------
+  // 2) All-pairs distances between odd nodes (Dijkstra from each odd node)
+  // -----------------------------
+  const matrix = Array.from({ length: nOdd }, () => Array(nOdd).fill(0));
   const distMaps = [];
+
   for (let i = 0; i < nOdd; i++) {
     const res = dijkstra(oddNodes[i]);
     distMaps[i] = res && res.distances ? res.distances : new Map();
   }
 
+  let unreachablePairs = 0;
   for (let i = 0; i < nOdd; i++) {
     for (let j = 0; j < nOdd; j++) {
-      if (i === j) matrix[i][j] = 0;
-      else {
+      if (i === j) {
+        matrix[i][j] = 0;
+      } else {
         const d = distMaps[i].get(oddNodes[j]);
-        matrix[i][j] = (d === undefined) ? 1e15 : d;
+        if (d === undefined) {
+          matrix[i][j] = 1e15;
+          unreachablePairs++;
+        } else {
+          matrix[i][j] = d;
+        }
       }
     }
   }
 
-  // ---- 4) Multi-start greedy pairing + local swap improvement ----
-  function shuffle(arr) {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
+  if (unreachablePairs > 0) {
+    console.warn(
+      "Warning: some odd-node pairs are unreachable. " +
+      "This usually means the remaining graph is disconnected. " +
+      "Try removeOrphans() again or trim less aggressively."
+    );
   }
 
+  // -----------------------------
+  // 3) Pairing heuristic (improved)
+  //    - baseline deterministic "nearest-first"
+  //    - multi-start random greedy + local swaps
+  // -----------------------------
   function totalCostIdx(pairsIdx) {
     let sum = 0;
-    for (let k = 0; k < pairsIdx.length; k++) {
-      sum += matrix[pairsIdx[k][0]][pairsIdx[k][1]];
-    }
+    for (let k = 0; k < pairsIdx.length; k++) sum += matrix[pairsIdx[k][0]][pairsIdx[k][1]];
     return sum;
   }
 
@@ -786,14 +810,66 @@ function solveRES() {
     return { pairsIdx, passes };
   }
 
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // Build a deterministic "nearest-first" order baseline
   const baseOrder = [];
   for (let i = 0; i < nOdd; i++) baseOrder.push(i);
 
-  const TRIES = 800;
+  let nearestFirst = baseOrder.slice();
+  if (nOdd > 2) {
+    // Start from the odd node with the smallest nearest-neighbor distance
+    let bestStart = 0;
+    let bestNN = Infinity;
+    for (let i = 0; i < nOdd; i++) {
+      let nn = Infinity;
+      for (let j = 0; j < nOdd; j++) if (i !== j) nn = Math.min(nn, matrix[i][j]);
+      if (nn < bestNN) { bestNN = nn; bestStart = i; }
+    }
+
+    // Greedy build an order by repeatedly going to nearest unvisited
+    const visited = new Set([bestStart]);
+    nearestFirst = [bestStart];
+    while (nearestFirst.length < nOdd) {
+      const last = nearestFirst[nearestFirst.length - 1];
+      let bestNext = -1;
+      let bestD = Infinity;
+      for (let j = 0; j < nOdd; j++) {
+        if (visited.has(j)) continue;
+        const d = matrix[last][j];
+        if (d < bestD) { bestD = d; bestNext = j; }
+      }
+      if (bestNext === -1) break;
+      visited.add(bestNext);
+      nearestFirst.push(bestNext);
+    }
+  }
+
+  // TRIES scales with problem size (more odds => more attempts)
+  // (caps to keep runtime reasonable in-browser)
+  const TRIES = Math.min(3000, Math.max(400, nOdd * 120));
+
   let bestPairsIdx = [];
   let bestCost = Infinity;
   let bestPasses = 0;
 
+  // Seed with deterministic baseline first (often already very good)
+  if (nOdd > 0) {
+    let seedPairs = greedyPairingFromOrder(nearestFirst);
+    const improvedSeed = localSwapImprove(seedPairs);
+    seedPairs = improvedSeed.pairsIdx;
+    bestPairsIdx = seedPairs.slice();
+    bestCost = totalCostIdx(bestPairsIdx);
+    bestPasses = improvedSeed.passes;
+  }
+
+  // Multi-start randomized search
   for (let t = 0; t < TRIES; t++) {
     const order = shuffle(baseOrder.slice());
     let pairsIdx = greedyPairingFromOrder(order);
@@ -810,9 +886,14 @@ function solveRES() {
   }
 
   const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
-  console.log(`Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`);
+  console.log(
+    `Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} ` +
+    `swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`
+  );
 
-  // ---- 5) Apply doublings via shortest paths ----
+  // -----------------------------
+  // 4) Apply doublings via shortest paths
+  // -----------------------------
   for (const [a, b] of pairs) {
     const pathEdges = getPathEdges(a, b);
     for (const e of pathEdges) {
@@ -821,7 +902,9 @@ function solveRES() {
     }
   }
 
-  // ---- 6) Hierholzer on multigraph (TURN-AWARE + POCKET-CLEARING) ----
+  // -----------------------------
+  // 5) Hierholzer on multigraph (your turn-aware + pocket-clearing version)
+  // -----------------------------
   const usedCount = new Map();
 
   function requiredTraversals(edge) {
@@ -857,7 +940,6 @@ function solveRES() {
     return d;
   }
 
-  // Count how many traversals remain globally (rough scale factor)
   function totalRemainingTraversals() {
     let total = 0;
     for (let i = 0; i < edges.length; i++) {
@@ -869,8 +951,6 @@ function solveRES() {
     return total;
   }
 
-  // Estimate "pocket size" reachable from startNode WITHOUT crossing blockedEdge
-  // We count remaining-traversal edges in that reachable region.
   function pocketSizeTraversals(startNode, blockedEdge) {
     if (!startNode) return 0;
 
@@ -892,7 +972,7 @@ function solveRES() {
 
         const req = requiredTraversals(e);
         const used = usedCount.get(e) || 0;
-        if (used >= req) continue; // no remaining need => ignore for pocket sizing
+        if (used >= req) continue;
 
         if (!visitedEdges.has(e)) {
           visitedEdges.add(e);
@@ -909,10 +989,6 @@ function solveRES() {
     return count;
   }
 
-  // Choose next edge:
-  //  - minimize turning
-  //  - avoid U-turns
-  //  - BUT if an edge leads into a small "pocket", clear it now
   function getBestNextEdge(node, prevNode, prevEdge, globalRemaining) {
     if (!node || !node.edges || node.edges.length === 0) return null;
 
@@ -922,7 +998,6 @@ function solveRES() {
     let best = null;
     let bestScore = Infinity;
 
-    // Define "small pocket" as: pocket traversal count <= max(6, 6% of remaining)
     const pocketThresh = Math.max(6, Math.floor(globalRemaining * 0.06));
 
     for (let k = 0; k < node.edges.length; k++) {
@@ -938,29 +1013,22 @@ function solveRES() {
 
       let score = 0;
 
-      // --- Turn minimization ---
       if (hasIncoming) {
         const outBearing = bearingDeg(node, other);
         const ang = turnAngleDeg(incomingBearing, outBearing);
         score += ang;
-        if (ang > 150) score += 200; // strong U-turn penalty
+        if (ang > 150) score += 200;
       }
 
-      // --- Pocket clearing ---
-      // If treating e as a doorway, and the far side is a small pocket, clear it now.
       const pocket = pocketSizeTraversals(other, e);
       if (pocket > 0 && pocket <= pocketThresh) {
-        // Bigger bonus for smaller pockets
-        // (e.g., pocket=2 gets huge bonus, pocket=10 smaller bonus)
         score -= (220 - Math.min(200, pocket * 20));
       }
 
-      // Prefer staying on same wayid (often same street)
       if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) {
         score -= 15;
       }
 
-      // Mild preference to consume edges with more remaining required traversals
       const remaining = req - used;
       score -= Math.min(5, remaining);
 
@@ -1017,7 +1085,9 @@ function solveRES() {
 
   circuitEdges.reverse();
 
-  // ---- 7) Convert to Route ----
+  // -----------------------------
+  // 6) Convert to Route (as you do now)
+  // -----------------------------
   mode = solveRESmode;
 
   bestdistance = Infinity;
@@ -1028,13 +1098,11 @@ function solveRES() {
   let curr = startnode;
   for (let i = 0; i < circuitEdges.length; i++) {
     const e = circuitEdges[i];
-
     const next = safeOtherNode(e, curr);
     if (!next) {
       console.warn("Discontinuity during route conversion: edge not incident to curr", e, curr);
       break;
     }
-
     currentroute.addWaypoint(next, e.distance, 0);
     curr = next;
   }
@@ -1044,14 +1112,21 @@ function solveRES() {
   remainingedges = 0;
 
   const endedAtStart = (curr === startnode);
-  showMessage(endedAtStart ? "Closed route built. Click STOP SOLVER for summary/export." : "Route built but not closed (unexpected).");
+  showMessage(
+    endedAtStart
+      ? "Closed route built. Click STOP SOLVER for summary/export."
+      : "Route built but not closed (unexpected)."
+  );
 
   redraw();
   openlayersmap.render();
 
-  // ---- 8) Correct stats: added distance (meters) and sanity check ----
+  // -----------------------------
+  // 7) Stats + “is this unavoidable?” diagnostics
+  // -----------------------------
   let addedDistance = 0;
   let addedTraversals = 0;
+
   for (const e of edges) {
     const extra = (e.extraTraversals || 0);
     if (extra > 0) {
@@ -1072,11 +1147,17 @@ function solveRES() {
     `Closed: ${endedAtStart}`
   );
 
+  console.log(
+    `Graph diagnostics: odd=${nOdd} deadEnds=${deadEnds} cycleSignal(E-N+1)=${cycleSignal} ` +
+    `(low cycleSignal + many deadEnds => repeats are mathematically unavoidable)`
+  );
+
   const diff = Math.abs(bestdistance - expectedFinal);
   if (diff > 5) {
     console.warn("Sanity check: bestdistance differs from expectedFinal by", diff.toFixed(2), "meters");
   }
 }
+
 
 
 
@@ -1948,4 +2029,66 @@ function togglePanTrim() {
   if (btn) btn.textContent = mapPanZoomMode ? "MODE: PAN/ZOOM" : "MODE: TRIM/EDIT";
 
   showMessage(mapPanZoomMode ? "Pan/Zoom enabled" : "Trim/Edit enabled");
+}
+// =======================
+// OPTIMIZATION DEBUG STATS
+// =======================
+function logOptimizationStats(label, graph, route, addedDist, oddNodes) {
+  try {
+    // Basic graph signals
+    const N = graph.nodes ? graph.nodes.length : (nodes ? nodes.length : null);
+    const E = graph.edges ? graph.edges.length : (edges ? edges.length : null);
+    const cycleSignal = (N != null && E != null) ? (E - N + 1) : null;
+
+    // Dead ends = degree 1
+    let deadEnds = 0;
+    if (graph.nodes) {
+      for (const n of graph.nodes) {
+        const deg = (n.edges ? n.edges.length : (n.neighbors ? n.neighbors.length : 0));
+        if (deg === 1) deadEnds++;
+      }
+    }
+
+    // Route distance if available
+    let routeDist = null;
+    if (route && route.waypoints && route.waypoints.length > 1) {
+      routeDist = 0;
+      for (let i = 0; i < route.waypoints.length - 1; i++) {
+        const a = route.waypoints[i];
+        const b = route.waypoints[i + 1];
+
+        // Try to use your existing distance method if present
+        if (typeof distBetweenNodesMeters === "function") {
+          routeDist += distBetweenNodesMeters(a, b);
+        } else if (a && b && typeof a.distTo === "function") {
+          routeDist += a.distTo(b);
+        } else if (a && b && a.lat != null && a.lon != null && b.lat != null && b.lon != null) {
+          // Fallback haversine (meters)
+          const R = 6371000;
+          const toRad = (x) => x * Math.PI / 180;
+          const dLat = toRad(b.lat - a.lat);
+          const dLon = toRad(b.lon - a.lon);
+          const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+          const s =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1) * Math.cos(lat2) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+          routeDist += 2 * R * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+        }
+      }
+    }
+
+    console.log("====================================");
+    console.log(`RES DEBUG: ${label || ""}`);
+    console.log(`Nodes (N): ${N}`);
+    console.log(`Edges (E): ${E}`);
+    console.log(`Cycle signal (E - N + 1): ${cycleSignal}  (low => tree-ish => repeats unavoidable)`);
+    console.log(`Odd-degree nodes: ${oddNodes ? oddNodes.length : "?"}  (more => more forced repeats)`);
+    console.log(`Dead ends (deg=1): ${deadEnds}  (more => more forced out-and-backs)`);
+    console.log(`Added distance from pairing/doubling (m): ${addedDist != null ? Math.round(addedDist) : "?"}`);
+    console.log(`Route distance (m): ${routeDist != null ? Math.round(routeDist) : "?"}`);
+    console.log("====================================");
+  } catch (e) {
+    console.warn("RES DEBUG failed:", e);
+  }
 }
