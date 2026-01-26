@@ -736,15 +736,16 @@ function solveRES() {
   if (unreachablePairs > 0) {
     console.warn(
       "Warning: some odd-node pairs are unreachable. " +
-      "This usually means the remaining graph is disconnected. " +
-      "Try removeOrphans() again or trim less aggressively."
+        "This usually means the remaining graph is disconnected. " +
+        "Try removeOrphans() again or trim less aggressively."
     );
   }
 
   // -----------------------------
-  // 3) Pairing heuristic (improved)
+  // 3) Pairing heuristic (UPGRADED)
   //    - baseline deterministic "nearest-first"
   //    - multi-start random greedy + local swaps
+  //    - PLUS: short “ILS” pass with stronger rewires
   // -----------------------------
   function totalCostIdx(pairsIdx) {
     let sum = 0;
@@ -759,7 +760,10 @@ function solveRES() {
     while (unmatched.size > 1) {
       let i = null;
       for (const v of orderIdx) {
-        if (unmatched.has(v)) { i = v; break; }
+        if (unmatched.has(v)) {
+          i = v;
+          break;
+        }
       }
       if (i === null) break;
       unmatched.delete(i);
@@ -796,8 +800,10 @@ function solveRES() {
 
       for (let p = 0; p < pairsIdx.length; p++) {
         for (let q = p + 1; q < pairsIdx.length; q++) {
-          const a = pairsIdx[p][0], b = pairsIdx[p][1];
-          const c = pairsIdx[q][0], d = pairsIdx[q][1];
+          const a = pairsIdx[p][0],
+            b = pairsIdx[p][1];
+          const c = pairsIdx[q][0],
+            d = pairsIdx[q][1];
 
           const current = matrix[a][b] + matrix[c][d];
           const swap1 = matrix[a][c] + matrix[b][d];
@@ -827,6 +833,104 @@ function solveRES() {
     return arr;
   }
 
+  // --- NEW: stronger improvement pass (time-bounded) ---
+  // Works on your bestPairsIdx and tries “4-node rewires” + some random perturbations,
+  // then re-runs local swaps to settle.
+  function improvePairingILS(pairsIdx, timeBudgetMs = 140) {
+    if (!pairsIdx || pairsIdx.length < 2) return { pairsIdx, passes: 0, moves: 0 };
+
+    const tEnd = performance.now() + timeBudgetMs;
+
+    // Helper to pick 2 distinct pair indices
+    function pickTwoPairs(n) {
+      const p = Math.floor(Math.random() * n);
+      let q = Math.floor(Math.random() * n);
+      if (q === p) q = (q + 1) % n;
+      return [p, q];
+    }
+
+    // 4-node rewire candidates:
+    // pairs: (a-b) and (c-d)
+    // options:
+    //   (a-c, b-d)  or (a-d, b-c)  (same as local swap)
+    // plus “rotate endpoints” by swapping just one endpoint in a different direction
+    // (this is basically the same space, but we apply it stochastically + allow worsening moves sometimes).
+    let best = pairsIdx.map(x => [x[0], x[1]]);
+    let bestCost = totalCostIdx(best);
+
+    let moves = 0;
+    let settlePasses = 0;
+
+    // Small “temperature” for occasional uphill moves (helps escape local minima)
+    let T = Math.max(1, bestCost * 0.001);
+
+    while (performance.now() < tEnd) {
+      moves++;
+
+      // Clone current
+      let cur = best.map(x => [x[0], x[1]]);
+      let curCost = bestCost;
+
+      // Randomly perturb a few times, then settle with localSwapImprove
+      const perturbSteps = 2 + Math.floor(Math.random() * 4);
+      for (let s = 0; s < perturbSteps; s++) {
+        const [pi, qi] = pickTwoPairs(cur.length);
+        const a = cur[pi][0], b = cur[pi][1];
+        const c = cur[qi][0], d = cur[qi][1];
+
+        const current = matrix[a][b] + matrix[c][d];
+        const opt1 = matrix[a][c] + matrix[b][d];
+        const opt2 = matrix[a][d] + matrix[b][c];
+
+        // Choose best of 3 (stay, opt1, opt2) but allow occasional uphill
+        let chosen = 0; // 0=stay, 1=opt1, 2=opt2
+        let bestLocal = current;
+
+        if (opt1 < bestLocal) { bestLocal = opt1; chosen = 1; }
+        if (opt2 < bestLocal) { bestLocal = opt2; chosen = 2; }
+
+        // Metropolis accept (tiny chance to accept worse)
+        if (chosen === 0) {
+          const worseCandidate = (Math.random() < 0.5) ? 1 : 2;
+          const candCost = worseCandidate === 1 ? opt1 : opt2;
+          const delta = candCost - current;
+          if (delta > 0 && Math.random() < Math.exp(-delta / T)) {
+            chosen = worseCandidate;
+          }
+        }
+
+        if (chosen === 1) {
+          cur[pi] = [a, c];
+          cur[qi] = [b, d];
+          curCost += (opt1 - current);
+        } else if (chosen === 2) {
+          cur[pi] = [a, d];
+          cur[qi] = [b, c];
+          curCost += (opt2 - current);
+        }
+      }
+
+      // Settle with deterministic swap improvement
+      const improved = localSwapImprove(cur);
+      cur = improved.pairsIdx;
+      settlePasses += improved.passes;
+
+      const newCost = totalCostIdx(cur);
+
+      if (newCost + 1e-9 < bestCost) {
+        best = cur.map(x => [x[0], x[1]]);
+        bestCost = newCost;
+        // cool a bit (we’re improving)
+        T = Math.max(1, T * 0.85);
+      } else {
+        // gently heat (no improvement)
+        T = T * 1.05;
+      }
+    }
+
+    return { pairsIdx: best, passes: settlePasses, moves };
+  }
+
   // Build a deterministic "nearest-first" order baseline
   const baseOrder = [];
   for (let i = 0; i < nOdd; i++) baseOrder.push(i);
@@ -839,7 +943,10 @@ function solveRES() {
     for (let i = 0; i < nOdd; i++) {
       let nn = Infinity;
       for (let j = 0; j < nOdd; j++) if (i !== j) nn = Math.min(nn, matrix[i][j]);
-      if (nn < bestNN) { bestNN = nn; bestStart = i; }
+      if (nn < bestNN) {
+        bestNN = nn;
+        bestStart = i;
+      }
     }
 
     // Greedy build an order by repeatedly going to nearest unvisited
@@ -852,7 +959,10 @@ function solveRES() {
       for (let j = 0; j < nOdd; j++) {
         if (visited.has(j)) continue;
         const d = matrix[last][j];
-        if (d < bestD) { bestD = d; bestNext = j; }
+        if (d < bestD) {
+          bestD = d;
+          bestNext = j;
+        }
       }
       if (bestNext === -1) break;
       visited.add(bestNext);
@@ -894,10 +1004,21 @@ function solveRES() {
     }
   }
 
+  // NEW: one short stronger improvement pass on the best solution
+  let ilsMoves = 0;
+  let ilsPasses = 0;
+  if (nOdd > 0) {
+    const ils = improvePairingILS(bestPairsIdx, 140); // ~0.14s budget
+    bestPairsIdx = ils.pairsIdx;
+    bestCost = totalCostIdx(bestPairsIdx);
+    ilsMoves = ils.moves;
+    ilsPasses = ils.passes;
+  }
+
   const pairs = bestPairsIdx.map(([i, j]) => [oddNodes[i], oddNodes[j]]);
   console.log(
     `Pairing complete: odd=${nOdd} pairs=${pairs.length} tries=${TRIES} ` +
-    `swapPasses=${bestPasses} pairCost=${bestCost.toFixed(2)}`
+      `swapPasses=${bestPasses} ilsMoves=${ilsMoves} ilsPasses=${ilsPasses} pairCost=${bestCost.toFixed(2)}`
   );
 
   // -----------------------------
@@ -955,7 +1076,7 @@ function solveRES() {
       const e = edges[i];
       const req = requiredTraversals(e);
       const used = usedCount.get(e) || 0;
-      if (used < req) total += (req - used);
+      if (used < req) total += req - used;
     }
     return total;
   }
@@ -985,7 +1106,7 @@ function solveRES() {
 
         if (!visitedEdges.has(e)) {
           visitedEdges.add(e);
-          count += (req - used);
+          count += req - used;
         }
 
         const v = safeOtherNode(e, u);
@@ -1031,7 +1152,7 @@ function solveRES() {
 
       const pocket = pocketSizeTraversals(other, e);
       if (pocket > 0 && pocket <= pocketThresh) {
-        score -= (220 - Math.min(200, pocket * 20));
+        score -= 220 - Math.min(200, pocket * 20);
       }
 
       if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) {
@@ -1120,11 +1241,9 @@ function solveRES() {
   bestroute = currentroute.copy ? currentroute.copy() : currentroute;
   remainingedges = 0;
 
-  const endedAtStart = (curr === startnode);
+  const endedAtStart = curr === startnode;
   showMessage(
-    endedAtStart
-      ? "Closed route built. Click STOP SOLVER for summary/export."
-      : "Route built but not closed (unexpected)."
+    endedAtStart ? "Closed route built. Click STOP SOLVER for summary/export." : "Route built but not closed (unexpected)."
   );
 
   redraw();
@@ -1137,7 +1256,7 @@ function solveRES() {
   let addedTraversals = 0;
 
   for (const e of edges) {
-    const extra = (e.extraTraversals || 0);
+    const extra = e.extraTraversals || 0;
     if (extra > 0) {
       addedTraversals += extra;
       addedDistance += extra * e.distance;
@@ -1145,20 +1264,20 @@ function solveRES() {
   }
 
   const expectedFinal = totalRoadsDist + addedDistance; // meters
-  const eff = (bestdistance && bestdistance > 0) ? (totalRoadsDist / bestdistance) * 100 : 0;
+  const eff = bestdistance && bestdistance > 0 ? (totalRoadsDist / bestdistance) * 100 : 0;
 
   console.log(
     `Euler route built: ${(bestdistance / 1000).toFixed(2)} km | ` +
-    `Efficiency: ${eff.toFixed(1)}% | ` +
-    `Added distance: ${(addedDistance / 1000).toFixed(2)} km | ` +
-    `Extra traversals: ${addedTraversals} | ` +
-    `Expected final: ${(expectedFinal / 1000).toFixed(2)} km | ` +
-    `Closed: ${endedAtStart}`
+      `Efficiency: ${eff.toFixed(1)}% | ` +
+      `Added distance: ${(addedDistance / 1000).toFixed(2)} km | ` +
+      `Extra traversals: ${addedTraversals} | ` +
+      `Expected final: ${(expectedFinal / 1000).toFixed(2)} km | ` +
+      `Closed: ${endedAtStart}`
   );
 
   console.log(
     `Graph diagnostics: odd=${nOdd} deadEnds=${deadEnds} cycleSignal(E-N+1)=${cycleSignal} ` +
-    `(low cycleSignal + many deadEnds => repeats are mathematically unavoidable)`
+      `(low cycleSignal + many deadEnds => repeats are mathematically unavoidable)`
   );
 
   const diff = Math.abs(bestdistance - expectedFinal);
@@ -1166,6 +1285,7 @@ function solveRES() {
     console.warn("Sanity check: bestdistance differs from expectedFinal by", diff.toFixed(2), "meters");
   }
 }
+
 
 
 
