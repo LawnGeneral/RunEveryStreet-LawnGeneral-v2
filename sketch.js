@@ -2366,3 +2366,46 @@ function logDegreeHistogram(label = "degreeHistogram") {
     return null;
   }
 }
+function exportPostmanBundle() {
+  if (!nodes || !edges || !startnode) {
+    alert("Export failed: nodes / edges / startnode not ready");
+    return;
+  }
+
+  const nodeOut = nodes.map(n => ({
+    id: n.nodeId,
+    lat: n.lat,
+    lon: n.lon
+  }));
+
+  const edgeOut = edges.map(e => ({
+    u: e.from.nodeId,
+    v: e.to.nodeId,
+    w: e.distance   // meters
+  }));
+
+  const bundle = {
+    version: 1,
+    createdAt: new Date().toISOString(),
+    startNodeId: startnode.nodeId,
+    nodes: nodeOut,
+    edges: edgeOut
+  };
+
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], {
+    type: "application/json"
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "postman-bundle.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  console.log(
+    `Exported Postman bundle: nodes=${nodeOut.length}, edges=${edgeOut.length}`
+  );
+}
