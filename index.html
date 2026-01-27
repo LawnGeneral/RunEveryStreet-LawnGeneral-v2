@@ -100,6 +100,21 @@
     }
     #undo-btn:hover { background: #5f1096; }
 
+    #export-btn {
+  padding: 6px 10px;
+  color: white;
+  border: 1px solid rgba(255,255,255,0.85);
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 12px;
+  white-space: nowrap;
+  background: #0b5e7a;   /* blue-green so it stands out */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+}
+#export-btn:hover { background: #0e7396; }
+
+
     .osm-attrib {
       font-size: 12px;
       opacity: 0.85;
@@ -148,6 +163,8 @@
       <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
       <button id="ingest-btn" onclick="triggerIngest()">LOAD ROADS</button>
       <button id="undo-btn" onclick="undoTrim()">UNDO TRIM</button>
+      <button id="export-btn" onclick="exportPostmanBundle()">EXPORT FOR BLOSSOM</button>
+
     </div>
 
     <div class="right-group">
