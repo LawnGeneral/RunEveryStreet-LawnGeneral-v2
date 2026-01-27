@@ -1775,7 +1775,7 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // Helpers (meters + bearings)
+  // Helpers (meters)
   // -----------------------------
   function haversineMeters(a, b) {
     const R = 6371000;
@@ -1789,47 +1789,8 @@ function downloadGPX() {
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
-  function bearingDeg(a, b) {
-    const lat1 = (a.lat * Math.PI) / 180;
-    const lat2 = (b.lat * Math.PI) / 180;
-    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
-
-    const y = Math.sin(dLon) * Math.cos(lat2);
-    const x =
-      Math.cos(lat1) * Math.sin(lat2) -
-      Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-
-    let brng = (Math.atan2(y, x) * 180) / Math.PI;
-    brng = (brng + 360) % 360;
-    return brng;
-  }
-
-  function turnAngleDeg(prevBear, nextBear) {
-    let d = Math.abs(nextBear - prevBear);
-    if (d > 180) d = 360 - d;
-    return d;
-  }
-
   // -----------------------------
-  // NEW: Densify segments so the GPX looks better on maps
-  // -----------------------------
-  function densifySegment(A, B, maxSpacingM = 20) {
-    const d = haversineMeters(A, B);
-    const steps = Math.max(1, Math.ceil(d / maxSpacingM));
-    const out = [];
-    for (let s = 0; s < steps; s++) {
-      const t = s / steps;
-      out.push({
-        lat: A.lat + t * (B.lat - A.lat),
-        lon: A.lon + t * (B.lon - A.lon)
-      });
-    }
-    // NOTE: do NOT push B here; caller will handle last point to avoid duplicates
-    return out;
-  }
-
-  // -----------------------------
-  // Build initial points list
+  // Build initial points list (RAW, shape-preserving)
   // -----------------------------
   const pts = [];
   pts.push({ lat: startnode.lat, lon: startnode.lon });
@@ -1854,86 +1815,29 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // NEW: Densify the full polyline before COROS optimization
+  // ONE FIX: spacing-only thinning (NO angle-based dropping)
+  // This prevents “shortcut chords” across blocks.
   // -----------------------------
-  const DENSIFY_SPACING_M = 20; // <-- one knob: lower = smoother map, larger file
-  const densePts = [];
-  densePts.push(pts[0]);
+  const MIN_SPACING_M = 5; // try 3–8; smaller = smoother, larger = fewer points
+  const thinned = [pts[0]];
 
-  for (let i = 0; i < pts.length - 1; i++) {
-    const A = pts[i];
-    const B = pts[i + 1];
-    const seg = densifySegment(A, B, DENSIFY_SPACING_M);
-    // seg includes A but not B; we already pushed the first point, so skip seg[0]
-    for (let k = 1; k < seg.length; k++) densePts.push(seg[k]);
-    densePts.push(B);
-  }
-
-  // -----------------------------
-  // GPX optimization for COROS
-  // -----------------------------
-  // Goal: fewer jittery micro-turns, points not too dense.
-  //
-  // Tunable knobs:
-  // - MIN_SPACING_M: drop points closer than this (unless a real corner)
-  // - CORNER_KEEP_DEG: always keep points that create a turn >= this
-  // - STRAIGHT_DROP_DEG: drop middle point if turn angle <= this
-  //
-  // Practical COROS-friendly defaults:
-  const MIN_SPACING_M = 10;        // avoid overly dense points
-  const CORNER_KEEP_DEG = 28;      // keep real corners
-  const STRAIGHT_DROP_DEG = 8;     // remove nearly straight intermediate points
-
-  // Pass 1: spacing filter (but preserve corners)
-  const spaced = [densePts[0]];
-  for (let i = 1; i < densePts.length; i++) {
-    const prevKept = spaced[spaced.length - 1];
-    const d = haversineMeters(prevKept, densePts[i]);
-
-    if (d >= MIN_SPACING_M) {
-      spaced.push(densePts[i]);
-    } else {
-      // Too close: skip here; Pass 2 will keep corners properly when needed.
+  for (let i = 1; i < pts.length; i++) {
+    const prevKept = thinned[thinned.length - 1];
+    if (haversineMeters(prevKept, pts[i]) >= MIN_SPACING_M) {
+      thinned.push(pts[i]);
     }
   }
 
-  // Ensure we didn't delete everything
-  const base = (spaced.length >= 2) ? spaced : densePts.slice();
-
-  // Pass 2: collinearity / corner preservation
-  const simplified = [];
-  simplified.push(base[0]);
-
-  for (let i = 1; i < base.length - 1; i++) {
-    const A = simplified[simplified.length - 1]; // last kept
-    const B = base[i];
-    const C = base[i + 1];
-
-    const bear1 = bearingDeg(A, B);
-    const bear2 = bearingDeg(B, C);
-    const ang = turnAngleDeg(bear1, bear2);
-
-    // If it's a meaningful corner, keep it
-    if (ang >= CORNER_KEEP_DEG) {
-      simplified.push(B);
-      continue;
-    }
-
-    // If it's almost straight, drop B
-    if (ang <= STRAIGHT_DROP_DEG) {
-      continue;
-    }
-
-    // In-between: keep it if it's not too dense (helps curves)
-    const dAB = haversineMeters(A, B);
-    if (dAB >= MIN_SPACING_M) simplified.push(B);
+  // Always keep the final point (ensures closure is preserved)
+  const end = pts[pts.length - 1];
+  const lastKept = thinned[thinned.length - 1];
+  if (haversineMeters(lastKept, end) > 0.5) {
+    thinned.push(end);
   }
-
-  simplified.push(base[base.length - 1]);
 
   // Final sanity: ensure loop closes
-  if (haversineMeters(simplified[0], simplified[simplified.length - 1]) > 5) {
-    simplified.push({ lat: simplified[0].lat, lon: simplified[0].lon });
+  if (haversineMeters(thinned[0], thinned[thinned.length - 1]) > 5) {
+    thinned.push({ lat: thinned[0].lat, lon: thinned[0].lon });
   }
 
   // -----------------------------
@@ -1949,9 +1853,9 @@ function downloadGPX() {
   let gpxBody = "";
   const t0 = Date.now();
 
-  for (let i = 0; i < simplified.length; i++) {
+  for (let i = 0; i < thinned.length; i++) {
     const timeStr = new Date(t0 + i * 1000).toISOString();
-    gpxBody += `    <trkpt lat="${simplified[i].lat}" lon="${simplified[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+    gpxBody += `    <trkpt lat="${thinned[i].lat}" lon="${thinned[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
   }
 
   const fullContent = gpxHeader + gpxBody + gpxFooter;
@@ -1968,11 +1872,10 @@ function downloadGPX() {
 
   URL.revokeObjectURL(url);
 
-  console.log(
-    `GPX exported: raw=${pts.length} points | densified=${densePts.length} | spaced=${base.length} | simplified=${simplified.length}`
-  );
-  showMessage(`GPX ready (map-pretty): ${simplified.length} points`);
+  console.log(`GPX exported: raw=${pts.length} points | thinned=${thinned.length} (minSpacing=${MIN_SPACING_M}m)`);
+  showMessage(`GPX ready (shape-preserving): ${thinned.length} points`);
 }
+
 
 
 function getOddDegreeNodes() {
