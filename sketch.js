@@ -2379,10 +2379,16 @@ function exportPostmanBundle() {
   }));
 
   const edgeOut = edges.map(e => ({
-    u: e.from.nodeId,
-    v: e.to.nodeId,
-    w: e.distance   // meters
-  }));
+  u: e.from.nodeId,
+  v: e.to.nodeId,
+  w: e.distance,            // meters
+  wayid: e.wayid || null,
+  geom: [
+    [e.from.lat, e.from.lon],
+    [e.to.lat,   e.to.lon]
+  ]
+}));
+
 
   const bundle = {
     version: 1,
