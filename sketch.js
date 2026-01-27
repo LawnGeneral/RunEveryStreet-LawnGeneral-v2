@@ -1811,6 +1811,24 @@ function downloadGPX() {
   }
 
   // -----------------------------
+  // NEW: Densify segments so the GPX looks better on maps
+  // -----------------------------
+  function densifySegment(A, B, maxSpacingM = 20) {
+    const d = haversineMeters(A, B);
+    const steps = Math.max(1, Math.ceil(d / maxSpacingM));
+    const out = [];
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      out.push({
+        lat: A.lat + t * (B.lat - A.lat),
+        lon: A.lon + t * (B.lon - A.lon)
+      });
+    }
+    // NOTE: do NOT push B here; caller will handle last point to avoid duplicates
+    return out;
+  }
+
+  // -----------------------------
   // Build initial points list
   // -----------------------------
   const pts = [];
@@ -1836,6 +1854,22 @@ function downloadGPX() {
   }
 
   // -----------------------------
+  // NEW: Densify the full polyline before COROS optimization
+  // -----------------------------
+  const DENSIFY_SPACING_M = 20; // <-- one knob: lower = smoother map, larger file
+  const densePts = [];
+  densePts.push(pts[0]);
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const A = pts[i];
+    const B = pts[i + 1];
+    const seg = densifySegment(A, B, DENSIFY_SPACING_M);
+    // seg includes A but not B; we already pushed the first point, so skip seg[0]
+    for (let k = 1; k < seg.length; k++) densePts.push(seg[k]);
+    densePts.push(B);
+  }
+
+  // -----------------------------
   // GPX optimization for COROS
   // -----------------------------
   // Goal: fewer jittery micro-turns, points not too dense.
@@ -1851,22 +1885,20 @@ function downloadGPX() {
   const STRAIGHT_DROP_DEG = 8;     // remove nearly straight intermediate points
 
   // Pass 1: spacing filter (but preserve corners)
-  const spaced = [pts[0]];
-  for (let i = 1; i < pts.length; i++) {
+  const spaced = [densePts[0]];
+  for (let i = 1; i < densePts.length; i++) {
     const prevKept = spaced[spaced.length - 1];
-    const d = haversineMeters(prevKept, pts[i]);
+    const d = haversineMeters(prevKept, densePts[i]);
 
     if (d >= MIN_SPACING_M) {
-      spaced.push(pts[i]);
+      spaced.push(densePts[i]);
     } else {
-      // Too close: keep it ONLY if it's a corner candidate
-      // We can decide corner-ness when we have prev+curr+next
-      // For now, skip; Pass 2 will keep corners properly.
+      // Too close: skip here; Pass 2 will keep corners properly when needed.
     }
   }
 
   // Ensure we didn't delete everything
-  const base = (spaced.length >= 2) ? spaced : pts.slice();
+  const base = (spaced.length >= 2) ? spaced : densePts.slice();
 
   // Pass 2: collinearity / corner preservation
   const simplified = [];
@@ -1936,9 +1968,12 @@ function downloadGPX() {
 
   URL.revokeObjectURL(url);
 
-  console.log(`GPX exported: raw=${pts.length} points | spaced=${base.length} | simplified=${simplified.length}`);
-  showMessage(`GPX ready (optimized): ${simplified.length} points`);
+  console.log(
+    `GPX exported: raw=${pts.length} points | densified=${densePts.length} | spaced=${base.length} | simplified=${simplified.length}`
+  );
+  showMessage(`GPX ready (map-pretty): ${simplified.length} points`);
 }
+
 
 function getOddDegreeNodes() {
     let oddNodes = [];
@@ -2414,4 +2449,113 @@ function exportPostmanBundle() {
   console.log(
     `Exported Postman bundle: nodes=${nodeOut.length}, edges=${edgeOut.length}`
   );
+}
+// -------------------------------
+// GPX MAP-PRETTY FIX: DENSIFY
+// Adds intermediate points along each traversed edge so the GPX draws nicer.
+// Does NOT change your solver, only the exported GPX geometry.
+// -------------------------------
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Densify a simple 2-point segment [[lat,lon],[lat,lon]] (or polyline) so points are <= maxSpacingMeters apart.
+function densifyGeom(geom, maxSpacingMeters = 20) {
+  if (!geom || geom.length < 2) return geom || [];
+
+  const out = [];
+  for (let i = 0; i < geom.length - 1; i++) {
+    const lat1 = geom[i][0], lon1 = geom[i][1];
+    const lat2 = geom[i + 1][0], lon2 = geom[i + 1][1];
+
+    const d = haversineMeters(lat1, lon1, lat2, lon2);
+    const steps = Math.max(1, Math.ceil(d / maxSpacingMeters));
+
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      out.push([
+        lat1 + t * (lat2 - lat1),
+        lon1 + t * (lon2 - lon1)
+      ]);
+    }
+  }
+
+  // push final point
+  const last = geom[geom.length - 1];
+  out.push([last[0], last[1]]);
+  return out;
+}
+
+// Build a GPX-ready list of [lat,lon] points from your Euler route edge list.
+// EXPECTS: routeEdges = array of Edge objects in traversal order.
+function buildGpxTrackpointsFromRoute(routeEdges, maxSpacingMeters = 20) {
+  const pts = [];
+  let lastLat = null, lastLon = null;
+
+  function pushPoint(lat, lon) {
+    if (lastLat === null || Math.abs(lat - lastLat) > 1e-12 || Math.abs(lon - lastLon) > 1e-12) {
+      pts.push([lat, lon]);
+      lastLat = lat;
+      lastLon = lon;
+    }
+  }
+
+  for (const e of routeEdges) {
+    // Your Edge has only endpoints; build 2-point geom.
+    // If you later add e.geom, you can replace this with: const baseGeom = e.geom;
+    const baseGeom = [
+      [e.from.lat, e.from.lon],
+      [e.to.lat,   e.to.lon]
+    ];
+
+    const dense = densifyGeom(baseGeom, maxSpacingMeters);
+
+    // IMPORTANT: if your routeEdges already encode direction, this is correct.
+    // If sometimes you traverse an edge backwards, you need your routeEdges list to reflect that,
+    // or store direction per step. (Your current GPX export likely assumes the same.)
+    for (const [lat, lon] of dense) {
+      pushPoint(lat, lon);
+    }
+  }
+
+  return pts;
+}
+
+// Convert trackpoints to GPX text
+function gpxTextFromTrackpoints(trackpoints, name = "RES Route") {
+  let gpx = '';
+  gpx += '<?xml version="1.0" encoding="UTF-8"?>\n';
+  gpx += '<gpx version="1.1" creator="everystreet" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  gpx += `  <trk><name>${name}</name><trkseg>\n`;
+
+  for (const [lat, lon] of trackpoints) {
+    gpx += `    <trkpt lat="${lat.toFixed(7)}" lon="${lon.toFixed(7)}"></trkpt>\n`;
+  }
+
+  gpx += '  </trkseg></trk>\n';
+  gpx += '</gpx>\n';
+  return gpx;
+}
+
+// Download helper
+function downloadTextFile(text, filename) {
+  const blob = new Blob([text], { type: "application/gpx+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
