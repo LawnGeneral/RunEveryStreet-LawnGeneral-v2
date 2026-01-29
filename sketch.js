@@ -1916,6 +1916,175 @@ function downloadGPX() {
   showMessage(`GPX ready (shape-preserving): ${thinned.length} points`);
 }
 
+// ----------------------------------------------------
+// CUE SHEET (TXT) — street names + turn/bear + distance
+// Requires:
+//  - Edge.js updated to store edge.name and edge.ref
+//  - getOverpassData() updated to pass name/ref into new Edge(...)
+//  - helpers: nodeKey(), rebuildEdgeLookup(), edgeByNodeKey (from step 2A)
+// ----------------------------------------------------
+function downloadCueSheetTXT() {
+  const route = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 1)
+    ? bestroute
+    : currentroute;
+
+  if (!route || !route.waypoints || route.waypoints.length < 2 || !startnode) {
+    showMessage("No route available for cue sheet.");
+    return;
+  }
+
+  // --- Helpers ---
+  function haversineMeters(a, b) {
+    const R = 6371000;
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLon = (b.lon - a.lon) * Math.PI / 180;
+    const s1 = Math.sin(dLat / 2);
+    const s2 = Math.sin(dLon / 2);
+    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function bearingDeg(a, b) {
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x =
+      Math.cos(lat1) * Math.sin(lat2) -
+      Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+    let brng = (Math.atan2(y, x) * 180) / Math.PI;
+    brng = (brng + 360) % 360;
+    return brng;
+  }
+
+  function signedTurnDeg(prevBear, nextBear) {
+    let d = nextBear - prevBear;
+    while (d <= -180) d += 360;
+    while (d > 180) d -= 360;
+    return d; // + right, - left
+  }
+
+  function prettyStreet(edge) {
+    if (!edge) return "(unnamed road)";
+    if (edge.ref && edge.name) return `${edge.ref} / ${edge.name}`;
+    return edge.name || edge.ref || "(unnamed road)";
+  }
+
+  function actionFromTurn(turnSigned) {
+    const a = Math.abs(turnSigned);
+    if (a < 15) return "Continue";
+    if (a < 35) return (turnSigned > 0 ? "Bear right" : "Bear left");
+    if (a < 120) return (turnSigned > 0 ? "Turn right" : "Turn left");
+    return (turnSigned > 0 ? "U-turn right" : "U-turn left");
+  }
+
+  function fmtDist(m) {
+    const mi = m / 1609.344;
+    if (mi < 0.10) return `${Math.round(mi * 5280)} ft`;
+    return `${mi.toFixed(2)} mi`;
+  }
+
+  // Make sure edge lookup is up to date
+  if (typeof rebuildEdgeLookup === "function") rebuildEdgeLookup();
+
+  // Build waypoint list INCLUDING start node as first point
+  const wp = [];
+  wp.push({ id: startnode.id, lat: startnode.lat, lon: startnode.lon });
+
+  for (const p of route.waypoints) {
+    if (p && typeof p.lat === "number" && typeof p.lon === "number") {
+      wp.push({ id: p.id, lat: p.lat, lon: p.lon });
+    }
+  }
+
+  if (wp.length < 3) {
+    showMessage("Not enough points for cue sheet.");
+    return;
+  }
+
+  // Ensure closed loop (if your route already ends at start, this won't add)
+  const end = wp[wp.length - 1];
+  const start = wp[0];
+  if (haversineMeters(end, start) > 5) {
+    wp.push({ id: start.id, lat: start.lat, lon: start.lon });
+  }
+
+  // --- Parameters (tune for “flag every decision”) ---
+  const TURN_DEG = 18;        // lower = more cues (bear decisions)
+  const MIN_GAP_M = 20;       // minimum distance between cue points
+  const MIN_LEG_M = 15;       // don’t output tiny legs
+
+  let lines = [];
+  let distSinceLast = 0;
+  let lastCueAt = -1e9;
+
+  // Determine starting street from first step
+  const firstEdge = edgeByNodeKey?.get(nodeKey(wp[0].id, wp[1].id));
+  let currentStreet = prettyStreet(firstEdge);
+
+  lines.push(`START on ${currentStreet}`);
+
+  // Walk the polyline and emit cues
+  for (let i = 1; i < wp.length - 1; i++) {
+    const A = wp[i - 1];
+    const B = wp[i];
+    const C = wp[i + 1];
+
+    const seg = haversineMeters(A, B);
+    distSinceLast += seg;
+
+    const eOut = edgeByNodeKey?.get(nodeKey(B.id, C.id));
+    const nextStreet = prettyStreet(eOut);
+
+    const b1 = bearingDeg(A, B);
+    const b2 = bearingDeg(B, C);
+    const turnSigned = signedTurnDeg(b1, b2);
+    const turnAbs = Math.abs(turnSigned);
+
+    const streetChanged = (nextStreet !== currentStreet);
+    const meaningfulTurn = (turnAbs >= TURN_DEG);
+
+    // de-cluster + skip tiny legs
+    const cumApprox = lastCueAt + distSinceLast;
+    if ((streetChanged || meaningfulTurn) &&
+        distSinceLast >= MIN_LEG_M &&
+        (cumApprox - lastCueAt) >= MIN_GAP_M) {
+
+      const action = actionFromTurn(turnSigned);
+
+      if (streetChanged) {
+        lines.push(`In ${fmtDist(distSinceLast)}, ${action} onto ${nextStreet}`);
+        currentStreet = nextStreet;
+      } else {
+        lines.push(`In ${fmtDist(distSinceLast)}, ${action} to stay on ${currentStreet}`);
+      }
+
+      lastCueAt = cumApprox;
+      distSinceLast = 0;
+    }
+  }
+
+  // Finish
+  lines.push(`FINISH`);
+
+  // Download TXT
+  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "route_cues.txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+
+  URL.revokeObjectURL(url);
+  showMessage(`Cue sheet exported (${lines.length} lines)`);
+}
 
 
 function getOddDegreeNodes() {
