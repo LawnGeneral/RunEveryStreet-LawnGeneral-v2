@@ -70,6 +70,32 @@ var margin;
 
 var isTouchScreenDevice = false;
 var totaluniqueroads;
+// --- Way metadata + edge lookup (for cues / names) ---
+let wayMetaById = new Map();   // wayid(string) -> { name, ref }
+let edgeByNodeKey = new Map(); // "u|v" (undirected) -> Edge
+
+function getWayTag(wayEl, key) {
+  const tags = wayEl.getElementsByTagName("tag");
+  for (let i = 0; i < tags.length; i++) {
+    if (tags[i].getAttribute("k") === key) return tags[i].getAttribute("v") || "";
+  }
+  return "";
+}
+
+function nodeKey(aId, bId) {
+  // undirected key so A->B and B->A match
+  const A = String(aId), B = String(bId);
+  return (A < B) ? `${A}|${B}` : `${B}|${A}`;
+}
+
+function rebuildEdgeLookup() {
+  edgeByNodeKey = new Map();
+  for (const e of edges) {
+    if (!e || !e.from || !e.to) continue;
+    // Node.id is the nodeId in your Node class
+    edgeByNodeKey.set(nodeKey(e.from.id, e.to.id), e);
+  }
+}
 
 function setup() {
     // 1) Optional geolocation centering
@@ -419,17 +445,30 @@ out;
         nodes.push(new Node(id, lat, lon));
       }
 
+      // --- NEW: build way metadata map (name/ref) ---
+      wayMetaById = new Map();
+      for (let i = 0; i < numways; i++) {
+        const wayEl = XMLways[i];
+        const wayid = String(wayEl.getAttribute("id"));
+        const name = getWayTag(wayEl, "name");
+        const ref  = getWayTag(wayEl, "ref"); // optional route number
+        wayMetaById.set(wayid, { name, ref });
+      }
+
       // 5. Parse Ways → Edges
       for (let i = 0; i < numways; i++) {
-        let wayid = XMLways[i].getAttribute("id");
+        let wayid = String(XMLways[i].getAttribute("id"));
         let nds = XMLways[i].getElementsByTagName("nd");
+
+        const meta = wayMetaById.get(wayid) || { name: "", ref: "" };
 
         for (let j = 0; j < nds.length - 1; j++) {
           let from = getNodebyId(nds[j].getAttribute("ref"));
           let to   = getNodebyId(nds[j + 1].getAttribute("ref"));
 
           if (from && to) {
-            let edge = new Edge(from, to, wayid);
+            // IMPORTANT: Edge constructor now accepts (from,to,wayid,name,ref)
+            let edge = new Edge(from, to, wayid, meta.name, meta.ref);
             edges.push(edge);
             totaledgedistance += edge.distance;
           }
@@ -439,21 +478,23 @@ out;
       totalRoadsDist = totaledgedistance;
       totaluniqueroads = edges.length;
 
+      // --- NEW: allow lookup of edges by node pair for cue generation ---
+      rebuildEdgeLookup();
+
       // ✅ SUCCESS: hide ingest button ONLY now
       const panel = document.getElementById("ui-panel");
       if (panel) panel.style.display = "none";
 
-     // 6. Wake up UI
-setMode(selectnodemode);
+      // 6. Wake up UI
+      setMode(selectnodemode);
 
-// 🔎 DIAGNOSTIC #1: graph degrees right after ingest
-logDegreeHistogram("after overpass ingest");
+      // 🔎 DIAGNOSTIC #1: graph degrees right after ingest
+      logDegreeHistogram("after overpass ingest");
 
-showMessage("Click a red node to set Start");
+      showMessage("Click a red node to set Start");
 
-// Force immediate draw (prevents “roads appear only after zoom”)
-redraw();
-
+      // Force immediate draw (prevents “roads appear only after zoom”)
+      redraw();
 
       console.log(`Loaded ${edges.length} road segments`);
     },
@@ -469,7 +510,6 @@ redraw();
     }
   );
 }
-
 
 
 
