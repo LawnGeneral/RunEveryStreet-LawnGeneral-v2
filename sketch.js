@@ -1999,9 +1999,9 @@ function downloadCueSheetTXT() {
 
   function actionFromTurn(turnSigned) {
     const a = Math.abs(turnSigned);
-    if (a < 15) return "Continue";
-    if (a < 35) return (turnSigned > 0 ? "Bear right" : "Bear left");
-    if (a < 120) return (turnSigned > 0 ? "Turn right" : "Turn left");
+    if (a < 20) return "Continue";
+    if (a < 60) return (turnSigned > 0 ? "Bear right" : "Bear left");
+    if (a < 135) return (turnSigned > 0 ? "Turn right" : "Turn left");
     return (turnSigned > 0 ? "U-turn right" : "U-turn left");
   }
 
