@@ -82,9 +82,20 @@ function getWayTag(wayEl, key) {
   return "";
 }
 
-function nodeKey(aId, bId) {
-  // undirected key so A->B and B->A match
-  const A = String(aId), B = String(bId);
+function getNodeId(n) {
+  // Works with Node objects that use either id or nodeId,
+  // and with plain waypoint objects if they happen to carry an id.
+  if (!n) return null;
+  return (n.id != null) ? String(n.id)
+       : (n.nodeId != null) ? String(n.nodeId)
+       : null;
+}
+
+function nodeKey(a, b) {
+  // Accept Node objects OR raw ids
+  const A = (typeof a === "object") ? getNodeId(a) : (a != null ? String(a) : null);
+  const B = (typeof b === "object") ? getNodeId(b) : (b != null ? String(b) : null);
+  if (!A || !B) return null;
   return (A < B) ? `${A}|${B}` : `${B}|${A}`;
 }
 
@@ -92,8 +103,19 @@ function rebuildEdgeLookup() {
   edgeByNodeKey = new Map();
   for (const e of edges) {
     if (!e || !e.from || !e.to) continue;
-    // Node.id is the nodeId in your Node class
-    edgeByNodeKey.set(nodeKey(e.from.id, e.to.id), e);
+
+    const key = nodeKey(e.from, e.to);
+    if (!key) continue;
+
+    // If multiple edges share the same node pair, keep the first
+    // (or choose shortest). This avoids random overwrites.
+    if (!edgeByNodeKey.has(key)) {
+      edgeByNodeKey.set(key, e);
+    } else {
+      // Optional: keep the shorter edge if duplicates exist
+      const cur = edgeByNodeKey.get(key);
+      if (e.distance < cur.distance) edgeByNodeKey.set(key, e);
+    }
   }
 }
 
@@ -1582,15 +1604,6 @@ function calcdistance(lat1, long1, lat2, long2) {
 	return 2 * asin(sqrt(pow(sin((lat2 - lat1) / 2), 2) + cos(lat1) * cos(lat2) * pow(sin((long2 - long1) / 2), 2))) * 6371.0;
 }
 
-function getNodebyId(id) {
-	for (let i = 0; i < nodes.length; i++) {
-		if (nodes[i].nodeId == id) {
-			return nodes[i];
-		}
-	}
-	return null;
-}
-
 // Single reusable toast (no stacked boxes)
 let msgToast = null;
 let msgToastTimer = null;
@@ -1923,6 +1936,7 @@ function downloadGPX() {
 //  - getOverpassData() updated to pass name/ref into new Edge(...)
 //  - helpers: nodeKey(), rebuildEdgeLookup(), edgeByNodeKey (from step 2A)
 // ----------------------------------------------------
+
 function downloadCueSheetTXT() {
   const route = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 1)
     ? bestroute
@@ -1933,7 +1947,9 @@ function downloadCueSheetTXT() {
     return;
   }
 
-  // --- Helpers ---
+  // -----------------------------
+  // Helpers
+  // -----------------------------
   function haversineMeters(a, b) {
     const R = 6371000;
     const lat1 = a.lat * Math.PI / 180;
@@ -1961,17 +1977,12 @@ function downloadCueSheetTXT() {
     return brng;
   }
 
+  // signed: +right, -left
   function signedTurnDeg(prevBear, nextBear) {
     let d = nextBear - prevBear;
     while (d <= -180) d += 360;
     while (d > 180) d -= 360;
-    return d; // + right, - left
-  }
-
-  function prettyStreet(edge) {
-    if (!edge) return "(unnamed road)";
-    if (edge.ref && edge.name) return `${edge.ref} / ${edge.name}`;
-    return edge.name || edge.ref || "(unnamed road)";
+    return d;
   }
 
   function actionFromTurn(turnSigned) {
@@ -1988,16 +1999,29 @@ function downloadCueSheetTXT() {
     return `${mi.toFixed(2)} mi`;
   }
 
-  // Make sure edge lookup is up to date
+  function prettyStreet(edge) {
+    if (!edge) return "(unnamed road)";
+    if (edge.ref && edge.name) return `${edge.ref} / ${edge.name}`;
+    return edge.name || edge.ref || "(unnamed road)";
+  }
+
+  // -----------------------------
+  // Make sure edge lookup exists
+  // -----------------------------
   if (typeof rebuildEdgeLookup === "function") rebuildEdgeLookup();
 
-  // Build waypoint list INCLUDING start node as first point
+  // -----------------------------
+  // Build waypoint list INCLUDING start as first point
+  // (and keep ids intact)
+  // -----------------------------
   const wp = [];
-  wp.push({ id: startnode.id, lat: startnode.lat, lon: startnode.lon });
+  wp.push(startnode); // keep the Node object
 
   for (const p of route.waypoints) {
+    // Many implementations already store Node objects here; keep as-is.
+    // If these are plain {lat,lon} objects, street lookup will fall back.
     if (p && typeof p.lat === "number" && typeof p.lon === "number") {
-      wp.push({ id: p.id, lat: p.lat, lon: p.lon });
+      wp.push(p);
     }
   }
 
@@ -2006,29 +2030,39 @@ function downloadCueSheetTXT() {
     return;
   }
 
-  // Ensure closed loop (if your route already ends at start, this won't add)
-  const end = wp[wp.length - 1];
-  const start = wp[0];
-  if (haversineMeters(end, start) > 5) {
-    wp.push({ id: start.id, lat: start.lat, lon: start.lon });
+  // Close loop if needed (~5m)
+  const last = wp[wp.length - 1];
+  const first = wp[0];
+  if (haversineMeters(last, first) > 5) {
+    wp.push(first);
   }
 
-  // --- Parameters (tune for “flag every decision”) ---
-  const TURN_DEG = 18;        // lower = more cues (bear decisions)
-  const MIN_GAP_M = 20;       // minimum distance between cue points
-  const MIN_LEG_M = 15;       // don’t output tiny legs
+  // -----------------------------
+  // Tunables: set to "flag everything"
+  // -----------------------------
+  const TURN_DEG = 18;     // lower = more “bear/turn” cues
+  const MIN_GAP_M = 20;    // de-cluster cues very close together
+  const MIN_LEG_M = 15;    // don’t emit instructions after tiny legs
 
-  let lines = [];
-  let distSinceLast = 0;
-  let lastCueAt = -1e9;
+  // -----------------------------
+  // Start street
+  // -----------------------------
+  let currentStreet = "(unnamed road)";
+  {
+    const k0 = nodeKey(wp[0], wp[1]);        // <-- IMPORTANT: pass objects
+    const firstEdge = k0 ? edgeByNodeKey.get(k0) : null;
+    currentStreet = prettyStreet(firstEdge);
+  }
 
-  // Determine starting street from first step
-  const firstEdge = edgeByNodeKey?.get(nodeKey(wp[0].id, wp[1].id));
-  let currentStreet = prettyStreet(firstEdge);
-
+  const lines = [];
   lines.push(`START on ${currentStreet}`);
 
-  // Walk the polyline and emit cues
+  // -----------------------------
+  // Walk route and emit cues
+  // -----------------------------
+  let distSinceLast = 0;
+  let distSinceCue = 0;
+
   for (let i = 1; i < wp.length - 1; i++) {
     const A = wp[i - 1];
     const B = wp[i];
@@ -2036,24 +2070,23 @@ function downloadCueSheetTXT() {
 
     const seg = haversineMeters(A, B);
     distSinceLast += seg;
+    distSinceCue += seg;
 
-    const eOut = edgeByNodeKey?.get(nodeKey(B.id, C.id));
+    // Edge / street for next leg (B->C)
+    const k = nodeKey(B, C);                // <-- IMPORTANT: pass objects
+    const eOut = k ? edgeByNodeKey.get(k) : null;
     const nextStreet = prettyStreet(eOut);
 
     const b1 = bearingDeg(A, B);
     const b2 = bearingDeg(B, C);
     const turnSigned = signedTurnDeg(b1, b2);
-    const turnAbs = Math.abs(turnSigned);
+    const absTurn = Math.abs(turnSigned);
 
-    const streetChanged = (nextStreet !== currentStreet);
-    const meaningfulTurn = (turnAbs >= TURN_DEG);
+    const streetChanged = (nextStreet !== currentStreet) && (nextStreet !== "(unnamed road)");
+    const meaningfulTurn = absTurn >= TURN_DEG;
 
-    // de-cluster + skip tiny legs
-    const cumApprox = lastCueAt + distSinceLast;
-    if ((streetChanged || meaningfulTurn) &&
-        distSinceLast >= MIN_LEG_M &&
-        (cumApprox - lastCueAt) >= MIN_GAP_M) {
-
+    // Only emit if we’ve traveled enough since last cue and the leg isn’t tiny
+    if ((streetChanged || meaningfulTurn) && distSinceLast >= MIN_LEG_M && distSinceCue >= MIN_GAP_M) {
       const action = actionFromTurn(turnSigned);
 
       if (streetChanged) {
@@ -2063,15 +2096,16 @@ function downloadCueSheetTXT() {
         lines.push(`In ${fmtDist(distSinceLast)}, ${action} to stay on ${currentStreet}`);
       }
 
-      lastCueAt = cumApprox;
       distSinceLast = 0;
+      distSinceCue = 0;
     }
   }
 
-  // Finish
-  lines.push(`FINISH`);
+  lines.push("FINISH");
 
+  // -----------------------------
   // Download TXT
+  // -----------------------------
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
@@ -2085,6 +2119,7 @@ function downloadCueSheetTXT() {
   URL.revokeObjectURL(url);
   showMessage(`Cue sheet exported (${lines.length} lines)`);
 }
+
 
 
 function getOddDegreeNodes() {
