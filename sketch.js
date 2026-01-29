@@ -118,6 +118,18 @@ function rebuildEdgeLookup() {
     }
   }
 }
+function getNodebyId(osmId) {
+  if (osmId === undefined || osmId === null) return null;
+  const key = String(osmId);
+
+  // "nodes" is your global array of Node objects created during Overpass ingest
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    const nid = (n && (n.id ?? n.nodeId)) ? String(n.id ?? n.nodeId) : null;
+    if (nid === key) return n;
+  }
+  return null;
+}
 
 function setup() {
     // 1) Optional geolocation centering
