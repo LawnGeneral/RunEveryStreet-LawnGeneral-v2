@@ -2094,23 +2094,32 @@ function downloadCueSheetTXT() {
     const turnSigned = signedTurnDeg(b1, b2);
     const absTurn = Math.abs(turnSigned);
 
-    const streetChanged = (nextStreet !== currentStreet) && (nextStreet !== "(unnamed road)");
-    const meaningfulTurn = absTurn >= TURN_DEG;
+ const streetChanged = (nextStreet !== currentStreet) && (nextStreet !== "(unnamed road)");
+const meaningfulTurn = absTurn >= TURN_DEG;
 
-    // Only emit if we’ve traveled enough since last cue and the leg isn’t tiny
-    if ((streetChanged || meaningfulTurn) && distSinceLast >= MIN_LEG_M && distSinceCue >= MIN_GAP_M) {
-      const action = actionFromTurn(turnSigned);
+// Decide the action once
+const action = actionFromTurn(turnSigned);
 
-      if (streetChanged) {
-        lines.push(`In ${fmtDist(distSinceLast)}, ${action} onto ${nextStreet}`);
-        currentStreet = nextStreet;
-      } else {
-        lines.push(`In ${fmtDist(distSinceLast)}, ${action} to stay on ${currentStreet}`);
-      }
+// NEW RULE:
+// - If street changed: emit (and allow Bear/Turn/U-turn onto next street)
+// - If street did NOT change: emit ONLY for real Turns / U-turns (no Bears)
+//   (this removes "Bear left/right to stay on ...")
+const isBear = action.startsWith("Bear");
+const emit = (streetChanged || (meaningfulTurn && !isBear));
 
-      distSinceLast = 0;
-      distSinceCue = 0;
-    }
+// Only emit if we’ve traveled enough since last cue and the leg isn’t tiny
+if (emit && distSinceLast >= MIN_LEG_M && distSinceCue >= MIN_GAP_M) {
+  if (streetChanged) {
+    lines.push(`In ${fmtDist(distSinceLast)}, ${action} onto ${nextStreet}`);
+    currentStreet = nextStreet;
+  } else {
+    lines.push(`In ${fmtDist(distSinceLast)}, ${action} to stay on ${currentStreet}`);
+  }
+
+  distSinceLast = 0;
+  distSinceCue = 0;
+}
+
   }
 
   lines.push("FINISH");
