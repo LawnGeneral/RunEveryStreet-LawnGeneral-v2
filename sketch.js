@@ -2052,7 +2052,7 @@ function downloadCueSheetTXT() {
   // -----------------------------
   // Tunables: set to "flag everything"
   // -----------------------------
-  const TURN_DEG = 18;     // lower = more “bear/turn” cues
+  const TURN_DEG = 30;     // lower = more “bear/turn” cues
   const MIN_GAP_M = 20;    // de-cluster cues very close together
   const MIN_LEG_M = 15;    // don’t emit instructions after tiny legs
 
