@@ -2970,44 +2970,124 @@ function solveBudgetedRun() {
     return (distSoFar + edgeLen + back) <= (budgetM - STEP_BUFFER_M);
   }
 
-  function pickBestEdge(node) {
-    let best = null;
-    let bestScore = -Infinity;
+ function pickBestEdge(node) {
+  let best = null;
+  let bestScore = -Infinity;
 
-    for (const e of node.edges) {
-      const other = e.OtherNodeofEdge(node);
-      if (!other) continue;
+  const nodeDeg = node.edges ? node.edges.length : 0;
 
-      const edgeLen = e.distance || 0;
-      if (!isFinite(edgeLen) || edgeLen <= 0) continue;
+  // Detect when we're in a spot where turning back is normal/required
+  // - dead end: deg 1
+  // - corridor: deg 2 where one neighbor is the node we came from
+  let inForcedReturnZone = false;
+  if (nodeDeg === 1) inForcedReturnZone = true;
+  else if (nodeDeg === 2 && prevNode) {
+    const a = node.edges[0].OtherNodeofEdge(node);
+    const b = node.edges[1].OtherNodeofEdge(node);
+    if (a === prevNode || b === prevNode) inForcedReturnZone = true;
+  }
 
-      if (!canMoveTo(other, edgeLen)) continue;
+  // Helper: does taking edge e move into a spur/dead-end soon?
+  // We look ahead down degree-2 chains and see if it ends at a dead end.
+  function spurLookahead(edge, fromNode) {
+    const startNext = edge.OtherNodeofEdge(fromNode);
+    if (!startNext) return { isSpur: false, spurLen: 0, endNode: null };
 
-      // Score: strongly prefer edges we haven't used yet in this run
-      const used = usedCount.get(e) || 0;
+    let spurLen = edge.distance || 0;
 
-      let score = 0;
-
-      if (used === 0) score += 1000;       // "new street" (within this run)
-      else score -= 250 * used;            // repeats are expensive
-
-      // Mildly prefer shorter edges (helps pack coverage)
-      score -= edgeLen * 0.02;
-
-      // Avoid immediate U-turn unless necessary
-      if (prevNode && other === prevNode) score -= 120;
-
-      // Prefer staying on same way if available (smoother routes)
-      if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) score += 15;
-
-      if (score > bestScore) {
-        bestScore = score;
-        best = e;
-      }
+    // Immediate dead-end
+    const degNext = startNext.edges ? startNext.edges.length : 0;
+    if (degNext === 1) {
+      return { isSpur: true, spurLen, endNode: startNext };
     }
 
-    return best;
+    // Walk forward along a corridor (degree 2) until it stops being degree 2
+    let prev = fromNode;
+    let currN = startNext;
+    let steps = 0;
+
+    while (steps < 25) { // safety
+      const deg = currN.edges ? currN.edges.length : 0;
+      if (deg !== 2) break;
+
+      // Pick the "other" edge that doesn't go back to prev
+      const e0 = currN.edges[0];
+      const e1 = currN.edges[1];
+      const n0 = e0.OtherNodeofEdge(currN);
+      const n1 = e1.OtherNodeofEdge(currN);
+
+      let nextEdge = null;
+      let nextNode = null;
+
+      if (n0 && n0 !== prev) { nextEdge = e0; nextNode = n0; }
+      else if (n1 && n1 !== prev) { nextEdge = e1; nextNode = n1; }
+      else break;
+
+      spurLen += (nextEdge.distance || 0);
+
+      prev = currN;
+      currN = nextNode;
+      steps++;
+    }
+
+    const degEnd = currN && currN.edges ? currN.edges.length : 0;
+    if (degEnd === 1) {
+      // Corridor that terminates in a dead end => spur
+      return { isSpur: true, spurLen, endNode: currN };
+    }
+
+    return { isSpur: false, spurLen: 0, endNode: null };
   }
+
+  for (const e of node.edges) {
+    const other = e.OtherNodeofEdge(node);
+    if (!other) continue;
+
+    const edgeLen = e.distance || 0;
+    if (!isFinite(edgeLen) || edgeLen <= 0) continue;
+
+    if (!canMoveTo(other, edgeLen)) continue;
+
+    const used = usedCount.get(e) || 0;
+
+    let score = 0;
+
+    // Prefer "new" edges in THIS RUN
+    if (used === 0) score += 1000;
+    else score -= 250 * used;
+
+    // Mildly prefer shorter edges (packs more coverage into budget)
+    score -= edgeLen * 0.02;
+
+    // U-turn avoidance: only when it is NOT forced/normal
+    if (prevNode && other === prevNode && !inForcedReturnZone) {
+      score -= 120;
+    }
+
+    // Spur-clearing bonus:
+    // If this edge leads into a dead end / corridor-to-dead-end, prioritize clearing it NOW
+    const spur = spurLookahead(e, node);
+    if (spur.isSpur) {
+      // Bigger bonus for longer spurs (they are painful leftovers)
+      // This bonus is intentionally large so we don't "run past" these like your screenshot.
+      score += 600 + Math.min(800, spur.spurLen * 0.6);
+
+      // Also: if we're already near budget limits, still allow short spurs
+      // (No extra feasibility check here; the reserve-to-home constraint still protects us)
+    }
+
+    // Prefer staying on same way (smoother, fewer zigzags)
+    if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) score += 15;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = e;
+    }
+  }
+
+  return best;
+}
+
 
   // Main build loop
   while (true) {
