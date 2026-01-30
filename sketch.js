@@ -1880,7 +1880,7 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // Helpers (meters)
+  // Helpers (meters / bearings)
   // -----------------------------
   function haversineMeters(a, b) {
     const R = 6371000;
@@ -1892,6 +1892,47 @@ function downloadGPX() {
     const s2 = Math.sin(dLon / 2);
     const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function bearingDeg(a, b) {
+    const lat1 = (a.lat * Math.PI) / 180;
+    const lat2 = (b.lat * Math.PI) / 180;
+    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+
+    const y = Math.sin(dLon) * Math.cos(lat2);
+    const x =
+      Math.cos(lat1) * Math.sin(lat2) -
+      Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+    let brng = (Math.atan2(y, x) * 180) / Math.PI;
+    brng = (brng + 360) % 360;
+    return brng;
+  }
+
+  // Signed smallest-angle difference from b1 -> b2 in degrees, in [-180, 180]
+  function signedTurnDeg(b1, b2) {
+    let d = ((b2 - b1 + 540) % 360) - 180;
+    return d;
+  }
+
+  // WATCH PROMPT: keep it short (only Turn / U-turn)
+  function shortActionFromTurn(turnSigned) {
+    const a = Math.abs(turnSigned);
+
+    // No "Continue" or "Bear" on the watch
+    if (a < 60) return null; // ignore gentle bends
+    if (a < 135) return (turnSigned > 0 ? "Turn right" : "Turn left");
+    return "U-turn";
+  }
+
+  // Escape XML text
+  function escXml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
   }
 
   // -----------------------------
@@ -1920,10 +1961,9 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // ONE FIX: spacing-only thinning (NO angle-based dropping)
-  // This prevents “shortcut chords” across blocks.
+  // Spacing-only thinning (NO angle-based dropping)
   // -----------------------------
-  const MIN_SPACING_M = 5; // try 3–8; smaller = smoother, larger = fewer points
+  const MIN_SPACING_M = 5; // 3–8 is typical
   const thinned = [pts[0]];
 
   for (let i = 1; i < pts.length; i++) {
@@ -1946,40 +1986,95 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // Build GPX
+  // Build COROS cue points (rtept)
+  // -----------------------------
+  // Tune these if needed (watch-friendly)
+  const TURN_DEG = 30;     // minimum to even consider a turn
+  const MIN_GAP_M = 30;    // de-clutter: min meters between prompts
+  const MIN_LEG_M = 15;    // ignore tiny legs
+
+  let distSinceCue = 999999;
+  let distSinceLast = 0;
+
+  const cuePts = []; // {lat, lon, name}
+
+  // We compute turns off the UNTHINNED waypoint list (more faithful to traversal)
+  // A,B,C are consecutive points in pts (which includes start + waypoints + closure)
+  for (let i = 1; i < pts.length - 1; i++) {
+    const A = pts[i - 1];
+    const B = pts[i];
+    const C = pts[i + 1];
+
+    const seg = haversineMeters(A, B);
+    distSinceCue += seg;
+    distSinceLast += seg;
+
+    // bearings and signed turn at B
+    const b1 = bearingDeg(A, B);
+    const b2 = bearingDeg(B, C);
+    const turnSigned = signedTurnDeg(b1, b2);
+    const absTurn = Math.abs(turnSigned);
+
+    if (absTurn < TURN_DEG) continue;
+
+    const action = shortActionFromTurn(turnSigned);
+    if (!action) continue;
+
+    // De-clutter
+    if (distSinceLast < MIN_LEG_M) continue;
+    if (distSinceCue < MIN_GAP_M) continue;
+
+    cuePts.push({ lat: B.lat, lon: B.lon, name: action });
+    distSinceCue = 0;
+    distSinceLast = 0;
+  }
+
+  // -----------------------------
+  // Build GPX (trk + rte)
   // -----------------------------
   const gpxHeader =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
-    `  <trk><name>RunEveryStreet Route</name><trkseg>\n`;
+    `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n`;
 
-  const gpxFooter = `  </trkseg></trk>\n</gpx>\n`;
-
-  let gpxBody = "";
-  const t0 = Date.now();
-
-  for (let i = 0; i < thinned.length; i++) {
-    const timeStr = new Date(t0 + i * 1000).toISOString();
-    gpxBody += `    <trkpt lat="${thinned[i].lat}" lon="${thinned[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+  // COROS cues as route points
+  let rteBlock = "";
+  if (cuePts.length > 0) {
+    rteBlock += `  <rte><name>RunEveryStreet Cues</name>\n`;
+    for (const c of cuePts) {
+      rteBlock += `    <rtept lat="${c.lat}" lon="${c.lon}"><name>${escXml(c.name)}</name></rtept>\n`;
+    }
+    rteBlock += `  </rte>\n`;
   }
 
-  const fullContent = gpxHeader + gpxBody + gpxFooter;
+  // Track points (the line you follow)
+  let trkBlock = `  <trk><name>RunEveryStreet Route</name><trkseg>\n`;
+  const t0 = Date.now();
+  for (let i = 0; i < thinned.length; i++) {
+    const timeStr = new Date(t0 + i * 1000).toISOString();
+    trkBlock += `    <trkpt lat="${thinned[i].lat}" lon="${thinned[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+  }
+  trkBlock += `  </trkseg></trk>\n`;
+
+  const gpxFooter = `</gpx>\n`;
+
+  const fullContent = gpxHeader + rteBlock + trkBlock + gpxFooter;
 
   const blob = new Blob([fullContent], { type: "application/gpx+xml" });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
   link.href = url;
-  link.download = "route.gpx";
+  link.download = "route_coros.gpx";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
 
-  console.log(`GPX exported: raw=${pts.length} points | thinned=${thinned.length} (minSpacing=${MIN_SPACING_M}m)`);
-  showMessage(`GPX ready (shape-preserving): ${thinned.length} points`);
+  console.log(`GPX exported: track thinned=${thinned.length} pts | COROS cues=${cuePts.length}`);
+  showMessage(`GPX ready: ${thinned.length} points + ${cuePts.length} COROS cues`);
 }
+
 
 // ----------------------------------------------------
 // CUE SHEET (TXT) — street names + turn/bear + distance
