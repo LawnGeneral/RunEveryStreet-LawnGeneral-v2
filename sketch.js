@@ -3034,44 +3034,44 @@ function solveBudgetedRun() {
   }
 
   // Return to start via shortest path (using parents from startnode Dijkstra)
-  if (curr !== startnode) {
-    if (!homeParents) {
-      showMessage("No path-back map found.");
-      return;
-    }
-
-    // Build edges from curr back to start by following parents
-    let backEdges = [];
-    let walk = curr;
-
-    while (walk !== startnode) {
-      const step = homeParents.get(walk);
-      if (!step) break;
-      backEdges.push(step.edge);
-      walk = step.node;
-    }
-
-    // If we couldn't find a back path, bail gracefully
-    if (walk !== startnode) {
-      showMessage("Could not find path back to start (disconnected?).");
-      return;
-    }
-
-    // Apply the back edges in travel order from curr -> start
-    // (homeParents gives us the right edges, but we must traverse them from curr)
-    for (let i = 0; i < backEdges.length; i++) {
-      const e = backEdges[i];
-      const next = e.OtherNodeofEdge(curr);
-      if (!next) break;
-
-      // If we're about to exceed the budget, stop (rare; buffers should prevent)
-      if (distSoFar + e.distance > budgetM + 3) break;
-
-      pathEdges.push(e);
-      distSoFar += e.distance;
-      curr = next;
-    }
+if (curr !== startnode) {
+  if (!homeParents) {
+    showMessage("No path-back map found.");
+    return;
   }
+
+  // Reconstruct the node path from curr back to start
+  const backNodes = [];
+  let walk = curr;
+
+  // homeParents is a Map(currentNode -> { node: parentNode, edge: edgeToParent })
+  while (walk && walk !== startnode) {
+    const step = homeParents.get(walk);
+    if (!step) break;
+    backNodes.push({ from: walk, to: step.node, edge: step.edge });
+    walk = step.node;
+  }
+
+  if (walk !== startnode) {
+    showMessage("Could not find path back to start (disconnected?).");
+    return;
+  }
+
+  // Now traverse exactly along that reconstructed chain
+  for (let i = 0; i < backNodes.length; i++) {
+    const e = backNodes[i].edge;
+
+    // Budget guard (should rarely trip due to buffers)
+    if (distSoFar + e.distance > budgetM + 3) break;
+
+    pathEdges.push(e);
+    distSoFar += e.distance;
+
+    // Move curr along the chain deterministically
+    curr = backNodes[i].to;
+  }
+}
+
 
   // Convert edge list to Route
   bestdistance = distSoFar;
