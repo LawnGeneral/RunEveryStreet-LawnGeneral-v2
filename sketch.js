@@ -1921,18 +1921,19 @@ function downloadGPX() {
     return brng;
   }
 
-  // Signed smallest-angle difference from b1 -> b2 in degrees, in [-180, 180]
-  function signedTurnDeg(b1, b2) {
-    return ((b2 - b1 + 540) % 360) - 180;
+  // signed: +right, -left
+  function signedTurnDeg(prevBear, nextBear) {
+    let d = nextBear - prevBear;
+    while (d <= -180) d += 360;
+    while (d > 180) d -= 360;
+    return d;
   }
 
-  // Watch prompt: keep it short, no street names
   function shortActionFromTurn(turnSigned) {
     const a = Math.abs(turnSigned);
-    // Ignore gentle bends on watch (no "continue", no "bear")
-    if (a < 60) return null;
+    if (a < 60) return null; // ignore "continue/bear" for GPX prompts
     if (a < 135) return (turnSigned > 0 ? "Turn right" : "Turn left");
-    return "U-turn";
+    return (turnSigned > 0 ? "U-turn right" : "U-turn left");
   }
 
   function escXml(s) {
@@ -1945,21 +1946,19 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // Build raw points (start + traversal)
+  // Build point list INCLUDING start as first point
   // -----------------------------
   const pts = [];
   pts.push({ lat: startnode.lat, lon: startnode.lon });
 
-  for (let i = 0; i < route.waypoints.length; i++) {
-    const p = route.waypoints[i];
+  for (const p of route.waypoints) {
     if (p && typeof p.lat === "number" && typeof p.lon === "number") {
       pts.push({ lat: p.lat, lon: p.lon });
     }
   }
 
   if (pts.length < 2) {
-    console.error("Not enough valid points to export.");
-    showMessage("Route export failed: not enough valid points.");
+    showMessage("Not enough points to export GPX.");
     return;
   }
 
@@ -2012,6 +2011,7 @@ function downloadGPX() {
   // -----------------------------
   // Spacing-only thinning (keep route shape)
   // BUT: we will force-insert cue points so COROS alerts happen at the right places.
+  // FIX: also force-keep the *next* point after a cue so left/right cannot flip.
   // -----------------------------
   const MIN_SPACING_M = 5;
 
@@ -2029,19 +2029,30 @@ function downloadGPX() {
   const thinned = [];
   thinned.push({ lat: pts[0].lat, lon: pts[0].lon, cueName: null });
 
+  let forceKeepNext = false;
+
   for (let i = 1; i < pts.length; i++) {
     const p = pts[i];
     const prevKept = thinned[thinned.length - 1];
 
     const cueHere = findCueAtPoint(p);
+    const farEnough = haversineMeters(prevKept, p) >= MIN_SPACING_M;
 
     // Keep point if it's far enough OR it is a cue point (force keep)
-    if (cueHere || haversineMeters(prevKept, p) >= MIN_SPACING_M) {
+    // OR it's the immediate point after a cue (preserve outgoing leg for correct left/right).
+    if (cueHere || forceKeepNext || farEnough) {
       thinned.push({
         lat: p.lat,
         lon: p.lon,
         cueName: cueHere ? cueHere.name : null
       });
+    }
+
+    // If we placed a cue point, force-keep the next raw point too.
+    if (cueHere) {
+      forceKeepNext = true;
+    } else if (forceKeepNext) {
+      forceKeepNext = false;
     }
   }
 
@@ -2102,6 +2113,7 @@ function downloadGPX() {
   console.log(`GPX exported: track thinned=${thinned.length} pts | cuesEmbedded=${cueCount}`);
   showMessage(`GPX ready: ${thinned.length} pts + ${cueCount} cues`);
 }
+
 
 
 
