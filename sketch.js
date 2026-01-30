@@ -3171,11 +3171,69 @@ function spurLookahead(edge, fromNode) {
 function findShortStubExcursion(node) {
   if (!node || !node.edges) return null;
 
-  const STUB_MAX_M = 160; // ~0.10 mile one-way; tune later
+  // Tune: allow slightly longer spurs
+  const STUB_ONEWAY_MAX_M = 260;  // ~0.16 mi one-way (out+back ~0.32)
+  const MAX_SCAN_EDGES = 10;      // safety
+  const MAX_VISIT = 22;           // local pocket size cap
+
+  // Returns { ok:true, unusedLen, leafCount, maxHops } for a small pocket,
+  // scanning outward from `start`, but not stepping back through `back`.
+  function scanPocket(start, back) {
+    const q = [{ n: start, prev: back, hops: 0 }];
+    const seen = new Set([start]);
+
+    let unusedLen = 0;
+    let leafCount = 0;
+    let maxHops = 0;
+
+    while (q.length && seen.size < MAX_VISIT) {
+      const { n, prev, hops } = q.shift();
+      if (!n) continue;
+      maxHops = Math.max(maxHops, hops);
+
+      const deg = n.edges ? n.edges.length : 0;
+      if (deg === 1) leafCount++;
+
+      if (n.edges) {
+        for (const ed of n.edges) {
+          const other = ed.OtherNodeofEdge(n);
+          if (!other) continue;
+          if (other === prev) continue;
+
+          // count unused edges as "value"
+          if ((usedCount.get(ed) || 0) === 0) {
+            unusedLen += (ed.distance || 0);
+          }
+        }
+      }
+
+      // expand
+      if (n.edges && hops < 6) {
+        for (const ed of n.edges) {
+          const other = ed.OtherNodeofEdge(n);
+          if (!other) continue;
+          if (other === prev) continue;
+          if (seen.has(other)) continue;
+          seen.add(other);
+          q.push({ n: other, prev: n, hops: hops + 1 });
+        }
+      }
+    }
+
+    return { unusedLen, leafCount, maxHops, seenSize: seen.size };
+  }
+
+  // best candidate edge to "dip into and out of"
+  let bestEdge = null;
+  let bestValue = -Infinity;
+
+  let scanned = 0;
 
   for (const e of node.edges) {
+    if (++scanned > MAX_SCAN_EDGES) break;
+
     const used = usedCount.get(e) || 0;
-    if (used !== 0) continue; // only consider unused edges
+    if (used !== 0) continue; // only consider unused entry edges
 
     const other = e.OtherNodeofEdge(node);
     if (!other) continue;
@@ -3183,25 +3241,40 @@ function findShortStubExcursion(node) {
     const len = e.distance || 0;
     if (!isFinite(len) || len <= 0) continue;
 
-    // Is this edge a stub into a dead end?
-    const degOther = other.edges ? other.edges.length : 0;
-    if (degOther !== 1) continue;
+    // entry must be reasonably short
+    if (len > STUB_ONEWAY_MAX_M) continue;
 
-    // Need budget for: go out + come back + still be able to return home
-    // After out+back we are still at `node`, so check return feasibility from node.
+    // Pocket scan: is there meaningful unused street just beyond this edge?
+    const pocket = scanPocket(other, node);
+
+    // Heuristics: we consider it a "cheap pocket" if
+    // - it contains at least one dead end, OR
+    // - it has enough unusedLen to justify entering
+    const isWorthIt = (pocket.leafCount >= 1) || (pocket.unusedLen >= 120);
+
+    if (!isWorthIt) continue;
+
+    // Budget feasibility:
+    // We assume we can go in and come back out along the entry edge at minimum.
+    // (We’re not forcing full pocket clearance here—just a "don't skip the entrance".)
     const backFromNode = distToStartCache.get(node);
     if (!isFinite(backFromNode)) continue;
 
-    const extra = 2 * len; // out and back
-    if (extra > 2 * STUB_MAX_M) continue;
+    const extra = 2 * len;
+    if (distSoFar + extra + backFromNode > budgetM - 10) continue;
 
-    if (distSoFar + extra + backFromNode <= budgetM - 10) {
-      return e; // do this stub now
+    // Value score: prefer pockets with more unused street and more dead ends
+    const value = pocket.unusedLen + pocket.leafCount * 90 - len * 0.5;
+
+    if (value > bestValue) {
+      bestValue = value;
+      bestEdge = e;
     }
   }
 
-  return null;
+  return bestEdge;
 }
+
 
 
 
