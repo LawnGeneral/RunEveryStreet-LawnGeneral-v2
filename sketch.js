@@ -299,8 +299,8 @@ function renderUIOverlays() {
     penalty = Math.max(0.06, Math.min(0.65, penalty));
 
     // Turn one “penalty” into a range (low/high)
-    const lowM = liveDistM * (1 + penalty * 0.70);
-    const highM = liveDistM * (1 + penalty * 1.30);
+    const lowM = liveDistM * (1 + penalty * 0.80);
+    const highM = liveDistM * (1 + penalty * 1.80);
 
     // Display in miles (runner-friendly) + keep km if you want
     const toMiles = (m) => m / 1609.344;
