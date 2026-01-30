@@ -3168,6 +3168,40 @@ function spurLookahead(edge, fromNode) {
   return best;
 }
 
+function findShortStubExcursion(node) {
+  if (!node || !node.edges) return null;
+
+  const STUB_MAX_M = 160; // ~0.10 mile one-way; tune later
+
+  for (const e of node.edges) {
+    const used = usedCount.get(e) || 0;
+    if (used !== 0) continue; // only consider unused edges
+
+    const other = e.OtherNodeofEdge(node);
+    if (!other) continue;
+
+    const len = e.distance || 0;
+    if (!isFinite(len) || len <= 0) continue;
+
+    // Is this edge a stub into a dead end?
+    const degOther = other.edges ? other.edges.length : 0;
+    if (degOther !== 1) continue;
+
+    // Need budget for: go out + come back + still be able to return home
+    // After out+back we are still at `node`, so check return feasibility from node.
+    const backFromNode = distToStartCache.get(node);
+    if (!isFinite(backFromNode)) continue;
+
+    const extra = 2 * len; // out and back
+    if (extra > 2 * STUB_MAX_M) continue;
+
+    if (distSoFar + extra + backFromNode <= budgetM - 10) {
+      return e; // do this stub now
+    }
+  }
+
+  return null;
+}
 
 
 
@@ -3177,6 +3211,28 @@ function spurLookahead(edge, fromNode) {
     const backNow = distToStartCache.get(curr);
     if (!isFinite(backNow)) break;
     if ((distSoFar + backNow) >= (budgetM - END_BUFFER_M)) break;
+	  // Micro-excursion: if there's a cheap dead-end stub right here, clear it immediately.
+const stubEdge = findShortStubExcursion(curr);
+if (stubEdge) {
+  // go out
+  usedCount.set(stubEdge, (usedCount.get(stubEdge) || 0) + 1);
+  pathEdges.push(stubEdge);
+  distSoFar += stubEdge.distance;
+
+  const outNode = stubEdge.OtherNodeofEdge(curr);
+
+  // come back (same edge again)
+  usedCount.set(stubEdge, (usedCount.get(stubEdge) || 0) + 1);
+  pathEdges.push(stubEdge);
+  distSoFar += stubEdge.distance;
+
+  // return to where we started the stub (curr stays the same)
+  prevNode = outNode;
+  prevEdge = stubEdge;
+
+  continue; // keep building route from the same junction
+}
+
 
     const e = pickBestEdge(curr);
     if (!e) break;
