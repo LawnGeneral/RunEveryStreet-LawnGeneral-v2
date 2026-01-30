@@ -1870,8 +1870,11 @@ function getLiveTotalDistance() {
 }
 
 function downloadGPX() {
-  // Use bestroute if available; otherwise fall back to currentroute
-  const route = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0) ? bestroute : currentroute;
+  // Prefer bestroute if present
+  const route =
+    (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0)
+      ? bestroute
+      : currentroute;
 
   if (!route || !route.waypoints || route.waypoints.length === 0 || !startnode) {
     console.error("No route data found to download.");
@@ -1880,7 +1883,7 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // Helpers (meters / bearings)
+  // Helpers
   // -----------------------------
   function haversineMeters(a, b) {
     const R = 6371000;
@@ -1911,21 +1914,18 @@ function downloadGPX() {
 
   // Signed smallest-angle difference from b1 -> b2 in degrees, in [-180, 180]
   function signedTurnDeg(b1, b2) {
-    let d = ((b2 - b1 + 540) % 360) - 180;
-    return d;
+    return ((b2 - b1 + 540) % 360) - 180;
   }
 
-  // WATCH PROMPT: keep it short (only Turn / U-turn)
+  // Watch prompt: keep it short, no street names
   function shortActionFromTurn(turnSigned) {
     const a = Math.abs(turnSigned);
-
-    // No "Continue" or "Bear" on the watch
-    if (a < 60) return null; // ignore gentle bends
+    // Ignore gentle bends on watch (no "continue", no "bear")
+    if (a < 60) return null;
     if (a < 135) return (turnSigned > 0 ? "Turn right" : "Turn left");
     return "U-turn";
   }
 
-  // Escape XML text
   function escXml(s) {
     return String(s)
       .replace(/&/g, "&amp;")
@@ -1936,7 +1936,7 @@ function downloadGPX() {
   }
 
   // -----------------------------
-  // Build initial points list (RAW, shape-preserving)
+  // Build raw points (start + traversal)
   // -----------------------------
   const pts = [];
   pts.push({ lat: startnode.lat, lon: startnode.lon });
@@ -1954,52 +1954,25 @@ function downloadGPX() {
     return;
   }
 
-  // Close the loop back to start if needed (~5m)
-  const last = pts[pts.length - 1];
-  if (haversineMeters(last, pts[0]) > 5) {
+  // Close loop back to start if needed
+  if (haversineMeters(pts[pts.length - 1], pts[0]) > 5) {
     pts.push({ lat: pts[0].lat, lon: pts[0].lon });
   }
 
   // -----------------------------
-  // Spacing-only thinning (NO angle-based dropping)
+  // Create cue points from the raw (unthinned) traversal
+  // We will later force these cue points to be included in the thinned track.
   // -----------------------------
-  const MIN_SPACING_M = 5; // 3–8 is typical
-  const thinned = [pts[0]];
-
-  for (let i = 1; i < pts.length; i++) {
-    const prevKept = thinned[thinned.length - 1];
-    if (haversineMeters(prevKept, pts[i]) >= MIN_SPACING_M) {
-      thinned.push(pts[i]);
-    }
-  }
-
-  // Always keep the final point (ensures closure is preserved)
-  const end = pts[pts.length - 1];
-  const lastKept = thinned[thinned.length - 1];
-  if (haversineMeters(lastKept, end) > 0.5) {
-    thinned.push(end);
-  }
-
-  // Final sanity: ensure loop closes
-  if (haversineMeters(thinned[0], thinned[thinned.length - 1]) > 5) {
-    thinned.push({ lat: thinned[0].lat, lon: thinned[0].lon });
-  }
-
-  // -----------------------------
-  // Build COROS cue points (rtept)
-  // -----------------------------
-  // Tune these if needed (watch-friendly)
-  const TURN_DEG = 30;     // minimum to even consider a turn
-  const MIN_GAP_M = 30;    // de-clutter: min meters between prompts
-  const MIN_LEG_M = 15;    // ignore tiny legs
+  const TURN_DEG = 30;   // minimum turn to consider
+  const MIN_GAP_M = 30;  // min distance between prompts
+  const MIN_LEG_M = 15;  // ignore tiny legs
 
   let distSinceCue = 999999;
   let distSinceLast = 0;
 
-  const cuePts = []; // {lat, lon, name}
+  // Each cue: { lat, lon, name }
+  const cues = [];
 
-  // We compute turns off the UNTHINNED waypoint list (more faithful to traversal)
-  // A,B,C are consecutive points in pts (which includes start + waypoints + closure)
   for (let i = 1; i < pts.length - 1; i++) {
     const A = pts[i - 1];
     const B = pts[i];
@@ -2009,7 +1982,6 @@ function downloadGPX() {
     distSinceCue += seg;
     distSinceLast += seg;
 
-    // bearings and signed turn at B
     const b1 = bearingDeg(A, B);
     const b2 = bearingDeg(B, C);
     const turnSigned = signedTurnDeg(b1, b2);
@@ -2020,60 +1992,108 @@ function downloadGPX() {
     const action = shortActionFromTurn(turnSigned);
     if (!action) continue;
 
-    // De-clutter
     if (distSinceLast < MIN_LEG_M) continue;
     if (distSinceCue < MIN_GAP_M) continue;
 
-    cuePts.push({ lat: B.lat, lon: B.lon, name: action });
+    cues.push({ lat: B.lat, lon: B.lon, name: action });
     distSinceCue = 0;
     distSinceLast = 0;
   }
 
   // -----------------------------
-  // Build GPX (trk + rte)
+  // Spacing-only thinning (keep route shape)
+  // BUT: we will force-insert cue points so COROS alerts happen at the right places.
+  // -----------------------------
+  const MIN_SPACING_M = 5;
+
+  // For quick "is this point basically a cue point?" checks
+  // Tolerance should be tighter than spacing; ~2m works well.
+  const CUE_TOL_M = 2;
+
+  function findCueAtPoint(p) {
+    for (let i = 0; i < cues.length; i++) {
+      if (haversineMeters(p, cues[i]) <= CUE_TOL_M) return cues[i];
+    }
+    return null;
+  }
+
+  const thinned = [];
+  thinned.push({ lat: pts[0].lat, lon: pts[0].lon, cueName: null });
+
+  for (let i = 1; i < pts.length; i++) {
+    const p = pts[i];
+    const prevKept = thinned[thinned.length - 1];
+
+    const cueHere = findCueAtPoint(p);
+
+    // Keep point if it's far enough OR it is a cue point (force keep)
+    if (cueHere || haversineMeters(prevKept, p) >= MIN_SPACING_M) {
+      thinned.push({
+        lat: p.lat,
+        lon: p.lon,
+        cueName: cueHere ? cueHere.name : null
+      });
+    }
+  }
+
+  // Ensure last point exists and closes loop
+  const end = pts[pts.length - 1];
+  const lastKept = thinned[thinned.length - 1];
+  if (haversineMeters(lastKept, end) > 0.5) {
+    const cueEnd = findCueAtPoint(end);
+    thinned.push({ lat: end.lat, lon: end.lon, cueName: cueEnd ? cueEnd.name : null });
+  }
+  if (haversineMeters(thinned[0], thinned[thinned.length - 1]) > 5) {
+    thinned.push({ lat: thinned[0].lat, lon: thinned[0].lon, cueName: null });
+  }
+
+  // -----------------------------
+  // Build GPX (TRACK ONLY)
+  // Cue text embedded in trkpt <name> (COROS-safe; avoids distance double-counting)
   // -----------------------------
   const gpxHeader =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n`;
 
-  // COROS cues as route points
-  let rteBlock = "";
-  if (cuePts.length > 0) {
-    rteBlock += `  <rte><name>RunEveryStreet Cues</name>\n`;
-    for (const c of cuePts) {
-      rteBlock += `    <rtept lat="${c.lat}" lon="${c.lon}"><name>${escXml(c.name)}</name></rtept>\n`;
-    }
-    rteBlock += `  </rte>\n`;
-  }
-
-  // Track points (the line you follow)
   let trkBlock = `  <trk><name>RunEveryStreet Route</name><trkseg>\n`;
   const t0 = Date.now();
-  for (let i = 0; i < thinned.length; i++) {
-    const timeStr = new Date(t0 + i * 1000).toISOString();
-    trkBlock += `    <trkpt lat="${thinned[i].lat}" lon="${thinned[i].lon}"><ele>0</ele><time>${timeStr}</time></trkpt>\n`;
-  }
-  trkBlock += `  </trkseg></trk>\n`;
 
+  for (let i = 0; i < thinned.length; i++) {
+    const p = thinned[i];
+    const timeStr = new Date(t0 + i * 1000).toISOString();
+
+    trkBlock += `    <trkpt lat="${p.lat}" lon="${p.lon}">`;
+
+    // Put cue prompt (short) on the track point
+    if (p.cueName) {
+      trkBlock += `<name>${escXml(p.cueName)}</name>`;
+    }
+
+    trkBlock += `<ele>0</ele><time>${timeStr}</time></trkpt>\n`;
+  }
+
+  trkBlock += `  </trkseg></trk>\n`;
   const gpxFooter = `</gpx>\n`;
 
-  const fullContent = gpxHeader + rteBlock + trkBlock + gpxFooter;
+  const fullContent = gpxHeader + trkBlock + gpxFooter;
 
   const blob = new Blob([fullContent], { type: "application/gpx+xml" });
   const url = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
   link.href = url;
-  link.download = "route_coros.gpx";
+  link.download = "route_coros_trk_cues.gpx";
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 
   URL.revokeObjectURL(url);
 
-  console.log(`GPX exported: track thinned=${thinned.length} pts | COROS cues=${cuePts.length}`);
-  showMessage(`GPX ready: ${thinned.length} points + ${cuePts.length} COROS cues`);
+  const cueCount = thinned.reduce((acc, p) => acc + (p.cueName ? 1 : 0), 0);
+  console.log(`GPX exported: track thinned=${thinned.length} pts | cuesEmbedded=${cueCount}`);
+  showMessage(`GPX ready: ${thinned.length} pts + ${cueCount} cues`);
 }
+
 
 
 // ----------------------------------------------------
