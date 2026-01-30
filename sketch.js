@@ -1877,22 +1877,9 @@ function getLiveTotalDistance() {
     // Returns distance (assumed to be in km based on your screenshot)
     return total;
 }
-
-function downloadGPX() {
-  // Prefer bestroute if present
-  const route =
-    (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0)
-      ? bestroute
-      : currentroute;
-
-  if (!route || !route.waypoints || route.waypoints.length === 0 || !startnode) {
-    console.error("No route data found to download.");
-    showMessage("No route available to export yet.");
-    return;
-  }
-
+function buildRouteCues(route) {
   // -----------------------------
-  // Helpers
+  // Helpers (copied from cue sheet)
   // -----------------------------
   function haversineMeters(a, b) {
     const R = 6371000;
@@ -1917,11 +1904,9 @@ function downloadGPX() {
       Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
 
     let brng = (Math.atan2(y, x) * 180) / Math.PI;
-    brng = (brng + 360) % 360;
-    return brng;
+    return (brng + 360) % 360;
   }
 
-  // signed: +right, -left
   function signedTurnDeg(prevBear, nextBear) {
     let d = nextBear - prevBear;
     while (d <= -180) d += 360;
@@ -1929,190 +1914,176 @@ function downloadGPX() {
     return d;
   }
 
-  function shortActionFromTurn(turnSigned) {
+  function actionFromTurn(turnSigned) {
     const a = Math.abs(turnSigned);
-    if (a < 60) return null; // ignore "continue/bear" for GPX prompts
+    if (a < 20) return "Continue";
+    if (a < 60) return (turnSigned > 0 ? "Bear right" : "Bear left");
     if (a < 135) return (turnSigned > 0 ? "Turn right" : "Turn left");
     return (turnSigned > 0 ? "U-turn right" : "U-turn left");
   }
 
-  function escXml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&apos;");
+  function prettyStreet(edge) {
+    if (!edge) return "(unnamed road)";
+    if (edge.ref && edge.name) return `${edge.ref} / ${edge.name}`;
+    return edge.name || edge.ref || "(unnamed road)";
   }
 
-  // -----------------------------
-  // Build point list INCLUDING start as first point
-  // -----------------------------
-  const pts = [];
-  pts.push({ lat: startnode.lat, lon: startnode.lon });
+  if (typeof rebuildEdgeLookup === "function") rebuildEdgeLookup();
 
+  // -----------------------------
+  // Build waypoint list (keep node objects)
+  // -----------------------------
+  const wp = [];
+  wp.push(startnode);
   for (const p of route.waypoints) {
     if (p && typeof p.lat === "number" && typeof p.lon === "number") {
-      pts.push({ lat: p.lat, lon: p.lon });
+      wp.push(p);
     }
   }
 
-  if (pts.length < 2) {
-    showMessage("Not enough points to export GPX.");
-    return;
-  }
-
-  // Close loop back to start if needed
-  if (haversineMeters(pts[pts.length - 1], pts[0]) > 5) {
-    pts.push({ lat: pts[0].lat, lon: pts[0].lon });
+  if (haversineMeters(wp[wp.length - 1], wp[0]) > 5) {
+    wp.push(wp[0]);
   }
 
   // -----------------------------
-  // Create cue points from the raw (unthinned) traversal
-  // We will later force these cue points to be included in the thinned track.
+  // Tunables (IDENTICAL to cue sheet)
   // -----------------------------
-  const TURN_DEG = 30;   // minimum turn to consider
-  const MIN_GAP_M = 30;  // min distance between prompts
-  const MIN_LEG_M = 15;  // ignore tiny legs
+  const TURN_DEG = 30;
+  const MIN_GAP_M = 20;
+  const MIN_LEG_M = 15;
 
-  let distSinceCue = 999999;
+  // -----------------------------
+  // Initial street
+  // -----------------------------
+  let currentStreet = "(unnamed road)";
+  {
+    const k0 = nodeKey(wp[0], wp[1]);
+    const e0 = k0 ? edgeByNodeKey.get(k0) : null;
+    currentStreet = prettyStreet(e0);
+  }
+
   let distSinceLast = 0;
+  let distSinceCue = 0;
 
-  // Each cue: { lat, lon, name }
-  const cues = [];
+  const cues = []; // { idx, action, street }
 
-  for (let i = 1; i < pts.length - 1; i++) {
-    const A = pts[i - 1];
-    const B = pts[i];
-    const C = pts[i + 1];
+  for (let i = 1; i < wp.length - 1; i++) {
+    const A = wp[i - 1];
+    const B = wp[i];
+    const C = wp[i + 1];
 
     const seg = haversineMeters(A, B);
-    distSinceCue += seg;
     distSinceLast += seg;
+    distSinceCue += seg;
+
+    const k = nodeKey(B, C);
+    const eOut = k ? edgeByNodeKey.get(k) : null;
+    const nextStreet = prettyStreet(eOut);
 
     const b1 = bearingDeg(A, B);
     const b2 = bearingDeg(B, C);
     const turnSigned = signedTurnDeg(b1, b2);
     const absTurn = Math.abs(turnSigned);
 
-    if (absTurn < TURN_DEG) continue;
+    const streetChanged = (nextStreet !== currentStreet) && (nextStreet !== "(unnamed road)");
+    const meaningfulTurn = absTurn >= TURN_DEG;
+    const action = actionFromTurn(turnSigned);
+    const isBear = action.startsWith("Bear");
 
-    const action = shortActionFromTurn(turnSigned);
-    if (!action) continue;
+    const emit = (streetChanged || (meaningfulTurn && !isBear));
 
-    if (distSinceLast < MIN_LEG_M) continue;
-    if (distSinceCue < MIN_GAP_M) continue;
+    if (emit && distSinceLast >= MIN_LEG_M && distSinceCue >= MIN_GAP_M) {
+      cues.push({
+        idx: i,
+        action,
+        street: streetChanged ? nextStreet : currentStreet
+      });
 
-    cues.push({ lat: B.lat, lon: B.lon, name: action });
-    distSinceCue = 0;
-    distSinceLast = 0;
-  }
-
-  // -----------------------------
-  // Spacing-only thinning (keep route shape)
-  // BUT: we will force-insert cue points so COROS alerts happen at the right places.
-  // FIX: also force-keep the *next* point after a cue so left/right cannot flip.
-  // -----------------------------
-  const MIN_SPACING_M = 5;
-
-  // For quick "is this point basically a cue point?" checks
-  // Tolerance should be tighter than spacing; ~2m works well.
-  const CUE_TOL_M = 2;
-
-  function findCueAtPoint(p) {
-    for (let i = 0; i < cues.length; i++) {
-      if (haversineMeters(p, cues[i]) <= CUE_TOL_M) return cues[i];
+      if (streetChanged) currentStreet = nextStreet;
+      distSinceLast = 0;
+      distSinceCue = 0;
     }
-    return null;
   }
 
-  const thinned = [];
-  thinned.push({ lat: pts[0].lat, lon: pts[0].lon, cueName: null });
+  return cues;
+}
 
-  let forceKeepNext = false;
+function downloadGPX() {
+  const route = (bestroute && bestroute.waypoints && bestroute.waypoints.length > 0)
+    ? bestroute
+    : currentroute;
+
+  if (!route || !route.waypoints || route.waypoints.length === 0 || !startnode) {
+    showMessage("No route available to export yet.");
+    return;
+  }
+
+  const cues = buildRouteCues(route);
+  const cueByIndex = new Map(cues.map(c => [c.idx, c.action]));
+
+  const pts = [];
+  pts.push({ lat: startnode.lat, lon: startnode.lon });
+  for (const p of route.waypoints) pts.push({ lat: p.lat, lon: p.lon });
+  pts.push({ lat: pts[0].lat, lon: pts[0].lon });
+
+  function haversineMeters(a, b) {
+    const R = 6371000;
+    const lat1 = a.lat * Math.PI / 180;
+    const lat2 = b.lat * Math.PI / 180;
+    const dLat = (b.lat - a.lat) * Math.PI / 180;
+    const dLon = (b.lon - a.lon) * Math.PI / 180;
+    const s1 = Math.sin(dLat / 2);
+    const s2 = Math.sin(dLon / 2);
+    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+    return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  const MIN_SPACING_M = 5;
+  const thinned = [];
+  thinned.push({ ...pts[0], cue: null });
 
   for (let i = 1; i < pts.length; i++) {
-    const p = pts[i];
-    const prevKept = thinned[thinned.length - 1];
-
-    const cueHere = findCueAtPoint(p);
-    const farEnough = haversineMeters(prevKept, p) >= MIN_SPACING_M;
-
-    // Keep point if it's far enough OR it is a cue point (force keep)
-    // OR it's the immediate point after a cue (preserve outgoing leg for correct left/right).
-    if (cueHere || forceKeepNext || farEnough) {
+    const prev = thinned[thinned.length - 1];
+    const isCue = cueByIndex.has(i);
+    if (isCue || haversineMeters(prev, pts[i]) >= MIN_SPACING_M) {
       thinned.push({
-        lat: p.lat,
-        lon: p.lon,
-        cueName: cueHere ? cueHere.name : null
+        lat: pts[i].lat,
+        lon: pts[i].lon,
+        cue: cueByIndex.get(i) || null
       });
     }
-
-    // If we placed a cue point, force-keep the next raw point too.
-    if (cueHere) {
-      forceKeepNext = true;
-    } else if (forceKeepNext) {
-      forceKeepNext = false;
-    }
   }
 
-  // Ensure last point exists and closes loop
-  const end = pts[pts.length - 1];
-  const lastKept = thinned[thinned.length - 1];
-  if (haversineMeters(lastKept, end) > 0.5) {
-    const cueEnd = findCueAtPoint(end);
-    thinned.push({ lat: end.lat, lon: end.lon, cueName: cueEnd ? cueEnd.name : null });
-  }
-  if (haversineMeters(thinned[0], thinned[thinned.length - 1]) > 5) {
-    thinned.push({ lat: thinned[0].lat, lon: thinned[0].lon, cueName: null });
-  }
-
-  // -----------------------------
-  // Build GPX (TRACK ONLY)
-  // Cue text embedded in trkpt <name> (COROS-safe; avoids distance double-counting)
-  // -----------------------------
-  const gpxHeader =
+  const gpx =
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+    `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n` +
+    `  <trk><name>RunEveryStreet Route</name><trkseg>\n`;
 
-  let trkBlock = `  <trk><name>RunEveryStreet Route</name><trkseg>\n`;
+  let body = "";
   const t0 = Date.now();
 
-  for (let i = 0; i < thinned.length; i++) {
-    const p = thinned[i];
-    const timeStr = new Date(t0 + i * 1000).toISOString();
+  thinned.forEach((p, i) => {
+    body += `    <trkpt lat="${p.lat}" lon="${p.lon}">`;
+    if (p.cue) body += `<name>${p.cue}</name>`;
+    body += `<ele>0</ele><time>${new Date(t0 + i * 1000).toISOString()}</time></trkpt>\n`;
+  });
 
-    trkBlock += `    <trkpt lat="${p.lat}" lon="${p.lon}">`;
+  const tail = `  </trkseg></trk>\n</gpx>\n`;
 
-    // Put cue prompt (short) on the track point
-    if (p.cueName) {
-      trkBlock += `<name>${escXml(p.cueName)}</name>`;
-    }
-
-    trkBlock += `<ele>0</ele><time>${timeStr}</time></trkpt>\n`;
-  }
-
-  trkBlock += `  </trkseg></trk>\n`;
-  const gpxFooter = `</gpx>\n`;
-
-  const fullContent = gpxHeader + trkBlock + gpxFooter;
-
-  const blob = new Blob([fullContent], { type: "application/gpx+xml" });
+  const blob = new Blob([gpx + body + tail], { type: "application/gpx+xml" });
   const url = URL.createObjectURL(blob);
 
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "route_coros_trk_cues.gpx";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "route_coros_trk_cues.gpx";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  const cueCount = thinned.reduce((acc, p) => acc + (p.cueName ? 1 : 0), 0);
-  console.log(`GPX exported: track thinned=${thinned.length} pts | cuesEmbedded=${cueCount}`);
-  showMessage(`GPX ready: ${thinned.length} pts + ${cueCount} cues`);
+  showMessage(`GPX exported (${thinned.length} points, ${cues.length} cues)`);
 }
+
 
 
 
@@ -2135,9 +2106,14 @@ function downloadCueSheetTXT() {
     return;
   }
 
-  // -----------------------------
-  // Helpers
-  // -----------------------------
+  const cues = buildRouteCues(route);
+
+  function fmtDist(m) {
+    const mi = m / 1609.344;
+    if (mi < 0.10) return `${Math.round(mi * 5280)} ft`;
+    return `${mi.toFixed(2)} mi`;
+  }
+
   function haversineMeters(a, b) {
     const R = 6371000;
     const lat1 = a.lat * Math.PI / 180;
@@ -2150,159 +2126,32 @@ function downloadCueSheetTXT() {
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
   }
 
-  function bearingDeg(a, b) {
-    const lat1 = (a.lat * Math.PI) / 180;
-    const lat2 = (b.lat * Math.PI) / 180;
-    const dLon = ((b.lon - a.lon) * Math.PI) / 180;
-
-    const y = Math.sin(dLon) * Math.cos(lat2);
-    const x =
-      Math.cos(lat1) * Math.sin(lat2) -
-      Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-
-    let brng = (Math.atan2(y, x) * 180) / Math.PI;
-    brng = (brng + 360) % 360;
-    return brng;
-  }
-
-  // signed: +right, -left
-  function signedTurnDeg(prevBear, nextBear) {
-    let d = nextBear - prevBear;
-    while (d <= -180) d += 360;
-    while (d > 180) d -= 360;
-    return d;
-  }
-
-  function actionFromTurn(turnSigned) {
-    const a = Math.abs(turnSigned);
-    if (a < 20) return "Continue";
-    if (a < 60) return (turnSigned > 0 ? "Bear right" : "Bear left");
-    if (a < 135) return (turnSigned > 0 ? "Turn right" : "Turn left");
-    return (turnSigned > 0 ? "U-turn right" : "U-turn left");
-  }
-
-  function fmtDist(m) {
-    const mi = m / 1609.344;
-    if (mi < 0.10) return `${Math.round(mi * 5280)} ft`;
-    return `${mi.toFixed(2)} mi`;
-  }
-
-  function prettyStreet(edge) {
-    if (!edge) return "(unnamed road)";
-    if (edge.ref && edge.name) return `${edge.ref} / ${edge.name}`;
-    return edge.name || edge.ref || "(unnamed road)";
-  }
-
-  // -----------------------------
-  // Make sure edge lookup exists
-  // -----------------------------
-  if (typeof rebuildEdgeLookup === "function") rebuildEdgeLookup();
-
-  // -----------------------------
-  // Build waypoint list INCLUDING start as first point
-  // (and keep ids intact)
-  // -----------------------------
-  const wp = [];
-  wp.push(startnode); // keep the Node object
-
-  for (const p of route.waypoints) {
-    // Many implementations already store Node objects here; keep as-is.
-    // If these are plain {lat,lon} objects, street lookup will fall back.
-    if (p && typeof p.lat === "number" && typeof p.lon === "number") {
-      wp.push(p);
-    }
-  }
-
-  if (wp.length < 3) {
-    showMessage("Not enough points for cue sheet.");
-    return;
-  }
-
-  // Close loop if needed (~5m)
-  const last = wp[wp.length - 1];
-  const first = wp[0];
-  if (haversineMeters(last, first) > 5) {
-    wp.push(first);
-  }
-
-  // -----------------------------
-  // Tunables: set to "flag everything"
-  // -----------------------------
-  const TURN_DEG = 30;     // lower = more “bear/turn” cues
-  const MIN_GAP_M = 20;    // de-cluster cues very close together
-  const MIN_LEG_M = 15;    // don’t emit instructions after tiny legs
-
-  // -----------------------------
-  // Start street
-  // -----------------------------
-  let currentStreet = "(unnamed road)";
-  {
-    const k0 = nodeKey(wp[0], wp[1]);        // <-- IMPORTANT: pass objects
-    const firstEdge = k0 ? edgeByNodeKey.get(k0) : null;
-    currentStreet = prettyStreet(firstEdge);
-  }
-
+  const wp = [startnode, ...route.waypoints];
   const lines = [];
+
+  let lastIdx = 0;
+  let currentStreet = cues.length ? cues[0].street : "(unnamed road)";
+
   lines.push(`START on ${currentStreet}`);
 
-  // -----------------------------
-  // Walk route and emit cues
-  // -----------------------------
-  let distSinceLast = 0;
-  let distSinceCue = 0;
+  for (const c of cues) {
+    let dist = 0;
+    for (let i = lastIdx + 1; i <= c.idx; i++) {
+      dist += haversineMeters(wp[i - 1], wp[i]);
+    }
 
-  for (let i = 1; i < wp.length - 1; i++) {
-    const A = wp[i - 1];
-    const B = wp[i];
-    const C = wp[i + 1];
+    if (c.street !== currentStreet) {
+      lines.push(`In ${fmtDist(dist)}, ${c.action} onto ${c.street}`);
+      currentStreet = c.street;
+    } else {
+      lines.push(`In ${fmtDist(dist)}, ${c.action} to stay on ${currentStreet}`);
+    }
 
-    const seg = haversineMeters(A, B);
-    distSinceLast += seg;
-    distSinceCue += seg;
-
-    // Edge / street for next leg (B->C)
-    const k = nodeKey(B, C);                // <-- IMPORTANT: pass objects
-    const eOut = k ? edgeByNodeKey.get(k) : null;
-    const nextStreet = prettyStreet(eOut);
-
-    const b1 = bearingDeg(A, B);
-    const b2 = bearingDeg(B, C);
-    const turnSigned = signedTurnDeg(b1, b2);
-    const absTurn = Math.abs(turnSigned);
-
- const streetChanged = (nextStreet !== currentStreet) && (nextStreet !== "(unnamed road)");
-const meaningfulTurn = absTurn >= TURN_DEG;
-
-// Decide the action once
-const action = actionFromTurn(turnSigned);
-
-// NEW RULE:
-// - If street changed: emit (and allow Bear/Turn/U-turn onto next street)
-// - If street did NOT change: emit ONLY for real Turns / U-turns (no Bears)
-//   (this removes "Bear left/right to stay on ...")
-const isBear = action.startsWith("Bear");
-const emit = (streetChanged || (meaningfulTurn && !isBear));
-
-// Only emit if we’ve traveled enough since last cue and the leg isn’t tiny
-if (emit && distSinceLast >= MIN_LEG_M && distSinceCue >= MIN_GAP_M) {
-  if (streetChanged) {
-    lines.push(`In ${fmtDist(distSinceLast)}, ${action} onto ${nextStreet}`);
-    currentStreet = nextStreet;
-  } else {
-    lines.push(`In ${fmtDist(distSinceLast)}, ${action} to stay on ${currentStreet}`);
-  }
-
-  distSinceLast = 0;
-  distSinceCue = 0;
-}
-
+    lastIdx = c.idx;
   }
 
   lines.push("FINISH");
 
-  // -----------------------------
-  // Download TXT
-  // -----------------------------
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 
@@ -2312,10 +2161,11 @@ if (emit && distSinceLast >= MIN_LEG_M && distSinceCue >= MIN_GAP_M) {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-
   URL.revokeObjectURL(url);
+
   showMessage(`Cue sheet exported (${lines.length} lines)`);
 }
+
 
 
 
