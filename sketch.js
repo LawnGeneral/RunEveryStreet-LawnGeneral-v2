@@ -7,6 +7,8 @@ let totaledgedoublings = 0;
 var deletedEdgesStack = [];
 var remainingedges;
 var bestdistance = Infinity;
+let distToStartCache = null; // Map<Node, distance> from every node back to start
+
 // Map Initialization
 var openlayersmap = new ol.Map({
   target: 'map',
@@ -1561,6 +1563,8 @@ function mousePressed() {
     if (best) {
       startnode = best;
       currentnode = startnode;
+		precomputeDistToStart();
+
 
       if (typeof Route === "function") {
         currentroute = new Route(startnode, null);
@@ -2881,4 +2885,22 @@ function downloadTextFile(text, filename) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+function precomputeDistToStart() {
+  if (!startnode) {
+    distToStartCache = null;
+    return;
+  }
+
+  // Uses your existing dijkstra() implementation
+  const res = dijkstra(startnode);
+  distToStartCache = (res && res.distances) ? res.distances : null;
+
+  // Helpful debug
+  if (!distToStartCache || distToStartCache.size === 0) {
+    console.warn("precomputeDistToStart(): no distances computed (graph disconnected?)");
+    showMessage("Warning: return-distance map failed (graph may be disconnected).");
+  } else {
+    console.log("precomputeDistToStart(): cached distances for", distToStartCache.size, "nodes");
+  }
 }
