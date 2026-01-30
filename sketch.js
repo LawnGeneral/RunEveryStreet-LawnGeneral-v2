@@ -3001,49 +3001,80 @@ function pickBestEdge(node) {
     return c;
   }
 
-  // Look ahead down degree-2 chains to see if this heads into a dead end
-  function spurLookahead(edge, fromNode) {
-    const startNext = edge.OtherNodeofEdge(fromNode);
-    if (!startNext) return { isSpur: false, spurLen: 0 };
+function spurLookahead(edge, fromNode) {
+  // NEW: detect both
+  // (a) single spurs/corridors-to-dead-end
+  // (b) branching dead-end pockets (cul-de-sac neighborhoods)
 
-    let spurLen = edge.distance || 0;
+  const startNext = edge.OtherNodeofEdge(fromNode);
+  if (!startNext) return { isSpur: false, spurLen: 0, leafCount: 0, unusedLen: 0 };
 
-    // Immediate dead end
-    const degNext = startNext.edges ? startNext.edges.length : 0;
-    if (degNext === 1) return { isSpur: true, spurLen };
+  // BFS limited “pocket scan” going outward from startNext, without stepping back through fromNode
+  const MAX_VISIT = 45;      // keeps it fast
+  const MAX_HOPS = 14;       // graph steps outward
+  const q = [{ n: startNext, prev: fromNode, hops: 0 }];
+  const seen = new Set([startNext]);
 
-    // Walk down degree-2 corridor
-    let prev = fromNode;
-    let currN = startNext;
-    let steps = 0;
+  let leafCount = 0;
+  let unusedLen = 0;
+  let spurLen = edge.distance || 0; // corridor-style estimate
 
-    while (steps < 25) {
-      const deg = currN.edges ? currN.edges.length : 0;
-      if (deg !== 2) break;
+  while (q.length && seen.size < MAX_VISIT) {
+    const { n, prev, hops } = q.shift();
+    if (!n || hops > MAX_HOPS) continue;
 
-      const e0 = currN.edges[0];
-      const e1 = currN.edges[1];
-      const n0 = e0.OtherNodeofEdge(currN);
-      const n1 = e1.OtherNodeofEdge(currN);
+    const deg = n.edges ? n.edges.length : 0;
 
-      let nextEdge = null;
-      let nextNode = null;
+    // Count degree-1 leaves (dead ends) inside this pocket
+    if (deg === 1) leafCount++;
 
-      if (n0 && n0 !== prev) { nextEdge = e0; nextNode = n0; }
-      else if (n1 && n1 !== prev) { nextEdge = e1; nextNode = n1; }
-      else break;
+    // Sum unused edge length inside this pocket (edges not yet used in THIS run)
+    if (n.edges) {
+      for (const ed of n.edges) {
+        const other = ed.OtherNodeofEdge(n);
+        if (!other) continue;
 
-      spurLen += (nextEdge.distance || 0);
-      prev = currN;
-      currN = nextNode;
-      steps++;
+        // Don’t count the “entry edge” back toward prev as pocket value
+        if (other === prev) continue;
+
+        if ((usedCount.get(ed) || 0) === 0) {
+          unusedLen += (ed.distance || 0);
+        }
+      }
     }
 
-    const degEnd = currN && currN.edges ? currN.edges.length : 0;
-    if (degEnd === 1) return { isSpur: true, spurLen };
+    // Expand outward, avoiding stepping back through prev
+    if (n.edges && hops < MAX_HOPS) {
+      for (const ed of n.edges) {
+        const other = ed.OtherNodeofEdge(n);
+        if (!other) continue;
+        if (other === prev) continue;
+        if (seen.has(other)) continue;
 
-    return { isSpur: false, spurLen: 0 };
+        seen.add(other);
+        q.push({ n: other, prev: n, hops: hops + 1 });
+      }
+    }
   }
+
+  // Old behavior: corridor-to-dead-end detection (kept, but simplified)
+  // If the entry node quickly looks like a corridor chain, treat it as a spur too.
+  // (This helps single long driveway-like roads.)
+  const degNext = startNext.edges ? startNext.edges.length : 0;
+  if (degNext === 1) {
+    return { isSpur: true, spurLen, leafCount: Math.max(leafCount, 1), unusedLen };
+  }
+
+  // Decide whether this is a spur/pocket worth prioritizing:
+  // - multiple leaves OR meaningful unusedLen indicates a cul-de-sac pocket
+  const isPocket = (leafCount >= 2) || (unusedLen >= 120); // ~120m of new street inside pocket
+
+  // spurLen: not super meaningful for pockets, but keep something nonzero
+  spurLen = Math.max(spurLen, unusedLen);
+
+  return { isSpur: isPocket, spurLen, leafCount, unusedLen };
+}
+
 
   // Detect when turning back is normal/required (dead end or corridor)
   let inForcedReturnZone = false;
