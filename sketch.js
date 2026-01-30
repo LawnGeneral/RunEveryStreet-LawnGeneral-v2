@@ -262,16 +262,55 @@ function renderRouteGraphics() {
 function renderUIOverlays() {
   // 1) MAP PREPARATION STATS (Selection / Trimming)
   if (mode === trimmodemode || mode === selectnodemode) {
-    let liveDist = getLiveTotalDistance();
-    let displayDist = liveDist > 1000
-      ? (liveDist / 1000).toFixed(2) + "km"
-      : liveDist.toFixed(0) + "m";
+    // --- Current selected-road length (this is the lower bound) ---
+    let liveDistM = getLiveTotalDistance(); // meters
+    let displayDist = liveDistM > 1000
+      ? (liveDistM / 1000).toFixed(2) + " km"
+      : liveDistM.toFixed(0) + " m";
+
+    // --- Quick “likely final” estimate based on graph shape ---
+    // This is NOT a solve; it's a heuristic driven by: dead ends, odd nodes, and cycle signal.
+    let deadEnds = 0;
+    let odd = 0;
+
+    if (nodes && nodes.length > 0) {
+      for (let i = 0; i < nodes.length; i++) {
+        const deg = (nodes[i].edges ? nodes[i].edges.length : 0);
+        if (deg === 1) deadEnds++;
+        if (deg % 2 !== 0) odd++;
+      }
+    }
+
+    // cycleSignal low => more "tree-ish" => repeats more unavoidable
+    const cycleSignal = (edges ? edges.length : 0) - (nodes ? nodes.length : 0) + 1;
+
+    // Penalty model (tuned to be conservative, not scary)
+    // - dead ends add repeat pressure
+    // - odd nodes add some repeat pressure
+    // - very low cycleSignal adds extra repeat pressure
+    let penalty = 0.06; // baseline 6%
+    penalty += 0.010 * deadEnds;     // +1.0% per dead end
+    penalty += 0.002 * odd;          // +0.2% per odd node
+
+    if (cycleSignal <= 3) penalty += 0.18;  // very tree-ish
+    else if (cycleSignal <= 8) penalty += 0.10;
+
+    // Clamp to keep it reasonable
+    penalty = Math.max(0.06, Math.min(0.65, penalty));
+
+    // Turn one “penalty” into a range (low/high)
+    const lowM = liveDistM * (1 + penalty * 0.70);
+    const highM = liveDistM * (1 + penalty * 1.30);
+
+    // Display in miles (runner-friendly) + keep km if you want
+    const toMiles = (m) => m / 1609.344;
+    const estStr = `Est Final: ${toMiles(lowM).toFixed(1)}–${toMiles(highM).toFixed(1)} mi`;
 
     drawStatsBox(
       "MAP PREPARATION",
-      `Total Road: ${displayDist}`,
-      mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE",
-      ""
+      `Total Road (min): ${displayDist}`,
+      estStr,
+      mode === trimmodemode ? "TRIMMING ACTIVE" : "SELECT START NODE"
     );
   }
 
@@ -282,6 +321,7 @@ function renderUIOverlays() {
     drawSolverToggleButton();
   }
 }
+
 
 // Helper to draw the Start/Stop button at the bottom
 function drawSolverToggleButton() {
