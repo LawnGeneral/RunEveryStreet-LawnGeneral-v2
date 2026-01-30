@@ -1519,7 +1519,12 @@ function mousePressed() {
     mode = solveRESmode;
     solverRunning = false;
 
-    solveRES();
+   if (keyIsDown(SHIFT)) {
+  solveBudgetedRun();   // SHIFT + START = distance-limited
+} else {
+  solveRES();           // normal click = cover-everything solver
+}
+
 
     noLoop();
     navMode = true;
@@ -2903,4 +2908,196 @@ function precomputeDistToStart() {
   } else {
     console.log("precomputeDistToStart(): cached distances for", distToStartCache.size, "nodes");
   }
+}
+function solveBudgetedRun() {
+  if (!startnode) {
+    showMessage("Pick a start node first.");
+    return;
+  }
+
+  // Ask user for target distance (miles)
+  const defaultMi = 6.0;
+  const s = prompt("Target distance (miles)?", String(defaultMi));
+  if (s === null) return; // user canceled
+  const mi = parseFloat(s);
+  if (!isFinite(mi) || mi <= 0) {
+    showMessage("Invalid miles value.");
+    return;
+  }
+
+  const budgetM = mi * 1609.344;
+
+  showMessage(`Building distance-limited route (~${mi.toFixed(1)} mi)...`);
+  navMode = false;
+  solverRunning = false;
+
+  // Clean graph & rebuild adjacency (same as solveRES)
+  removeOrphans();
+  resetEdges();
+
+  // Ensure we have a return-distance cache
+  if (!distToStartCache || distToStartCache.size === 0) {
+    // fall back: compute it now
+    const resHome = dijkstra(startnode);
+    distToStartCache = resHome && resHome.distances ? resHome.distances : null;
+  }
+
+  if (!distToStartCache || distToStartCache.size === 0) {
+    showMessage("Failed to compute return distances (graph disconnected?).");
+    return;
+  }
+
+  // Also compute parents once so we can get shortest path back to start at the end
+  const homeRes = dijkstra(startnode);
+  const homeParents = homeRes && homeRes.parents ? homeRes.parents : null;
+
+  // Greedy exploration that always "reserves" enough distance to get home
+  const usedCount = new Map(); // Edge -> times used in this run
+  const pathEdges = [];
+
+  let curr = startnode;
+  let prevNode = null;
+  let prevEdge = null;
+  let distSoFar = 0;
+
+  // Safety buffers so we don't land a few meters over
+  const END_BUFFER_M = 25;  // keep a little slack
+  const STEP_BUFFER_M = 5;
+
+  function canMoveTo(nextNode, edgeLen) {
+    const back = distToStartCache.get(nextNode);
+    if (back === undefined || !isFinite(back)) return false;
+    return (distSoFar + edgeLen + back) <= (budgetM - STEP_BUFFER_M);
+  }
+
+  function pickBestEdge(node) {
+    let best = null;
+    let bestScore = -Infinity;
+
+    for (const e of node.edges) {
+      const other = e.OtherNodeofEdge(node);
+      if (!other) continue;
+
+      const edgeLen = e.distance || 0;
+      if (!isFinite(edgeLen) || edgeLen <= 0) continue;
+
+      if (!canMoveTo(other, edgeLen)) continue;
+
+      // Score: strongly prefer edges we haven't used yet in this run
+      const used = usedCount.get(e) || 0;
+
+      let score = 0;
+
+      if (used === 0) score += 1000;       // "new street" (within this run)
+      else score -= 250 * used;            // repeats are expensive
+
+      // Mildly prefer shorter edges (helps pack coverage)
+      score -= edgeLen * 0.02;
+
+      // Avoid immediate U-turn unless necessary
+      if (prevNode && other === prevNode) score -= 120;
+
+      // Prefer staying on same way if available (smoother routes)
+      if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) score += 15;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = e;
+      }
+    }
+
+    return best;
+  }
+
+  // Main build loop
+  while (true) {
+    // Stop if we should start heading home soon
+    const backNow = distToStartCache.get(curr);
+    if (!isFinite(backNow)) break;
+    if ((distSoFar + backNow) >= (budgetM - END_BUFFER_M)) break;
+
+    const e = pickBestEdge(curr);
+    if (!e) break;
+
+    usedCount.set(e, (usedCount.get(e) || 0) + 1);
+    pathEdges.push(e);
+
+    const next = e.OtherNodeofEdge(curr);
+    distSoFar += e.distance;
+
+    prevNode = curr;
+    prevEdge = e;
+    curr = next;
+
+    // Hard stop if we're basically out of budget
+    if (distSoFar >= (budgetM - END_BUFFER_M)) break;
+  }
+
+  // Return to start via shortest path (using parents from startnode Dijkstra)
+  if (curr !== startnode) {
+    if (!homeParents) {
+      showMessage("No path-back map found.");
+      return;
+    }
+
+    // Build edges from curr back to start by following parents
+    let backEdges = [];
+    let walk = curr;
+
+    while (walk !== startnode) {
+      const step = homeParents.get(walk);
+      if (!step) break;
+      backEdges.push(step.edge);
+      walk = step.node;
+    }
+
+    // If we couldn't find a back path, bail gracefully
+    if (walk !== startnode) {
+      showMessage("Could not find path back to start (disconnected?).");
+      return;
+    }
+
+    // Apply the back edges in travel order from curr -> start
+    // (homeParents gives us the right edges, but we must traverse them from curr)
+    for (let i = 0; i < backEdges.length; i++) {
+      const e = backEdges[i];
+      const next = e.OtherNodeofEdge(curr);
+      if (!next) break;
+
+      // If we're about to exceed the budget, stop (rare; buffers should prevent)
+      if (distSoFar + e.distance > budgetM + 3) break;
+
+      pathEdges.push(e);
+      distSoFar += e.distance;
+      curr = next;
+    }
+  }
+
+  // Convert edge list to Route
+  bestdistance = distSoFar;
+  bestroute = null;
+
+  currentroute = new Route(startnode, null);
+  let v = startnode;
+
+  for (let i = 0; i < pathEdges.length; i++) {
+    const e = pathEdges[i];
+    const w = e.OtherNodeofEdge(v);
+    if (!w) break;
+    currentroute.addWaypoint(w, e.distance, 0);
+    v = w;
+  }
+
+  // Save as "best" so your export flow works
+  bestroute = currentroute;
+
+  console.log(
+    `Budgeted route built: ${(distSoFar / 1609.344).toFixed(2)} mi | ` +
+    `edgesUsed=${pathEdges.length} | closed=${(v === startnode)}`
+  );
+
+  showMessage(`Built ~${(distSoFar / 1609.344).toFixed(2)} mi. Click STOP SOLVER for export.`);
+
+  redraw();
+  openlayersmap.render();
 }
