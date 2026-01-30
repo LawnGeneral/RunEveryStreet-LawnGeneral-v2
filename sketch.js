@@ -2976,13 +2976,29 @@ function pickBestEdge(node) {
 
   const nodeDeg = node.edges ? node.edges.length : 0;
 
-  // Detect when turning back is normal/required (dead end or corridor)
-  let inForcedReturnZone = false;
-  if (nodeDeg === 1) inForcedReturnZone = true;
-  else if (nodeDeg === 2 && prevNode) {
-    const a = node.edges[0].OtherNodeofEdge(node);
-    const b = node.edges[1].OtherNodeofEdge(node);
-    if (a === prevNode || b === prevNode) inForcedReturnZone = true;
+  // Count how many incident edges at a node are still unused in THIS run
+  function countUnusedAt(n) {
+    let c = 0;
+    if (!n || !n.edges) return 0;
+    for (const ed of n.edges) {
+      if ((usedCount.get(ed) || 0) === 0) c++;
+    }
+    return c;
+  }
+
+  // Count unused edges at n, but treat `takeEdge` as if it will become used now
+  function countUnusedAfterTaking(n, takeEdge) {
+    let c = 0;
+    if (!n || !n.edges) return 0;
+    for (const ed of n.edges) {
+      const used = (usedCount.get(ed) || 0);
+      if (ed === takeEdge) {
+        // after taking, it won't be unused
+        continue;
+      }
+      if (used === 0) c++;
+    }
+    return c;
   }
 
   // Look ahead down degree-2 chains to see if this heads into a dead end
@@ -3029,13 +3045,25 @@ function pickBestEdge(node) {
     return { isSpur: false, spurLen: 0 };
   }
 
-  // Helper: encourage “escaping” corridors by heading toward higher-degree nodes
+  // Detect when turning back is normal/required (dead end or corridor)
+  let inForcedReturnZone = false;
+  if (nodeDeg === 1) inForcedReturnZone = true;
+  else if (nodeDeg === 2 && prevNode) {
+    const a = node.edges[0].OtherNodeofEdge(node);
+    const b = node.edges[1].OtherNodeofEdge(node);
+    if (a === prevNode || b === prevNode) inForcedReturnZone = true;
+  }
+
+  // Prefer escaping corridors toward higher-degree junctions
   function degreeBonus(nextNode) {
     const d = nextNode && nextNode.edges ? nextNode.edges.length : 0;
     if (d >= 4) return 30;
     if (d === 3) return 18;
     return 0;
   }
+
+  // Track if we found ANY feasible edge that is not heavily reused
+  let foundNonPingPong = false;
 
   for (const e of node.edges) {
     const other = e.OtherNodeofEdge(node);
@@ -3048,20 +3076,14 @@ function pickBestEdge(node) {
 
     const used = usedCount.get(e) || 0;
 
-    // HARD anti-pingpong rule:
-    // If we've already used an edge twice, treat it as "almost forbidden"
-    // unless it's literally the only feasible move.
-    // (This stops the “run up/down the same dead end” behavior.)
-    if (used >= 2) {
-      // We don't continue immediately; we score it very low.
-      // But we keep it as a fallback if nothing else exists.
-    }
+    // Anti-pingpong: we still allow used>=2, but we smash its score
+    if (used < 2) foundNonPingPong = true;
 
     let score = 0;
 
     // Prefer new edges in THIS RUN
     if (used === 0) score += 1000;
-    else score -= 400 * used; // heavier repeat penalty than before
+    else score -= 400 * used;
 
     // Mildly prefer shorter edges
     score -= edgeLen * 0.02;
@@ -3071,21 +3093,40 @@ function pickBestEdge(node) {
       score -= 120;
     }
 
-    // Spur clearing bonus — but ONLY if the edge is currently unused.
-    // This ensures we clear a spur once, not bounce on it repeatedly.
+    // Spur-clearing bonus ONLY if edge is unused
     const spur = spurLookahead(e, node);
     if (spur.isSpur && used === 0) {
       score += 450 + Math.min(650, spur.spurLen * 0.5);
     }
 
-    // Escape corridors: prefer edges that lead toward more connected nodes
+    // Completion logic (THIS is the new stuff)
+    // 1) Strong bonus for "finishing" the current junction
+    // 2) Strong penalty for leaving EXACTLY ONE unused edge behind at the current junction
+    const unusedHereNow = countUnusedAt(node);
+    const unusedHereAfter = countUnusedAfterTaking(node, e);
+
+    if (unusedHereNow > 0) {
+      if (unusedHereAfter === 0) score += 260;     // finish this node cleanly
+      if (unusedHereAfter === 1) score -= 420;     // DON'T leave a single dangling street
+    }
+
+    // Also: reward moving into a node that has a lot of unused edges
+    // (helps the solver "commit" to clearing a neighborhood pocket)
+    const unusedThereNow = countUnusedAt(other);
+    if (unusedThereNow >= 3 && used === 0) score += 90;
+    if (unusedThereNow === 1 && used === 0) score += 35; // mop up singletons too
+
+    // Escape corridors
     score += degreeBonus(other);
 
-    // Prefer staying on same way a little (smoothness)
+    // Prefer staying on same way a little
     if (prevEdge && e.wayid && prevEdge.wayid && e.wayid === prevEdge.wayid) score += 12;
 
-    // Apply the "almost forbidden" penalty for heavily reused edges (anti ping-pong)
+    // Heavy penalty if we'd be bouncing on the same edge repeatedly
     if (used >= 2) score -= 5000;
+
+    // If there exists any non-pingpong option, make pingpong edges basically impossible
+    if (foundNonPingPong && used >= 2) score -= 100000;
 
     if (score > bestScore) {
       bestScore = score;
@@ -3095,6 +3136,7 @@ function pickBestEdge(node) {
 
   return best;
 }
+
 
 
 
