@@ -2411,54 +2411,51 @@ function drawStartNodeHighlight() {
   pop();
 }
 function handleTrimming() {
-  if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) {
-    showMessage("No road selected.");
-    return;
+  if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) return;
+
+  // --- BEGIN UNDO BATCH ---
+  const undoBatch = [];
+
+  // 1) Remove ONLY the explicitly clicked edge.
+  // This restores your original trim behavior.
+  const removedEdge = edges.splice(closestedgetomouse, 1)[0];
+  if (!removedEdge) return;
+
+  undoBatch.push(removedEdge);
+
+  // Unlink from adjacency
+  if (removedEdge.from && Array.isArray(removedEdge.from.edges)) {
+    const idx = removedEdge.from.edges.indexOf(removedEdge);
+    if (idx !== -1) removedEdge.from.edges.splice(idx, 1);
+  }
+  if (removedEdge.to && Array.isArray(removedEdge.to.edges)) {
+    const idx = removedEdge.to.edges.indexOf(removedEdge);
+    if (idx !== -1) removedEdge.to.edges.splice(idx, 1);
   }
 
-  const seed = edges[closestedgetomouse];
-  if (!seed) return;
+  // 2) Capture current edge set BEFORE orphan cleanup
+  const edgesBefore = new Set(edges);
 
-  const seedWayId = seed.wayid || null;
-
-  // If the edge has no wayid, fall back to single-edge trim
-  let removed = [];
-
-  if (seedWayId) {
-    // Remove the whole OSM way (street segment chain)
-    removed = edges.filter(e => e && e.wayid === seedWayId);
-  } else {
-    removed = [seed];
+  // 3) Remove orphaned components, same as your original version
+  if (startnode) {
+    removeOrphans();
   }
 
-  if (removed.length === 0) return;
-
-  // Save for undo
-  deletedEdgesStack.push(removed.slice());
-
-  // Remove from global edge list
-  const removedSet = new Set(removed);
-  edges = edges.filter(e => !removedSet.has(e));
-
-  // Remove from node adjacency
-  for (const e of removed) {
-    if (e.from && e.from.edges) e.from.edges = e.from.edges.filter(x => x !== e);
-    if (e.to && e.to.edges) e.to.edges = e.to.edges.filter(x => x !== e);
+  // 4) Anything that existed before but is gone now = orphan-removed
+  for (const e of edgesBefore) {
+    if (!edges.includes(e)) {
+      undoBatch.push(e);
+    }
   }
 
-  // Remove nodes that no longer have edges
-  nodes = nodes.filter(n => n && n.edges && n.edges.length > 0);
+  // 5) Push the WHOLE batch as one undo step
+  deletedEdgesStack.push(undoBatch);
 
-  // Update totals
-  totaledgedistance = 0;
-  for (const e of edges) totaledgedistance += e.distance || 0;
-  totalRoadsDist = totaledgedistance;
-  totaluniqueroads = edges.length;
+  // Reset hover index
+  closestedgetomouse = -1;
 
-  // Refresh edge lookup
-  rebuildEdgeLookup();
+  showMessage(`Road removed. ${undoBatch.length} segment(s) affected. Undo available.`);
 
-  showMessage(`Trimmed ${removed.length} segment(s). Undo available.`);
   redraw();
   openlayersmap.render();
 }
