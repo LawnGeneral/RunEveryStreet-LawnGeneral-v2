@@ -2231,17 +2231,21 @@ function downloadGPX() {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
+      .replace(/\"/g, "&quot;")
       .replace(/'/g, "&apos;");
   }
 
   const pts = route.waypoints.filter(p => p && p.lat != null && p.lon != null);
   const now = new Date();
 
-  let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-  xml += `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">\n`;
-  xml += `  <metadata><name>Every Single Street</name></metadata>\n`;
-  xml += `  <trk><name>Every Single Street</name><trkseg>\n`;
+  let xml = `<?xml version="1.0" encoding="UTF-8"?>
+`;
+  xml += `<gpx version="1.1" creator="RunEveryStreet" xmlns="http://www.topografix.com/GPX/1/1">
+`;
+  xml += `  <metadata><name>Every Single Street</name></metadata>
+`;
+  xml += `  <trk><name>Every Single Street</name><trkseg>
+`;
 
   for (let i = 0; i < pts.length; i++) {
     const pt = pts[i];
@@ -2257,14 +2261,27 @@ function downloadGPX() {
       xml += `<name>${esc(cue)}</name><desc>${esc(cue)}</desc>`;
     }
 
-    xml += `</trkpt>\n`;
+    xml += `</trkpt>
+`;
   }
 
-  xml += `  </trkseg></trk>\n`;
+  xml += `  </trkseg></trk>
+`;
   xml += `</gpx>`;
 
-  saveStrings([xml], "route_coros_trk_cues.gpx");
-  showMessage("GPX downloaded with trackpoint cue names.");
+  // Use a direct Blob download instead of p5 saveStrings().
+  // This prevents browsers/p5 from changing the file to .gpx.txt.
+  const blob = new Blob([xml], { type: "application/gpx+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "route_coros_trk_cues.gpx";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showMessage("GPX downloaded.");
 }
 
 // --- Export current cleaned graph for external Blossom/Postman solving ---
