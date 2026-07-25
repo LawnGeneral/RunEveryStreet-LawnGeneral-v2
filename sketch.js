@@ -323,7 +323,12 @@ function draw() {
   // 2. NODES / START HIGHLIGHT
   // Show nodes in BOTH selection and trimming modes.
   // Hover detection only runs when mode === selectnodemode (inside showNodes()).
-  if ((mode === selectnodemode || mode === trimmodemode) && safeNodes.length > 0) {
+  if (
+  (mode === selectnodemode ||
+   mode === trimmodemode ||
+   mode === connectorMode) &&
+  safeNodes.length > 0
+) {
     showNodes();
   } else if (startnode) {
     drawStartNodeHighlight();
@@ -697,71 +702,109 @@ out;
   );
 }
 
-
-
 function showNodes() {
-    if (!nodes || nodes.length === 0) return;
+  if (!nodes || nodes.length === 0) return;
 
-    // 1. RESET STATE & SETUP
-    push();
-    colorMode(RGB);
-    closestnodetomouse = -1; 
-    let closestDist = 15; // Search radius for hover
-    let winner = null;
-    let winnerPix = null;
+  push();
+  colorMode(RGB);
 
-    // 2. DRAW START NODE (Green)
-    // We draw this independently so it is always visible once set
-    if (startnode) {
-        let sCoord = ol.proj.fromLonLat([startnode.lon, startnode.lat]);
-        let sPix = openlayersmap.getPixelFromCoordinate(sCoord);
-        if (sPix) {
-            fill(0, 255, 0); 
-            stroke(255);
-            strokeWeight(2);
-            ellipse(sPix[0], sPix[1], 15, 15);
+  closestnodetomouse = -1;
+
+  let closestDist = 15;
+  let winner = null;
+  let winnerPix = null;
+
+  // Draw the selected route start node in green
+  if (startnode) {
+    const startCoord = ol.proj.fromLonLat([
+      startnode.lon,
+      startnode.lat
+    ]);
+
+    const startPix = openlayersmap.getPixelFromCoordinate(startCoord);
+
+    if (startPix) {
+      fill(0, 255, 0);
+      stroke(255);
+      strokeWeight(2);
+      ellipse(startPix[0], startPix[1], 15, 15);
+    }
+  }
+
+  // Show road nodes while:
+  // - choosing the route start
+  // - trimming streets
+  // - choosing connector endpoints
+  if (
+    mode === selectnodemode ||
+    mode === trimmodemode ||
+    mode === connectorMode
+  ) {
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+
+      const coord = ol.proj.fromLonLat([
+        n.lon,
+        n.lat
+      ]);
+
+      const pix = openlayersmap.getPixelFromCoordinate(coord);
+
+      // Skip off-screen nodes
+      if (
+        !pix ||
+        pix[0] < 0 ||
+        pix[0] > width ||
+        pix[1] < 0 ||
+        pix[1] > height
+      ) {
+        continue;
+      }
+
+      // Draw each available node in red
+      fill(255, 0, 0, 150);
+      noStroke();
+      ellipse(pix[0], pix[1], 6, 6);
+
+      // Find the closest node while choosing either:
+      // - the normal start node
+      // - a connector endpoint
+      if (
+        mode === selectnodemode ||
+        mode === connectorMode
+      ) {
+        const d = dist(
+          pix[0],
+          pix[1],
+          mouseX,
+          mouseY
+        );
+
+        if (d < closestDist) {
+          closestDist = d;
+          winner = n;
+          winnerPix = pix;
         }
+      }
     }
+  }
 
-    // 3. DRAW NETWORK & FIND HOVER WINNER
-    // This block keeps red nodes visible during Selection AND Trimming
-    if (mode === selectnodemode || mode === trimmodemode) {
-        for (let i = 0; i < nodes.length; i++) {
-            let n = nodes[i];
-            let coord = ol.proj.fromLonLat([n.lon, n.lat]);
-            let pix = openlayersmap.getPixelFromCoordinate(coord);
-            
-            // Skip nodes that are off-screen for performance
-            if (!pix || pix[0] < 0 || pix[0] > width || pix[1] < 0 || pix[1] > height) continue;
+  // Highlight the closest selectable node in yellow
+  if (winner && winnerPix) {
+    closestnodetomouse = winner;
 
-            // Draw the intersection point (Red)
-            fill(255, 0, 0, 150); 
-            noStroke();
-            ellipse(pix[0], pix[1], 6, 6);
-            
-            // HOVER SEARCH: Only look for the "winner" if we are still in selection mode
-            if (mode === selectnodemode) {
-                let d = dist(pix[0], pix[1], mouseX, mouseY);
-                if (d < closestDist) {
-                    closestDist = d;
-                    winner = n;
-                    winnerPix = pix;
-                }
-            }
-        }
-    }
+    noFill();
+    stroke(255, 255, 0);
+    strokeWeight(3);
+    ellipse(
+      winnerPix[0],
+      winnerPix[1],
+      14,
+      14
+    );
+  }
 
-    // 4. DRAW THE SINGLE HOVER HIGHLIGHT (Yellow)
-    // This is outside the loop so only ONE node is highlighted at a time
-    if (winner && winnerPix) {
-        closestnodetomouse = winner; // Lock the winner for mousePressed()
-        noFill();
-        stroke(255, 255, 0);
-        strokeWeight(3);
-        ellipse(winnerPix[0], winnerPix[1], 14, 14);
-    }
-
-    pop();
+  pop();
 }
 
 function showEdges() {
@@ -1967,11 +2010,33 @@ function windowResized() {
 // Add this to the very end of sketch.js
 
 function keyPressed() {
-    // Switching to ALT to avoid the OpenLayers "Shift-Zoom-Box" conflict
-    if (keyCode === ALT) {
-        canvas.elt.style.pointerEvents = 'none';
-        cursor('grab'); 
+  // Hold ALT to temporarily pan/zoom the map
+  if (keyCode === ALT) {
+    canvas.elt.style.pointerEvents = "none";
+    cursor("grab");
+    return;
+  }
+
+  // Press C to begin adding an OSM connector
+  if (key === "c" || key === "C") {
+    if (!startnode) {
+      showMessage("Choose your normal route start node first.");
+      return;
     }
+
+    connectorStartNode = null;
+    connectorEndNode = null;
+
+    mapPanZoomMode = false;
+    canvas.elt.style.pointerEvents = "auto";
+
+    setMode(connectorMode);
+
+    showMessage("Connector mode: choose the first red node.");
+
+    redraw();
+    openlayersmap.render();
+  }
 }
 
 function keyReleased() {
