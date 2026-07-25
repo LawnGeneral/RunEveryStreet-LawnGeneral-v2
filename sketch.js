@@ -161,7 +161,11 @@ var selectnodemode = 1,
     solveRESmode = 2,
     choosemapmode = 3,
     trimmodemode = 4,
-    downloadGPXmode = 5;
+    downloadGPXmode = 5,
+    connectorMode = 6;
+
+let connectorStartNode = null;
+let connectorEndNode = null;
 
 var mode = choosemapmode; // START in Zoom/Pan mode
 var debugsteps = 0;
