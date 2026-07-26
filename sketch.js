@@ -1596,12 +1596,98 @@ if (nOdd > 0) {
   }
 }
 
+function loadNearbyConnectorPaths() {
+  if (!connectorStartNode || !connectorEndNode) {
+    showMessage("Choose both connector nodes first.");
+    return;
+  }
+
+  // Add roughly 100 meters of padding around the two selected nodes
+  const latPad = 0.001;
+  const averageLat =
+    (connectorStartNode.lat + connectorEndNode.lat) / 2;
+
+  const lonPad =
+    0.001 / Math.max(
+      0.2,
+      Math.cos(averageLat * Math.PI / 180)
+    );
+
+  const south =
+    Math.min(connectorStartNode.lat, connectorEndNode.lat) - latPad;
+
+  const north =
+    Math.max(connectorStartNode.lat, connectorEndNode.lat) + latPad;
+
+  const west =
+    Math.min(connectorStartNode.lon, connectorEndNode.lon) - lonPad;
+
+  const east =
+    Math.max(connectorStartNode.lon, connectorEndNode.lon) + lonPad;
+
+  const query = `
+[out:xml][timeout:60];
+(
+  way(${south},${west},${north},${east})
+    ["highway"~"^(path|footway|pedestrian|track|steps|cycleway)$"]
+    ["access"!~"^(no|private)$"]
+    ["foot"!~"no"];
+);
+(._;>;);
+out;
+`;
+
+  showMessage("Looking for nearby OSM paths...");
+
+  runOverpassQuery(
+    query,
+
+    function(responseText) {
+      const parser = new DOMParser();
+      const xml = parser.parseFromString(
+        responseText,
+        "text/xml"
+      );
+
+      const pathWays = xml.getElementsByTagName("way");
+      const pathNodes = xml.getElementsByTagName("node");
+
+      // Save the result so the next step can use it
+      window.connectorOSMxml = xml;
+
+      console.log(
+        "Connector OSM results:",
+        pathWays.length,
+        "ways and",
+        pathNodes.length,
+        "nodes"
+      );
+
+      if (pathWays.length === 0) {
+        showMessage("No nearby OSM paths found.");
+        return;
+      }
+
+      showMessage(
+        `Found ${pathWays.length} nearby path way(s).`
+      );
+    },
+
+    function(error) {
+      console.error("Connector path search failed:", error);
+      showMessage("Could not load nearby OSM paths.");
+    }
+  );
+}
+
 function handleConnectorNodeClick() {
   const PICK_RADIUS_PX = 18;
-  const PICK_RADIUS_SQUARED = PICK_RADIUS_PX * PICK_RADIUS_PX;
+  const PICK_RADIUS_SQUARED =
+    PICK_RADIUS_PX * PICK_RADIUS_PX;
 
   let closestNode = null;
-  let closestDistanceSquared = PICK_RADIUS_SQUARED;
+  let closestDistanceSquared =
+    PICK_RADIUS_SQUARED;
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
@@ -1611,7 +1697,8 @@ function handleConnectorNodeClick() {
       node.lat
     ]);
 
-    const pixel = openlayersmap.getPixelFromCoordinate(coordinate);
+    const pixel =
+      openlayersmap.getPixelFromCoordinate(coordinate);
 
     if (!pixel) continue;
 
@@ -1630,34 +1717,35 @@ function handleConnectorNodeClick() {
     return;
   }
 
-  // First click: choose where the connector begins
+  // First click
   if (!connectorStartNode) {
     connectorStartNode = closestNode;
     connectorEndNode = null;
 
-    showMessage("First node selected. Now click the ending node.");
+    showMessage(
+      "First node selected. Now click the ending node."
+    );
 
     redraw();
     openlayersmap.render();
     return;
   }
 
-  // Do not allow the same node at both ends
   if (closestNode === connectorStartNode) {
     showMessage("Choose a different ending node.");
     return;
   }
 
-  // Second click: choose where the connector ends
+  // Second click
   connectorEndNode = closestNode;
 
   showMessage("Connector endpoints selected.");
 
-  console.log("Connector start:", connectorStartNode);
-  console.log("Connector end:", connectorEndNode);
-
   redraw();
   openlayersmap.render();
+
+  // Search only the nearby area for walkable OSM paths
+  loadNearbyConnectorPaths();
 }
 
 
