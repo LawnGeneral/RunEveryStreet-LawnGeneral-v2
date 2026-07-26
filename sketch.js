@@ -166,6 +166,7 @@ var selectnodemode = 1,
 
 let connectorStartNode = null;
 let connectorEndNode = null;
+let connectorPreviewSegments = [];
 
 var mode = choosemapmode; // START in Zoom/Pan mode
 var debugsteps = 0;
