@@ -320,7 +320,7 @@ function draw() {
   if (showRoads && safeEdges.length > 0) {
     showEdges();
   }
-
+drawConnectorPreviewSegments();
   // 2. NODES / START HIGHLIGHT
   // Show nodes in BOTH selection and trimming modes.
   // Hover detection only runs when mode === selectnodemode (inside showNodes()).
@@ -807,7 +807,125 @@ function showNodes() {
 
   pop();
 }
+function drawConnectorPreviewSegments() {
+  if (!window.connectorOSMxml) return;
 
+  // Build the preview segments once after each path search
+  if (connectorPreviewSegments.length === 0) {
+    const xml = window.connectorOSMxml;
+
+    const xmlNodes = xml.getElementsByTagName("node");
+    const xmlWays = xml.getElementsByTagName("way");
+
+    const osmNodeById = new Map();
+
+    // Save each downloaded OSM node by its ID
+    for (let i = 0; i < xmlNodes.length; i++) {
+      const nodeElement = xmlNodes[i];
+
+      const id = String(nodeElement.getAttribute("id"));
+      const lat = parseFloat(nodeElement.getAttribute("lat"));
+      const lon = parseFloat(nodeElement.getAttribute("lon"));
+
+      if (
+        id &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lon)
+      ) {
+        osmNodeById.set(id, {
+          lat: lat,
+          lon: lon
+        });
+      }
+    }
+
+    // Convert each downloaded OSM way into visible line segments
+    for (let i = 0; i < xmlWays.length; i++) {
+      const wayElement = xmlWays[i];
+      const nodeReferences =
+        wayElement.getElementsByTagName("nd");
+
+      for (let j = 0; j < nodeReferences.length - 1; j++) {
+        const fromId =
+          String(nodeReferences[j].getAttribute("ref"));
+
+        const toId =
+          String(nodeReferences[j + 1].getAttribute("ref"));
+
+        const fromPoint = osmNodeById.get(fromId);
+        const toPoint = osmNodeById.get(toId);
+
+        if (!fromPoint || !toPoint) continue;
+
+        connectorPreviewSegments.push({
+          from: fromPoint,
+          to: toPoint
+        });
+      }
+    }
+
+    console.log(
+      "Connector preview segments:",
+      connectorPreviewSegments.length
+    );
+  }
+
+  if (connectorPreviewSegments.length === 0) return;
+
+  push();
+  colorMode(RGB);
+
+  // Bright dashed cyan preview
+  stroke(0, 230, 255, 230);
+  strokeWeight(6);
+  noFill();
+
+  if (
+    drawingContext &&
+    typeof drawingContext.setLineDash === "function"
+  ) {
+    drawingContext.setLineDash([10, 8]);
+  }
+
+  for (let i = 0; i < connectorPreviewSegments.length; i++) {
+    const segment = connectorPreviewSegments[i];
+
+    const fromCoordinate = ol.proj.fromLonLat([
+      segment.from.lon,
+      segment.from.lat
+    ]);
+
+    const toCoordinate = ol.proj.fromLonLat([
+      segment.to.lon,
+      segment.to.lat
+    ]);
+
+    const fromPixel =
+      openlayersmap.getPixelFromCoordinate(fromCoordinate);
+
+    const toPixel =
+      openlayersmap.getPixelFromCoordinate(toCoordinate);
+
+    if (!fromPixel || !toPixel) continue;
+
+    line(
+      fromPixel[0],
+      fromPixel[1],
+      toPixel[0],
+      toPixel[1]
+    );
+  }
+
+  // Prevent other map lines from becoming dashed
+  if (
+    drawingContext &&
+    typeof drawingContext.setLineDash === "function"
+  ) {
+    drawingContext.setLineDash([]);
+  }
+
+  pop();
+}
 function showEdges() {
     let closestedgetomousedist = Infinity;
 
@@ -1655,7 +1773,7 @@ out;
 
       // Save the result so the next step can use it
       window.connectorOSMxml = xml;
-
+connectorPreviewSegments = [];
       console.log(
         "Connector OSM results:",
         pathWays.length,
