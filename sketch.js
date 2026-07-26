@@ -1596,7 +1596,54 @@ if (nOdd > 0) {
   }
 }
 
+function handleConnectorNodeClick() {
+  // For this step, only choose the first connector node.
+  if (connectorStartNode) {
+    showMessage("First connector node is already selected.");
+    return;
+  }
 
+  const PICK_RADIUS_PX = 18;
+  const PICK_RADIUS_SQUARED = PICK_RADIUS_PX * PICK_RADIUS_PX;
+
+  let closestNode = null;
+  let closestDistanceSquared = PICK_RADIUS_SQUARED;
+
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+
+    const coordinate = ol.proj.fromLonLat([
+      node.lon,
+      node.lat
+    ]);
+
+    const pixel = openlayersmap.getPixelFromCoordinate(coordinate);
+
+    if (!pixel) continue;
+
+    const dx = pixel[0] - mouseX;
+    const dy = pixel[1] - mouseY;
+    const distanceSquared = dx * dx + dy * dy;
+
+    if (distanceSquared < closestDistanceSquared) {
+      closestDistanceSquared = distanceSquared;
+      closestNode = node;
+    }
+  }
+
+  if (!closestNode) {
+    showMessage("Click closer to a red node.");
+    return;
+  }
+
+  connectorStartNode = closestNode;
+  connectorEndNode = null;
+
+  showMessage("First connector node selected.");
+
+  redraw();
+  openlayersmap.render();
+}
 
 
 
@@ -1656,6 +1703,7 @@ function mousePressed() {
   // 1) UI GUARD: Don't click through the top toolbar area
   // (We already handled undo above.)
   if (mouseY < 60) return;
+	if (mode === connectorMode) return handleConnectorNodeClick();
 
   // 2) START/STOP BUTTON (Bottom Left)
   let btnW = 140;
