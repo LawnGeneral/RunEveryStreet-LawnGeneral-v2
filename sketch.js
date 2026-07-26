@@ -2579,20 +2579,48 @@ function runOverpassQuery(query, onSuccess, onError) {
     }
 
     const url = endpoints[idx++];
+    const controller = new AbortController();
+
+    // Stop waiting after 15 seconds and try the next server
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 15000);
+
     console.log("Trying Overpass:", url);
 
     fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-      body: "data=" + encodeURIComponent(query)
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded;charset=UTF-8"
+      },
+      body: "data=" + encodeURIComponent(query),
+      signal: controller.signal
     })
-      .then(res => {
-        if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
-        return res.text();
+      .then(response => {
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status} from ${url}`
+          );
+        }
+
+        return response.text();
       })
-      .then(txt => onSuccess(txt))
-      .catch(err => {
-        console.warn("Overpass endpoint failed:", url, err);
+      .then(responseText => {
+        onSuccess(responseText);
+      })
+      .catch(error => {
+        clearTimeout(timeoutId);
+
+        console.warn(
+          "Overpass endpoint failed:",
+          url,
+          error
+        );
+
+        showMessage("Trying another OSM server...");
         tryNext();
       });
   }
