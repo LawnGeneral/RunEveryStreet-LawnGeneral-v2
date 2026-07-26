@@ -1597,12 +1597,6 @@ if (nOdd > 0) {
 }
 
 function handleConnectorNodeClick() {
-  // For this step, only choose the first connector node.
-  if (connectorStartNode) {
-    showMessage("First connector node is already selected.");
-    return;
-  }
-
   const PICK_RADIUS_PX = 18;
   const PICK_RADIUS_SQUARED = PICK_RADIUS_PX * PICK_RADIUS_PX;
 
@@ -1636,10 +1630,31 @@ function handleConnectorNodeClick() {
     return;
   }
 
-  connectorStartNode = closestNode;
-  connectorEndNode = null;
+  // First click: choose where the connector begins
+  if (!connectorStartNode) {
+    connectorStartNode = closestNode;
+    connectorEndNode = null;
 
-  showMessage("First connector node selected.");
+    showMessage("First node selected. Now click the ending node.");
+
+    redraw();
+    openlayersmap.render();
+    return;
+  }
+
+  // Do not allow the same node at both ends
+  if (closestNode === connectorStartNode) {
+    showMessage("Choose a different ending node.");
+    return;
+  }
+
+  // Second click: choose where the connector ends
+  connectorEndNode = closestNode;
+
+  showMessage("Connector endpoints selected.");
+
+  console.log("Connector start:", connectorStartNode);
+  console.log("Connector end:", connectorEndNode);
 
   redraw();
   openlayersmap.render();
