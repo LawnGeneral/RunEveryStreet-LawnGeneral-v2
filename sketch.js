@@ -2337,7 +2337,6 @@ function acceptManualConnector() {
     return;
   }
 
-  // Prevent adding the exact same connection twice
   const existingKey = nodeKey(
     connectorStartNode,
     connectorEndNode
@@ -2358,6 +2357,9 @@ function acceptManualConnector() {
     "Manual connector",
     ""
   );
+
+  // Identify this edge so trimming can prioritize it
+  connectorEdge.isManualConnector = true;
 
   edges.push(connectorEdge);
 
