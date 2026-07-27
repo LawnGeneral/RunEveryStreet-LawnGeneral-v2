@@ -1836,7 +1836,7 @@ function handleConnectorNodeClick() {
     return;
   }
 
-  // First click
+  // First click: connector beginning
   if (!connectorStartNode) {
     connectorStartNode = closestNode;
     connectorEndNode = null;
@@ -1855,16 +1855,25 @@ function handleConnectorNodeClick() {
     return;
   }
 
-  // Second click
+  // Second click: connector ending
   connectorEndNode = closestNode;
 
-  showMessage("Connector endpoints selected.");
+  showMessage(
+    "Connector endpoints selected."
+  );
+
+  console.log(
+    "Manual connector start:",
+    connectorStartNode
+  );
+
+  console.log(
+    "Manual connector end:",
+    connectorEndNode
+  );
 
   redraw();
   openlayersmap.render();
-
-  // Search only the nearby area for walkable OSM paths
-  loadNearbyConnectorPaths();
 }
 
 
