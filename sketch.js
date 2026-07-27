@@ -2331,6 +2331,54 @@ function windowResized() {
 
 // Add this to the very end of sketch.js
 
+function acceptManualConnector() {
+  if (!connectorStartNode || !connectorEndNode) {
+    showMessage("Choose both connector endpoints first.");
+    return;
+  }
+
+  // Prevent adding the exact same connection twice
+  const existingKey = nodeKey(
+    connectorStartNode,
+    connectorEndNode
+  );
+
+  if (existingKey && edgeByNodeKey.has(existingKey)) {
+    showMessage("Those nodes are already connected.");
+    return;
+  }
+
+  const manualWayId =
+    "manual-connector-" + Date.now();
+
+  const connectorEdge = new Edge(
+    connectorStartNode,
+    connectorEndNode,
+    manualWayId,
+    "Manual connector",
+    ""
+  );
+
+  edges.push(connectorEdge);
+
+  totaledgedistance += connectorEdge.distance;
+  totalRoadsDist = totaledgedistance;
+  totaluniqueroads = edges.length;
+
+  resetEdges();
+  rebuildEdgeLookup();
+
+  connectorStartNode = null;
+  connectorEndNode = null;
+
+  setMode(trimmodemode);
+
+  showMessage("Manual connector added.");
+
+  redraw();
+  openlayersmap.render();
+}
+
 function keyPressed() {
   // Hold ALT to temporarily pan/zoom the map
   if (keyCode === ALT) {
@@ -2339,7 +2387,7 @@ function keyPressed() {
     return;
   }
 
-  // Press C to begin adding an OSM connector
+  // Press C to begin adding a manual connector
   if (key === "c" || key === "C") {
     if (!startnode) {
       showMessage("Choose your normal route start node first.");
@@ -2358,6 +2406,13 @@ function keyPressed() {
 
     redraw();
     openlayersmap.render();
+    return;
+  }
+
+  // Press Enter to accept the dashed connector
+  if (keyCode === ENTER && mode === connectorMode) {
+    acceptManualConnector();
+    return;
   }
 }
 
