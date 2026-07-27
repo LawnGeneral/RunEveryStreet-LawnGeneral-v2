@@ -336,6 +336,8 @@ drawConnectorPreviewSegments();
   }
 
   // 4. THE PATHS
+drawManualConnectorPreview();
+	
   renderRouteGraphics();
 
   // 5. THE INTERFACE (Always draw last)
@@ -926,6 +928,47 @@ function drawConnectorPreviewSegments() {
 
   pop();
 }
+function drawManualConnectorPreview() {
+  if (!connectorStartNode || !connectorEndNode) return;
+
+  const startCoord = ol.proj.fromLonLat([
+    connectorStartNode.lon,
+    connectorStartNode.lat
+  ]);
+
+  const endCoord = ol.proj.fromLonLat([
+    connectorEndNode.lon,
+    connectorEndNode.lat
+  ]);
+
+  const startPixel =
+    openlayersmap.getPixelFromCoordinate(startCoord);
+
+  const endPixel =
+    openlayersmap.getPixelFromCoordinate(endCoord);
+
+  if (!startPixel || !endPixel) return;
+
+  push();
+  colorMode(RGB);
+
+  stroke(0, 230, 255);
+  strokeWeight(6);
+
+  drawingContext.setLineDash([10, 8]);
+
+  line(
+    startPixel[0],
+    startPixel[1],
+    endPixel[0],
+    endPixel[1]
+  );
+
+  drawingContext.setLineDash([]);
+
+  pop();
+}
+
 function showEdges() {
     let closestedgetomousedist = Infinity;
 
