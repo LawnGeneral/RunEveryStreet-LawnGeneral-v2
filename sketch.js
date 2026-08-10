@@ -937,6 +937,7 @@ function renderRouteGraphics() {
 
 function renderUIOverlays() {
 	drawPlannerModeButton();
+	drawDiscoverySeed();
   // 1) MAP PREPARATION STATS (Selection / Trimming)
   if (mode === trimmodemode || mode === selectnodemode) {
     // --- Current selected-road length (this is the lower bound) ---
