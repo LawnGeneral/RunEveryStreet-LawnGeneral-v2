@@ -135,6 +135,18 @@ function isLifeMapEdgeVisited(edge) {
   return visitedFraction >= 0.6;
 }
 
+const PLANNER_MODES = [
+  {
+    key: "manual",
+    label: "Manual Area"
+  },
+  {
+    key: "discovery",
+    label: "Find New Roads"
+  }
+];
+
+let selectedPlannerMode = "manual";
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
