@@ -553,6 +553,50 @@ function buildDiscoverySeedNetwork(seedCandidate) {
     "unique miles"
   );
 }
+
+function getDiscoveryFrontierCandidates() {
+  if (
+    !discoverySelectedEdges ||
+    discoverySelectedEdges.length === 0 ||
+    !discoveryCandidates ||
+    discoveryCandidates.length === 0
+  ) {
+    return [];
+  }
+
+  const selectedEdges =
+    new Set(discoverySelectedEdges);
+
+  const selectedNodes =
+    new Set();
+
+  for (const edge of discoverySelectedEdges) {
+    if (!edge) continue;
+
+    if (edge.from) selectedNodes.add(edge.from);
+    if (edge.to) selectedNodes.add(edge.to);
+  }
+
+  const frontier = [];
+
+  for (const candidate of discoveryCandidates) {
+    const edge = candidate.edge;
+
+    if (!edge || selectedEdges.has(edge)) {
+      continue;
+    }
+
+    // Candidate must directly touch the current network.
+    if (
+      selectedNodes.has(edge.from) ||
+      selectedNodes.has(edge.to)
+    ) {
+      frontier.push(candidate);
+    }
+  }
+
+  return frontier;
+}
 function drawPlannerModeButton() {
   const x = 370;
   const y = height - 60;
