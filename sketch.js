@@ -312,23 +312,44 @@ function scoreDiscoverySeeds(candidates, targetM) {
         radiusM
       );
 
-    const accessFraction =
-      candidate.minimumLoopCost / targetM;
+    // How much route distance remains after the minimum
+    // travel needed to reach this road and return home.
+    const remainingBudgetM =
+      Math.max(
+        0,
+        targetM - candidate.minimumLoopCost
+      );
 
-    // Nearby dense pockets score highest.
-    // Far-away pockets lose value because getting there
-    // consumes more of the route-distance budget.
-    const score =
-      localNewRoadM *
-      Math.max(0, 1 - accessFraction);
+    // The seed road itself is already included in the
+    // minimum loop cost, so it can still count as new road.
+    const maxPossibleNewRoadM =
+      candidate.newRoadValue +
+      remainingBudgetM;
+
+    // Don't give a huge dense area credit for more new road
+    // than could actually fit inside this route.
+    const realisticNewRoadM =
+      Math.min(
+        localNewRoadM,
+        maxPossibleNewRoadM
+      );
+
+    const score = realisticNewRoadM;
 
     scored.push({
       candidate: candidate,
       localNewRoadM: localNewRoadM,
-      accessFraction: accessFraction,
+      remainingBudgetM: remainingBudgetM,
+      realisticNewRoadM: realisticNewRoadM,
       score: score
     });
   }
+
+  // Best realistic new-road opportunity first.
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored;
+}
 
   scored.sort((a, b) => b.score - a.score);
 
