@@ -9,6 +9,40 @@ var remainingedges;
 var bestdistance = Infinity;
 let distToStartCache = null; // Map<Node, distance> from every node back to start
 
+async function loadLifeMapGrid() {
+  try {
+    const response = await fetch("strava_lifemap_grid_10m.csv.gz");
+
+    const decompressedStream = response.body.pipeThrough(
+      new DecompressionStream("gzip")
+    );
+
+    const text = await new Response(decompressedStream).text();
+    const lines = text.trim().split("\n");
+
+    lifeMapVisitedCells.clear();
+
+    // Skip the first line: lat_i,lon_i
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].trim().split(",");
+      if (parts.length !== 2) continue;
+
+      lifeMapVisitedCells.add(parts[0] + "," + parts[1]);
+    }
+
+    lifeMapLoaded = true;
+
+    console.log(
+      "LifeMap loaded:",
+      lifeMapVisitedCells.size,
+      "visited cells"
+    );
+  } catch (err) {
+    console.error("LifeMap failed to load:", err);
+    lifeMapLoaded = false;
+  }
+}
+
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
@@ -296,6 +330,8 @@ function setup() {
     openlayersmap.updateSize();
     setTimeout(() => openlayersmap.updateSize(), 0);
     setTimeout(() => openlayersmap.updateSize(), 250);
+
+	loadLifeMapGrid();
 
     console.log("Setup complete: map + canvas sizes forced.");
 }
