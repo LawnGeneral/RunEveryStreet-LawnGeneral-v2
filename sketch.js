@@ -175,6 +175,56 @@ function getDiscoveryTargetDistance() {
 
   return miles * 1609.344;
 }
+
+function getDiscoveryCandidateEdges(targetM) {
+  if (!startnode || !Number.isFinite(targetM)) {
+    return [];
+  }
+
+  // Shortest distance from the start to every node
+  const result = dijkstra(startnode);
+  const dist = result.distances;
+
+  const candidates = [];
+
+  for (const edge of edges) {
+    if (!edge || !edge.from || !edge.to) continue;
+
+    // Discovery mode cares about roads you have NOT run
+    if (edge.traveled === true) continue;
+
+    const distToFrom = dist.get(edge.from);
+    const distToTo = dist.get(edge.to);
+
+    if (!Number.isFinite(distToFrom) ||
+        !Number.isFinite(distToTo)) {
+      continue;
+    }
+
+    // Minimum closed-loop distance needed to:
+    // start -> reach this road -> run it -> return home
+    const minimumLoopCost =
+      distToFrom +
+      edge.distance +
+      distToTo;
+
+    if (minimumLoopCost <= targetM) {
+      candidates.push({
+        edge: edge,
+        minimumLoopCost: minimumLoopCost,
+        newRoadValue: edge.newRoadValue || edge.distance
+      });
+    }
+  }
+
+  console.log(
+    "Discovery candidates:",
+    candidates.length,
+    "untraveled segments fit within target distance"
+  );
+
+  return candidates;
+}
 function drawPlannerModeButton() {
   const x = 370;
   const y = height - 60;
