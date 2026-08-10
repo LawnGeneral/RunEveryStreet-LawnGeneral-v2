@@ -217,6 +217,9 @@ function getDiscoveryCandidateEdges(targetM) {
     }
   }
 
+	candidates.sort(
+  (a, b) => a.minimumLoopCost - b.minimumLoopCost
+);
   console.log(
     "Discovery candidates:",
     candidates.length,
