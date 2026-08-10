@@ -209,11 +209,19 @@ function getDiscoveryCandidateEdges(targetM) {
       distToTo;
 
     if (minimumLoopCost <= targetM) {
-      candidates.push({
-        edge: edge,
-        minimumLoopCost: minimumLoopCost,
-        newRoadValue: edge.newRoadValue || edge.distance
-      });
+   const newRoadValue =
+  edge.newRoadValue || edge.distance;
+
+candidates.push({
+  edge: edge,
+  minimumLoopCost: minimumLoopCost,
+  newRoadValue: newRoadValue,
+
+  // Higher = more new road gained for the travel
+  // required to reach it and return home.
+  efficiency:
+    newRoadValue / minimumLoopCost
+});
     }
   }
 
