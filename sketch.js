@@ -515,7 +515,10 @@ function startDiscoveryPlanner() {
   buildDiscoverySeedNetwork(
     discoverySeedCandidate
   );
+	
 buildFastDiscoveryNetwork();
+
+	solveDiscoveryNetwork();
   const targetMiles =
     targetM / 1609.344;
 
