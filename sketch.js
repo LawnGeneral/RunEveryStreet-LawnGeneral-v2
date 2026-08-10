@@ -796,7 +796,7 @@ out;
 			  let edge = new Edge(from, to, wayid, meta.name, meta.ref);
 
 		edge.traveled = isLifeMapEdgeVisited(edge);
-
+		edge.newRoadValue = edge.traveled ? 0 : edge.distance;
 		edges.push(edge);
 		totaledgedistance += edge.distance;
           }
