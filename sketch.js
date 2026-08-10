@@ -147,6 +147,19 @@ const PLANNER_MODES = [
 ];
 
 let selectedPlannerMode = "manual";
+
+function cyclePlannerMode() {
+  if (selectedPlannerMode === "manual") {
+    selectedPlannerMode = "discovery";
+    showMessage("Planner: Find New Roads");
+  } else {
+    selectedPlannerMode = "manual";
+    showMessage("Planner: Manual Area");
+  }
+
+  redraw();
+  openlayersmap.render();
+}
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
