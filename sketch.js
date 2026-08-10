@@ -148,6 +148,7 @@ const PLANNER_MODES = [
 
 let selectedPlannerMode = "manual";
 let discoverySeedCandidate = null;
+let discoverySelectedEdges = [];
 
 function cyclePlannerMode() {
   if (selectedPlannerMode === "manual") {
@@ -440,6 +441,9 @@ discoverySeedCandidate =
     ? scoredSeeds[0].candidate
     : null;
 	
+	buildDiscoverySeedNetwork(
+  discoverySeedCandidate
+);
 console.log(
   "Top discovery seeds:",
   scoredSeeds.slice(0, 10).map((item, index) => ({
@@ -489,6 +493,58 @@ console.log(
   );
 	redraw();
 openlayersmap.render();
+}
+
+function buildDiscoverySeedNetwork(seedCandidate) {
+  discoverySelectedEdges = [];
+
+  if (
+    !startnode ||
+    !seedCandidate ||
+    !seedCandidate.edge
+  ) {
+    return;
+  }
+
+  const seedEdge = seedCandidate.edge;
+
+  // Shortest connection from Start to each end of the seed road.
+  const pathToFrom =
+    getPathEdges(startnode, seedEdge.from);
+
+  const pathToTo =
+    getPathEdges(startnode, seedEdge.to);
+
+  // Use a Set so overlapping roads are only included once.
+  const selected = new Set();
+
+  for (const edge of pathToFrom) {
+    selected.add(edge);
+  }
+
+  for (const edge of pathToTo) {
+    selected.add(edge);
+  }
+
+  // Always include the winning new-road seed itself.
+  selected.add(seedEdge);
+
+  discoverySelectedEdges =
+    Array.from(selected);
+
+  const totalM =
+    discoverySelectedEdges.reduce(
+      (sum, edge) => sum + edge.distance,
+      0
+    );
+
+  console.log(
+    "Discovery seed network:",
+    discoverySelectedEdges.length,
+    "segments,",
+    (totalM / 1609.344).toFixed(2),
+    "unique miles"
+  );
 }
 function drawPlannerModeButton() {
   const x = 370;
