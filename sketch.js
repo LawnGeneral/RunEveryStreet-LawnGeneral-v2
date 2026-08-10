@@ -792,9 +792,13 @@ out;
 
           if (from && to) {
             // IMPORTANT: Edge constructor now accepts (from,to,wayid,name,ref)
-            let edge = new Edge(from, to, wayid, meta.name, meta.ref);
-            edges.push(edge);
-            totaledgedistance += edge.distance;
+
+			  let edge = new Edge(from, to, wayid, meta.name, meta.ref);
+
+		edge.traveled = isLifeMapEdgeVisited(edge);
+
+		edges.push(edge);
+		totaledgedistance += edge.distance;
           }
         }
       }
