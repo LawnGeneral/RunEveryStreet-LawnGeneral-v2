@@ -461,101 +461,91 @@ function getDiscoveryCandidateClusters(candidates) {
 
 function startDiscoveryPlanner() {
   const targetM = getDiscoveryTargetDistance();
-	discoveryTargetM = targetM;
 
   if (targetM === null) {
     return;
   }
 
+  // Reset any previous Discovery run.
+  discoveryTargetM = targetM;
+  discoverySeedCandidate = null;
+  discoverySelectedEdges = [];
+  discoveryCandidates = [];
+
+  // 1. Find all untraveled roads that are realistically
+  // reachable within this closed-loop distance.
   const candidates =
     getDiscoveryCandidateEdges(targetM);
-	
-	discoveryCandidates = candidates;
 
-	const scoredSeeds =
-  scoreDiscoverySeeds(candidates, targetM);
-discoverySeedCandidate =
-  scoredSeeds.length > 0
-    ? scoredSeeds[0].candidate
-    : null;
-	
-	buildDiscoverySeedNetwork(
-  discoverySeedCandidate
-);
-	const frontier =
-  getDiscoveryFrontierCandidates();
+  discoveryCandidates = candidates;
 
-const scoredFrontier =
-  scoreDiscoveryFrontierCandidates(frontier);
+  if (candidates.length === 0) {
+    showMessage(
+      "No reachable untraveled roads found for this distance."
+    );
 
-console.log(
-  "Discovery frontier:",
-  frontier.length,
-  "touching new-road segments"
-);
+    redraw();
+    openlayersmap.render();
+    return;
+  }
 
-console.log(
-  "Top frontier choices:",
-  scoredFrontier.slice(0, 10).map((item, index) => ({
-    rank: index + 1,
-    edgeMiles:
-      (item.candidate.edge.distance / 1609.344).toFixed(3),
-    nearbyNewMiles:
-      (item.nearbyRemainingNewRoadM / 1609.344).toFixed(2),
-    score:
-      item.score.toFixed(0)
-  }))
-);
-	
-console.log(
-  "Top discovery seeds:",
-  scoredSeeds.slice(0, 10).map((item, index) => ({
-    rank: index + 1,
-    localNewMiles:
-      (item.localNewRoadM / 1609.344).toFixed(2),
-    accessLoopMiles:
-      (item.candidate.minimumLoopCost / 1609.344).toFixed(2),
-    score:
-      item.score.toFixed(0)
-  }))
-);
+  // 2. Find the most promising area for collecting new roads.
+  const scoredSeeds =
+    scoreDiscoverySeeds(
+      candidates,
+      targetM
+    );
 
-	const clusters =
-  getDiscoveryCandidateClusters(candidates);
+  if (scoredSeeds.length === 0) {
+    showMessage(
+      "Could not identify a Discovery starting area."
+    );
 
-	console.table(
-  clusters.map((cluster, index) => ({
-    cluster: index + 1,
-    segments: cluster.edges.length,
-    newRoadMiles:
-      (cluster.newRoadDistance / 1609.344).toFixed(2),
-    nearestLoopMiles:
-      (cluster.minimumLoopCost / 1609.344).toFixed(2)
-  }))
-);
+    redraw();
+    openlayersmap.render();
+    return;
+  }
 
+  // 3. Remember the best seed.
+  discoverySeedCandidate =
+    scoredSeeds[0].candidate;
+
+  // 4. Build the initial connected skeleton from
+  // our start point to that new-road area.
+  buildDiscoverySeedNetwork(
+    discoverySeedCandidate
+  );
+buildFastDiscoveryNetwork();
   const targetMiles =
     targetM / 1609.344;
 
+  const initialNetworkM =
+    discoverySelectedEdges.reduce(
+      (sum, edge) =>
+        sum + (edge.distance || 0),
+      0
+    );
+
   console.log(
-  "Discovery planner:",
-  targetMiles.toFixed(2),
-  "mile target,",
-  candidates.length,
-  "candidate new-road segments,",
-  clusters.length,
-  "clusters"
-);
+    "Discovery initialized:",
+    targetMiles.toFixed(2),
+    "mile target |",
+    candidates.length,
+    "candidate new-road segments |",
+    discoverySelectedEdges.length,
+    "initial network segments |",
+    (initialNetworkM / 1609.344).toFixed(2),
+    "initial unique miles"
+  );
 
   showMessage(
-    "Found " +
-    candidates.length +
-    " new-road candidates for " +
+    "Discovery ready: building " +
     targetMiles.toFixed(1) +
-    " miles."
+    " mile new-road route."
   );
-	redraw();
-openlayersmap.render();
+
+  redraw();
+  openlayersmap.render();
 }
 
 function buildDiscoverySeedNetwork(seedCandidate) {
@@ -610,6 +600,242 @@ function buildDiscoverySeedNetwork(seedCandidate) {
   );
 }
 
+function buildFastDiscoveryNetwork() {
+  if (
+    !startnode ||
+    !discoveryTargetM ||
+    !discoverySelectedEdges ||
+    discoverySelectedEdges.length === 0
+  ) {
+    return;
+  }
+
+  // Leave room for the postman solver to add necessary repeats.
+  // We can tune this after seeing the first real routes.
+  const uniqueBudgetM =
+    discoveryTargetM * 0.78;
+
+  const selected =
+    new Set(discoverySelectedEdges);
+
+  const selectedNodes =
+    new Set();
+
+  let selectedDistanceM = 0;
+
+  for (const edge of discoverySelectedEdges) {
+    if (!edge || !edge.from || !edge.to) continue;
+
+    selectedNodes.add(edge.from);
+    selectedNodes.add(edge.to);
+
+    selectedDistanceM +=
+      edge.distance || 0;
+  }
+
+  const seedMid =
+    discoverySeedCandidate &&
+    discoverySeedCandidate.edge
+      ? getEdgeMidpoint(
+          discoverySeedCandidate.edge
+        )
+      : null;
+
+  let guard = 0;
+
+  while (
+    selectedDistanceM < uniqueBudgetM &&
+    guard < edges.length * 2
+  ) {
+    guard++;
+
+    let bestEdge = null;
+    let bestScore = -Infinity;
+
+    for (const edge of edges) {
+      if (
+        !edge ||
+        !edge.from ||
+        !edge.to ||
+        selected.has(edge)
+      ) {
+        continue;
+      }
+
+      const fromSelected =
+        selectedNodes.has(edge.from);
+
+      const toSelected =
+        selectedNodes.has(edge.to);
+
+      // It must touch the network we already have.
+      if (!fromSelected && !toSelected) {
+        continue;
+      }
+
+      // Don't exceed our provisional unique-road budget.
+      if (
+        selectedDistanceM +
+          edge.distance >
+        uniqueBudgetM
+      ) {
+        continue;
+      }
+
+      const isNewRoad =
+        edge.traveled === false &&
+        !edge.isManualConnector;
+
+      const closesCycle =
+        fromSelected && toSelected;
+
+      // If this edge reaches a new node, look at how much
+      // additional untraveled road is available from there.
+      let outwardNode = null;
+
+      if (fromSelected && !toSelected) {
+        outwardNode = edge.to;
+      } else if (
+        toSelected &&
+        !fromSelected
+      ) {
+        outwardNode = edge.from;
+      }
+
+      let onwardNewM = 0;
+
+      if (
+        outwardNode &&
+        outwardNode.edges
+      ) {
+        for (const next of outwardNode.edges) {
+          if (
+            !next ||
+            selected.has(next) ||
+            next.isManualConnector
+          ) {
+            continue;
+          }
+
+          if (next.traveled === false) {
+            onwardNewM +=
+              next.distance || 0;
+          }
+        }
+      }
+
+      // Main value:
+      // strongly prefer new road.
+      let value =
+        isNewRoad
+          ? edge.distance * 8
+          : 0;
+
+      // Prefer edges that lead toward more new streets.
+      value +=
+        onwardNewM * 1.5;
+
+      // Closing loops is valuable because it usually
+      // reduces duplicate running later.
+      if (closesCycle) {
+        value +=
+          edge.distance * 4;
+      }
+
+      // Previously-run roads are allowed as connectors,
+      // but they need to earn their place.
+      if (!isNewRoad) {
+        value -=
+          edge.distance * 2;
+      }
+
+      // Keep growth reasonably concentrated around
+      // the promising area rather than forming long tendrils.
+      if (seedMid) {
+        const mid =
+          getEdgeMidpoint(edge);
+
+        const seedDistanceM =
+          getLatLonDistanceM(
+            seedMid.lat,
+            seedMid.lon,
+            mid.lat,
+            mid.lon
+          );
+
+        value -=
+          seedDistanceM * 0.05;
+      }
+
+      // Value per meter added to the network.
+      const score =
+        value /
+        Math.max(
+          10,
+          edge.distance || 10
+        );
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestEdge = edge;
+      }
+    }
+
+    // Nothing else can be added sensibly.
+    if (!bestEdge) {
+      break;
+    }
+
+    selected.add(bestEdge);
+
+    selectedNodes.add(
+      bestEdge.from
+    );
+
+    selectedNodes.add(
+      bestEdge.to
+    );
+
+    selectedDistanceM +=
+      bestEdge.distance || 0;
+  }
+
+  discoverySelectedEdges =
+    Array.from(selected);
+
+  let newRoadM = 0;
+
+  for (const edge of discoverySelectedEdges) {
+    if (
+      edge.traveled === false &&
+      !edge.isManualConnector
+    ) {
+      newRoadM +=
+        edge.distance || 0;
+    }
+  }
+
+  console.log(
+    "Fast Discovery network:",
+    discoverySelectedEdges.length,
+    "segments |",
+    (
+      selectedDistanceM /
+      1609.344
+    ).toFixed(2),
+    "unique mi |",
+    (
+      newRoadM /
+      1609.344
+    ).toFixed(2),
+    "new-road mi | target",
+    (
+      discoveryTargetM /
+      1609.344
+    ).toFixed(2),
+    "mi"
+  );
+}
 function getDiscoveryFrontierCandidates() {
   if (
     !discoverySelectedEdges ||
