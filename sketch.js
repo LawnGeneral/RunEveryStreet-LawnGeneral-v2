@@ -278,6 +278,169 @@ function getLatLonDistanceM(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+function getDiscoveryLeaveBehindPenalty(edge, selectedSet) {
+  if (
+    !edge ||
+    !edge.from ||
+    !edge.to ||
+    edge.traveled === true
+  ) {
+    return 0;
+  }
+
+  let penalty = 0;
+
+  const endpoints = [
+    edge.from,
+    edge.to
+  ];
+
+  for (const node of endpoints) {
+    if (!node || !node.edges) continue;
+
+    let remainingNewAtNode = 0;
+
+    for (const other of node.edges) {
+      if (
+        !other ||
+        other === edge ||
+        selectedSet.has(other) ||
+        other.traveled === true ||
+        other.isManualConnector
+      ) {
+        continue;
+      }
+
+      remainingNewAtNode++;
+    }
+
+    /*
+      If we take this road but leave several other new
+      roads hanging off the same intersection, we are
+      creating an awkward future cleanup problem.
+
+      Penalize that behavior.
+    */
+    if (remainingNewAtNode === 1) {
+      penalty += 150;
+    } else if (remainingNewAtNode === 2) {
+      penalty += 350;
+    } else if (remainingNewAtNode >= 3) {
+      penalty += 600;
+    }
+  }
+
+  return penalty;
+}
+
+function scoreDiscoveryCleanupEdge(
+  edge,
+  selectedSet,
+  selectedNodes,
+  reachCost
+) {
+  if (
+    !edge ||
+    !edge.from ||
+    !edge.to ||
+    edge.traveled === true ||
+    edge.isManualConnector
+  ) {
+    return -Infinity;
+  }
+
+  const distanceM =
+    edge.distance || 0;
+
+  let score =
+    distanceM * 6;
+
+  // -----------------------------------------
+  // 1. Strongly reward completing a loop.
+  // -----------------------------------------
+
+  const fromSelected =
+    selectedNodes.has(edge.from);
+
+  const toSelected =
+    selectedNodes.has(edge.to);
+
+  if (fromSelected && toSelected) {
+    score +=
+      distanceM * 8;
+  }
+
+  // -----------------------------------------
+  // 2. Reward finishing roads around an
+  //    intersection we have already started.
+  // -----------------------------------------
+
+  for (const node of [
+    edge.from,
+    edge.to
+  ]) {
+    if (!node || !node.edges) continue;
+
+    let selectedNew = 0;
+    let remainingNew = 0;
+
+    for (const other of node.edges) {
+      if (
+        !other ||
+        other === edge ||
+        other.traveled === true ||
+        other.isManualConnector
+      ) {
+        continue;
+      }
+
+      if (selectedSet.has(other)) {
+        selectedNew++;
+      } else {
+        remainingNew++;
+      }
+    }
+
+    // We have already started cleaning this intersection.
+    // Finishing the remaining streets is valuable.
+    if (selectedNew > 0) {
+      score +=
+        selectedNew * 300;
+    }
+
+    // Especially reward taking the LAST remaining
+    // new road at an intersection.
+    if (
+      selectedNew > 0 &&
+      remainingNew === 0
+    ) {
+      score += 700;
+    }
+  }
+
+  // -----------------------------------------
+  // 3. Penalize creating awkward leftovers.
+  // -----------------------------------------
+
+  score -=
+    getDiscoveryLeaveBehindPenalty(
+      edge,
+      selectedSet
+    );
+
+  // -----------------------------------------
+  // 4. Nearby roads are better than paying a
+  //    large access cost for one isolated prize.
+  // -----------------------------------------
+
+  score -=
+    Math.max(
+      0,
+      reachCost || 0
+    ) * 0.20;
+
+  return score;
+}
 function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
   const seedMid =
     getEdgeMidpoint(seedCandidate.edge);
@@ -615,422 +778,37 @@ function buildFastDiscoveryNetwork() {
     return;
   }
 
+  // Still provisional. Once the street-selection behavior
+  // looks right, we'll make this respond to actual route cost.
   const uniqueBudgetM =
     discoveryTargetM * 0.72;
 
-  const seedEdge =
-    discoverySeedCandidate.edge;
-
-  const seedNode =
-    seedEdge.from;
-
-  // Preserve the start-to-seed skeleton we already built.
   const selected =
     new Set(discoverySelectedEdges);
-
-  let selectedDistanceM = 0;
-
-  for (const edge of selected) {
-    selectedDistanceM +=
-      edge.distance || 0;
-  }
-
-  // --------------------------------------------------
-  // 1. Weighted shortest-path map from the seed.
-  //
-  // New roads are much "cheaper" to travel through,
-  // so paths naturally favor roads you have not run.
-  // --------------------------------------------------
-
-  const dist =
-    new Map();
-
-  const previousEdge =
-    new Map();
-
-  for (const node of nodes) {
-    dist.set(node, Infinity);
-  }
-
-  dist.set(seedNode, 0);
-
-  const queue = [
-    {
-      node: seedNode,
-      cost: 0
-    }
-  ];
-
-  while (queue.length > 0) {
-    let bestIndex = 0;
-
-    for (let i = 1; i < queue.length; i++) {
-      if (
-        queue[i].cost <
-        queue[bestIndex].cost
-      ) {
-        bestIndex = i;
-      }
-    }
-
-    const item =
-      queue.splice(bestIndex, 1)[0];
-
-    const node =
-      item.node;
-
-    const currentCost =
-      item.cost;
-
-    if (
-      currentCost >
-      dist.get(node)
-    ) {
-      continue;
-    }
-
-    if (!node.edges) {
-      continue;
-    }
-
-    for (const edge of node.edges) {
-      if (
-        !edge ||
-        !edge.from ||
-        !edge.to
-      ) {
-        continue;
-      }
-
-      const other =
-        edge.from === node
-          ? edge.to
-          : edge.from;
-
-      if (!other) {
-        continue;
-      }
-
-      const isNew =
-        edge.traveled === false &&
-        !edge.isManualConnector;
-
-      // Strongly favor traveling through new roads.
-      const factor =
-        isNew ? 0.30 : 1.0;
-
-      const nextCost =
-        currentCost +
-        (edge.distance || 0) * factor;
-
-      if (
-        nextCost <
-        dist.get(other)
-      ) {
-        dist.set(
-          other,
-          nextCost
-        );
-
-        previousEdge.set(
-          other,
-          edge
-        );
-
-        queue.push({
-          node: other,
-          cost: nextCost
-        });
-      }
-    }
-  }
-
-  // --------------------------------------------------
-  // 2. Helper: recover the weighted path from a node
-  //    back toward the Discovery seed.
-  // --------------------------------------------------
-
-  function getWeightedPathToSeed(node) {
-    const path = [];
-
-    let current =
-      node;
-
-    let guard = 0;
-
-    while (
-      current &&
-      current !== seedNode &&
-      guard < nodes.length
-    ) {
-      guard++;
-
-      const edge =
-        previousEdge.get(current);
-
-      if (!edge) {
-        break;
-      }
-
-      path.push(edge);
-
-      current =
-        edge.from === current
-          ? edge.to
-          : edge.from;
-    }
-
-    return path;
-  }
-
-  // --------------------------------------------------
-  // 3. Rank NEW roads.
-  //
-  // Old roads are NOT candidates here.
-  // They can only enter later as connectors.
-  // --------------------------------------------------
-
-  const newCandidates = [];
-
-  for (const edge of edges) {
-    if (
-      !edge ||
-      !edge.from ||
-      !edge.to ||
-      edge.traveled === true ||
-      edge.isManualConnector
-    ) {
-      continue;
-    }
-
-    const fromCost =
-      dist.get(edge.from);
-
-    const toCost =
-      dist.get(edge.to);
-
-    if (
-      !Number.isFinite(fromCost) ||
-      !Number.isFinite(toCost)
-    ) {
-      continue;
-    }
-
-    const bestEndpoint =
-      fromCost <= toCost
-        ? edge.from
-        : edge.to;
-
-    const reachCost =
-      Math.min(
-        fromCost,
-        toCost
-      );
-
-    // Give some extra value to a road surrounded by
-    // other untraveled roads.
-    let nearbyNewM = 0;
-
-    const nearbyEdges = [
-      ...(edge.from.edges || []),
-      ...(edge.to.edges || [])
-    ];
-
-    for (const nearby of nearbyEdges) {
-      if (
-        nearby &&
-        nearby !== edge &&
-        nearby.traveled === false &&
-        !nearby.isManualConnector
-      ) {
-        nearbyNewM +=
-          nearby.distance || 0;
-      }
-    }
-
-    const value =
-      (edge.distance || 0) +
-      nearbyNewM * 0.50;
-
-    const score =
-      value /
-      Math.max(
-        50,
-        reachCost
-      );
-
-    newCandidates.push({
-      edge: edge,
-      bestEndpoint: bestEndpoint,
-      score: score
-    });
-  }
-
-  newCandidates.sort(
-    (a, b) =>
-      b.score - a.score
-  );
-
-  // --------------------------------------------------
-  // 4. Add valuable NEW roads.
-  //
-  // Any old roads included here must be part of an
-  // actual connector path to a selected new road.
-  // --------------------------------------------------
-
-  for (const candidate of newCandidates) {
-    const edge =
-      candidate.edge;
-
-    if (selected.has(edge)) {
-      continue;
-    }
-
-    const connectorPath =
-      getWeightedPathToSeed(
-        candidate.bestEndpoint
-      );
-
-    const bundle = [
-      ...connectorPath,
-      edge
-    ];
-
-    let addedM = 0;
-
-    for (const bundleEdge of bundle) {
-      if (!selected.has(bundleEdge)) {
-        addedM +=
-          bundleEdge.distance || 0;
-      }
-    }
-
-    if (
-      selectedDistanceM +
-        addedM >
-      uniqueBudgetM
-    ) {
-      continue;
-    }
-
-    for (const bundleEdge of bundle) {
-      if (!selected.has(bundleEdge)) {
-        selected.add(bundleEdge);
-
-        selectedDistanceM +=
-          bundleEdge.distance || 0;
-      }
-    }
-  }
-
-  // --------------------------------------------------
-  // 5. Identify the nodes now inside our network.
-  // --------------------------------------------------
 
   const selectedNodes =
     new Set();
 
-  for (const edge of selected) {
-    if (!edge) continue;
-
-    selectedNodes.add(edge.from);
-    selectedNodes.add(edge.to);
-  }
-
-  // --------------------------------------------------
-  // 6. Add useful cycle-closing roads.
-  //
-  // These are roads whose BOTH endpoints are already
-  // in the selected network.
-  //
-  // New roads receive a strong bonus.
-  // Old roads are allowed only because connecting two
-  // existing nodes creates a cycle instead of a branch.
-  // --------------------------------------------------
-
-  const closers = [];
-
-  for (const edge of edges) {
-    if (
-      !edge ||
-      !edge.from ||
-      !edge.to ||
-      selected.has(edge)
-    ) {
-      continue;
-    }
-
-    if (
-      !selectedNodes.has(edge.from) ||
-      !selectedNodes.has(edge.to)
-    ) {
-      continue;
-    }
-
-    const isNew =
-      edge.traveled === false &&
-      !edge.isManualConnector;
-
-    let score = 0;
-
-    if (isNew) {
-      score +=
-        (edge.distance || 0) * 5;
-    } else {
-      // An old road gets only a modest score.
-      // Its reason for inclusion is closing a loop.
-      score +=
-        (edge.distance || 0) * 0.25;
-    }
-
-    closers.push({
-      edge: edge,
-      score: score,
-      isNew: isNew
-    });
-  }
-
-  closers.sort(
-    (a, b) =>
-      b.score - a.score
-  );
-
-  for (const item of closers) {
-    const edge =
-      item.edge;
-
-    if (
-      selectedDistanceM +
-        (edge.distance || 0) >
-      uniqueBudgetM
-    ) {
-      continue;
-    }
-
-    selected.add(edge);
-
-    selectedDistanceM +=
-      edge.distance || 0;
-  }
-
-  discoverySelectedEdges =
-    Array.from(selected);
-
-  // --------------------------------------------------
-  // 7. Diagnostics
-  // --------------------------------------------------
-
-  let newRoadM = 0;
-
   const degree =
     new Map();
 
-  const finalNodes =
-    new Set();
+  let selectedDistanceM = 0;
 
-  for (const edge of discoverySelectedEdges) {
-    finalNodes.add(edge.from);
-    finalNodes.add(edge.to);
+  // -----------------------------------------
+  // Start with our existing start-to-seed
+  // skeleton.
+  // -----------------------------------------
+
+  for (const edge of selected) {
+    if (!edge || !edge.from || !edge.to) {
+      continue;
+    }
+
+    selectedDistanceM +=
+      edge.distance || 0;
+
+    selectedNodes.add(edge.from);
+    selectedNodes.add(edge.to);
 
     degree.set(
       edge.from,
@@ -1041,7 +819,342 @@ function buildFastDiscoveryNetwork() {
       edge.to,
       (degree.get(edge.to) || 0) + 1
     );
+  }
 
+  // -----------------------------------------
+  // Helper for adding one edge and updating
+  // all of our network bookkeeping.
+  // -----------------------------------------
+
+  function addSelectedEdge(edge) {
+    if (
+      !edge ||
+      selected.has(edge)
+    ) {
+      return;
+    }
+
+    selected.add(edge);
+
+    selectedDistanceM +=
+      edge.distance || 0;
+
+    selectedNodes.add(edge.from);
+    selectedNodes.add(edge.to);
+
+    degree.set(
+      edge.from,
+      (degree.get(edge.from) || 0) + 1
+    );
+
+    degree.set(
+      edge.to,
+      (degree.get(edge.to) || 0) + 1
+    );
+  }
+
+  // -----------------------------------------
+  // Grow dynamically.
+  //
+  // Unlike the previous version, every choice
+  // is re-evaluated after the previous road is
+  // selected.
+  // -----------------------------------------
+
+  let guard = 0;
+
+  while (
+    selectedDistanceM <
+      uniqueBudgetM &&
+    guard < edges.length * 2
+  ) {
+    guard++;
+
+    let bestEdge = null;
+    let bestScore = -Infinity;
+
+    for (const edge of edges) {
+      if (
+        !edge ||
+        !edge.from ||
+        !edge.to ||
+        selected.has(edge)
+      ) {
+        continue;
+      }
+
+      const edgeDistance =
+        edge.distance || 0;
+
+      if (
+        selectedDistanceM +
+          edgeDistance >
+        uniqueBudgetM
+      ) {
+        continue;
+      }
+
+      const fromSelected =
+        selectedNodes.has(edge.from);
+
+      const toSelected =
+        selectedNodes.has(edge.to);
+
+      // Must touch the network we already have.
+      if (
+        !fromSelected &&
+        !toSelected
+      ) {
+        continue;
+      }
+
+      const isNew =
+        edge.traveled === false &&
+        !edge.isManualConnector;
+
+      const closesCycle =
+        fromSelected &&
+        toSelected;
+
+      let score = -Infinity;
+
+      // =====================================
+      // NEW ROAD
+      // =====================================
+
+      if (isNew) {
+        score =
+          scoreDiscoveryCleanupEdge(
+            edge,
+            selected,
+            selectedNodes,
+            0
+          );
+
+        // -----------------------------------
+        // Look one intersection ahead.
+        //
+        // Reward a road that opens access to
+        // more untraveled streets.
+        // -----------------------------------
+
+        if (!closesCycle) {
+          const outwardNode =
+            fromSelected
+              ? edge.to
+              : edge.from;
+
+          let onwardNewM = 0;
+
+          if (
+            outwardNode &&
+            outwardNode.edges
+          ) {
+            for (
+              const next
+              of outwardNode.edges
+            ) {
+              if (
+                !next ||
+                next === edge ||
+                selected.has(next) ||
+                next.traveled === true ||
+                next.isManualConnector
+              ) {
+                continue;
+              }
+
+              onwardNewM +=
+                next.distance || 0;
+            }
+          }
+
+          score +=
+            onwardNewM * 1.5;
+
+          // Extending from an odd-degree node is
+          // somewhat better than creating two new
+          // odd-degree points.
+          const attachedNode =
+            fromSelected
+              ? edge.from
+              : edge.to;
+
+          const attachedDegree =
+            degree.get(attachedNode) || 0;
+
+          if (
+            attachedDegree % 2 === 1
+          ) {
+            score += 250;
+          } else {
+            score -= 150;
+          }
+
+          // A road that immediately creates a new
+          // dead end is allowed, but it needs to be
+          // valuable enough to justify it.
+          if (onwardNewM === 0) {
+            score -= 350;
+          }
+        }
+
+        // -----------------------------------
+        // A NEW road that closes a cycle is
+        // especially valuable.
+        // -----------------------------------
+
+        if (closesCycle) {
+          const fromDegree =
+            degree.get(edge.from) || 0;
+
+          const toDegree =
+            degree.get(edge.to) || 0;
+
+          const fromOdd =
+            fromDegree % 2 === 1;
+
+          const toOdd =
+            toDegree % 2 === 1;
+
+          if (
+            fromOdd &&
+            toOdd
+          ) {
+            // New road + loop + removes two odd nodes.
+            score += 1000;
+          } else if (
+            !fromOdd &&
+            !toOdd
+          ) {
+            // Still a useful new loop, but it creates
+            // two odd nodes.
+            score -= 200;
+          }
+        }
+      }
+
+      // =====================================
+      // PREVIOUSLY-RUN ROAD
+      // =====================================
+
+      else {
+        // -----------------------------------
+        // OLD road connecting two nodes that
+        // are already selected.
+        //
+        // Only use it when it closes a cycle
+        // AND fixes two odd-degree nodes.
+        // -----------------------------------
+
+        if (closesCycle) {
+          const fromDegree =
+            degree.get(edge.from) || 0;
+
+          const toDegree =
+            degree.get(edge.to) || 0;
+
+          const fromOdd =
+            fromDegree % 2 === 1;
+
+          const toOdd =
+            toDegree % 2 === 1;
+
+          if (
+            fromOdd &&
+            toOdd
+          ) {
+            score =
+              1400 -
+              edgeDistance * 2;
+          } else {
+            // Don't cover an old road merely because
+            // it happens to sit inside the area.
+            continue;
+          }
+        }
+
+        // -----------------------------------
+        // OLD road extending outward.
+        //
+        // Only allow it if the far end directly
+        // opens access to new streets.
+        // -----------------------------------
+
+        else {
+          const outwardNode =
+            fromSelected
+              ? edge.to
+              : edge.from;
+
+          let newRoadBeyondM = 0;
+
+          if (
+            outwardNode &&
+            outwardNode.edges
+          ) {
+            for (
+              const next
+              of outwardNode.edges
+            ) {
+              if (
+                !next ||
+                selected.has(next) ||
+                next.traveled === true ||
+                next.isManualConnector
+              ) {
+                continue;
+              }
+
+              newRoadBeyondM +=
+                next.distance || 0;
+            }
+          }
+
+          // No new road at the other end?
+          // Then there is no Discovery reason
+          // to run this old road.
+          if (
+            newRoadBeyondM <= 0
+          ) {
+            continue;
+          }
+
+          score =
+            newRoadBeyondM * 2.5 -
+            edgeDistance * 6;
+        }
+      }
+
+      if (
+        score >
+        bestScore
+      ) {
+        bestScore = score;
+        bestEdge = edge;
+      }
+    }
+
+    if (!bestEdge) {
+      break;
+    }
+
+    addSelectedEdge(bestEdge);
+  }
+
+  discoverySelectedEdges =
+    Array.from(selected);
+
+  // =========================================
+  // Diagnostics
+  // =========================================
+
+  let newRoadM = 0;
+
+  for (
+    const edge
+    of discoverySelectedEdges
+  ) {
     if (
       edge.traveled === false &&
       !edge.isManualConnector
@@ -1054,7 +1167,7 @@ function buildFastDiscoveryNetwork() {
   let odd = 0;
   let deadEnds = 0;
 
-  for (const node of finalNodes) {
+  for (const node of selectedNodes) {
     const d =
       degree.get(node) || 0;
 
@@ -1069,7 +1182,7 @@ function buildFastDiscoveryNetwork() {
 
   const cycleSignal =
     discoverySelectedEdges.length -
-    finalNodes.size +
+    selectedNodes.size +
     1;
 
   console.log(
