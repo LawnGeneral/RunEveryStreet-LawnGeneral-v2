@@ -582,9 +582,7 @@ function buildDiscoverySeedNetwork(seedCandidate) {
 function getDiscoveryFrontierCandidates() {
   if (
     !discoverySelectedEdges ||
-    discoverySelectedEdges.length === 0 ||
-    !discoveryCandidates ||
-    discoveryCandidates.length === 0
+    discoverySelectedEdges.length === 0
   ) {
     return [];
   }
@@ -604,20 +602,36 @@ function getDiscoveryFrontierCandidates() {
 
   const frontier = [];
 
-  for (const candidate of discoveryCandidates) {
-    const edge = candidate.edge;
-
-    if (!edge || selectedEdges.has(edge)) {
+  for (const edge of edges) {
+    if (
+      !edge ||
+      !edge.from ||
+      !edge.to ||
+      selectedEdges.has(edge)
+    ) {
       continue;
     }
 
-    // Candidate must directly touch the current network.
+    // The edge must directly touch the current network.
     if (
-      selectedNodes.has(edge.from) ||
-      selectedNodes.has(edge.to)
+      !selectedNodes.has(edge.from) &&
+      !selectedNodes.has(edge.to)
     ) {
-      frontier.push(candidate);
+      continue;
     }
+
+    // Previously traveled roads are allowed as connectors.
+    // Only genuinely new roads receive new-road value.
+    const newRoadValue =
+      edge.traveled === false &&
+      !edge.isManualConnector
+        ? edge.newRoadValue || edge.distance
+        : 0;
+
+    frontier.push({
+      edge: edge,
+      newRoadValue: newRoadValue
+    });
   }
 
   return frontier;
