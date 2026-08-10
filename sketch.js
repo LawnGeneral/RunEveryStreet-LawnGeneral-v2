@@ -160,7 +160,21 @@ function cyclePlannerMode() {
   redraw();
   openlayersmap.render();
 }
+function getDiscoveryTargetDistance() {
+  const answer = prompt(
+    "Target route distance in miles?",
+    "6"
+  );
 
+  const miles = Number(answer);
+
+  if (!Number.isFinite(miles) || miles <= 0) {
+    showMessage("Invalid target distance.");
+    return null;
+  }
+
+  return miles * 1609.344;
+}
 function drawPlannerModeButton() {
   const x = 370;
   const y = height - 60;
