@@ -487,6 +487,8 @@ console.log(
     targetMiles.toFixed(1) +
     " miles."
   );
+	redraw();
+openlayersmap.render();
 }
 function drawPlannerModeButton() {
   const x = 370;
