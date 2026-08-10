@@ -357,6 +357,37 @@ function scoreDiscoverySeeds(candidates, targetM) {
   return scored;
 }
 
+function growDiscoveryOneStep() {
+  const frontier =
+    getDiscoveryFrontierCandidates();
+
+  const scored =
+    scoreDiscoveryFrontierCandidates(frontier);
+
+  if (scored.length === 0) {
+    console.log(
+      "Discovery growth stopped: no frontier roads available."
+    );
+    return false;
+  }
+
+  const winner =
+    scored[0].candidate.edge;
+
+  discoverySelectedEdges.push(winner);
+
+  console.log(
+    "Discovery added:",
+    (winner.distance / 1609.344).toFixed(3),
+    "mi | new road:",
+    winner.traveled === false &&
+    !winner.isManualConnector
+      ? "yes"
+      : "no"
+  );
+
+  return true;
+}
 function getDiscoveryCandidateClusters(candidates) {
   const candidateByEdge = new Map();
 
