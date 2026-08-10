@@ -451,6 +451,31 @@ discoverySeedCandidate =
 	buildDiscoverySeedNetwork(
   discoverySeedCandidate
 );
+	const frontier =
+  getDiscoveryFrontierCandidates();
+
+const scoredFrontier =
+  scoreDiscoveryFrontierCandidates(frontier);
+
+console.log(
+  "Discovery frontier:",
+  frontier.length,
+  "touching new-road segments"
+);
+
+console.log(
+  "Top frontier choices:",
+  scoredFrontier.slice(0, 10).map((item, index) => ({
+    rank: index + 1,
+    edgeMiles:
+      (item.candidate.edge.distance / 1609.344).toFixed(3),
+    nearbyNewMiles:
+      (item.nearbyRemainingNewRoadM / 1609.344).toFixed(2),
+    score:
+      item.score.toFixed(0)
+  }))
+);
+	
 console.log(
   "Top discovery seeds:",
   scoredSeeds.slice(0, 10).map((item, index) => ({
@@ -596,6 +621,72 @@ function getDiscoveryFrontierCandidates() {
   }
 
   return frontier;
+}
+
+function scoreDiscoveryFrontierCandidates(frontier) {
+  if (!frontier || frontier.length === 0) {
+    return [];
+  }
+
+  const selectedSet =
+    new Set(discoverySelectedEdges);
+
+  const scored = [];
+
+  // Smaller radius than the original seed search.
+  // At this stage we care about what is immediately
+  // promising around the edge we might add next.
+  const radiusM = 300;
+
+  for (const candidate of frontier) {
+    const seedMid =
+      getEdgeMidpoint(candidate.edge);
+
+    let nearbyRemainingNewRoadM = 0;
+
+    for (const other of discoveryCandidates) {
+      if (
+        !other ||
+        !other.edge ||
+        selectedSet.has(other.edge)
+      ) {
+        continue;
+      }
+
+      const otherMid =
+        getEdgeMidpoint(other.edge);
+
+      const distanceM =
+        getLatLonDistanceM(
+          seedMid.lat,
+          seedMid.lon,
+          otherMid.lat,
+          otherMid.lon
+        );
+
+      if (distanceM <= radiusM) {
+        nearbyRemainingNewRoadM +=
+          other.newRoadValue;
+      }
+    }
+
+    // Favor an edge that opens the door to lots
+    // of additional untraveled road nearby.
+    const score =
+      candidate.newRoadValue +
+      nearbyRemainingNewRoadM;
+
+    scored.push({
+      candidate: candidate,
+      nearbyRemainingNewRoadM:
+        nearbyRemainingNewRoadM,
+      score: score
+    });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored;
 }
 function drawPlannerModeButton() {
   const x = 370;
