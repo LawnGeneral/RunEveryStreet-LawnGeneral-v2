@@ -225,6 +225,36 @@ function getDiscoveryCandidateEdges(targetM) {
 
   return candidates;
 }
+
+function startDiscoveryPlanner() {
+  const targetM = getDiscoveryTargetDistance();
+
+  if (targetM === null) {
+    return;
+  }
+
+  const candidates =
+    getDiscoveryCandidateEdges(targetM);
+
+  const targetMiles =
+    targetM / 1609.344;
+
+  console.log(
+    "Discovery planner:",
+    targetMiles.toFixed(2),
+    "mile target,",
+    candidates.length,
+    "candidate new-road segments"
+  );
+
+  showMessage(
+    "Found " +
+    candidates.length +
+    " new-road candidates for " +
+    targetMiles.toFixed(1) +
+    " miles."
+  );
+}
 function drawPlannerModeButton() {
   const x = 370;
   const y = height - 60;
