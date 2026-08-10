@@ -96,6 +96,45 @@ function isLifeMapLocationVisited(lat, lon) {
   return false;
 }
 
+function isLifeMapEdgeVisited(edge) {
+  if (!lifeMapLoaded || !edge || !edge.from || !edge.to) {
+    return false;
+  }
+
+  const distanceM = Math.max(1, edge.distance || 1);
+
+  // Test points roughly every 10 meters along the road segment.
+  const sampleCount = Math.max(
+    3,
+    Math.ceil(distanceM / 10) + 1
+  );
+
+  let visitedSamples = 0;
+
+  for (let i = 0; i < sampleCount; i++) {
+    const t = i / (sampleCount - 1);
+
+    const lat =
+      edge.from.lat +
+      (edge.to.lat - edge.from.lat) * t;
+
+    const lon =
+      edge.from.lon +
+      (edge.to.lon - edge.from.lon) * t;
+
+    if (isLifeMapLocationVisited(lat, lon)) {
+      visitedSamples++;
+    }
+  }
+
+  const visitedFraction =
+    visitedSamples / sampleCount;
+
+  // Require most of the road to match your GPS history.
+  // This helps avoid counting a street just because you crossed it.
+  return visitedFraction >= 0.6;
+}
+
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
