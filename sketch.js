@@ -2277,7 +2277,21 @@ function mousePressed() {
       return;
     }
   }
+// 2.6) PLANNER MODE BUTTON
+const plannerX = 370;
+const plannerY = height - 60;
+const plannerW = 170;
+const plannerH = 40;
 
+if (
+  mouseX > plannerX &&
+  mouseX < plannerX + plannerW &&
+  mouseY > plannerY &&
+  mouseY < plannerY + plannerH
+) {
+  cyclePlannerMode();
+  return;
+}
   // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
   if (mapPanZoomMode) return;
 
