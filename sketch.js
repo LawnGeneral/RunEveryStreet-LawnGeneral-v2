@@ -66,8 +66,34 @@ function getLifeMapCellKey(lat, lon) {
 function isLifeMapLocationVisited(lat, lon) {
   if (!lifeMapLoaded) return false;
 
-  const key = getLifeMapCellKey(lat, lon);
-  return lifeMapVisitedCells.has(key);
+  const CELL_M = 10;
+
+  const latOffset = CELL_M / 111320;
+
+  const lonOffset =
+    CELL_M /
+    (111320 * Math.max(
+      0.2,
+      Math.cos(lat * Math.PI / 180)
+    ));
+
+  // Check the location plus the 8 neighboring ~10 m cells.
+  // This allows for normal GPS/OSM positioning differences.
+  for (let y = -1; y <= 1; y++) {
+    for (let x = -1; x <= 1; x++) {
+
+      const testLat = lat + y * latOffset;
+      const testLon = lon + x * lonOffset;
+
+      const key = getLifeMapCellKey(testLat, testLon);
+
+      if (lifeMapVisitedCells.has(key)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 // --- Route style selector ---
