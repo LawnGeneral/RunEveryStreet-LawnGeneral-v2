@@ -1114,26 +1114,61 @@ function drawManualConnectorPreview() {
 }
 
 function showEdges() {
-    let closestedgetomousedist = Infinity;
+  let closestedgetomousedist = Infinity;
 
-    // Always draw edges
-    for (let i = 0; i < edges.length; i++) {
-        edges[i].show();
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i];
 
-        // Only compute closest edge when trimming AND when canvas is interactive (EDIT mode)
-        if (mode === trimmodemode && !mapPanZoomMode) {
-            let d = edges[i].distanceToPoint(mouseX, mouseY);
-            if (d < closestedgetomousedist) {
-                closestedgetomousedist = d;
-                closestedgetomouse = i;
-            }
-        }
+    // Draw road normally
+    e.show();
+
+    // Highlight roads NOT found in the LifeMap
+    if (lifeMapLoaded && e.traveled === false) {
+      const fromCoord = ol.proj.fromLonLat([
+        e.from.lon,
+        e.from.lat
+      ]);
+
+      const toCoord = ol.proj.fromLonLat([
+        e.to.lon,
+        e.to.lat
+      ]);
+
+      const fromPixel =
+        openlayersmap.getPixelFromCoordinate(fromCoord);
+
+      const toPixel =
+        openlayersmap.getPixelFromCoordinate(toCoord);
+
+      if (fromPixel && toPixel) {
+        push();
+        colorMode(RGB);
+
+        stroke(0, 230, 255);
+        strokeWeight(6);
+        noFill();
+
+        line(
+          fromPixel[0],
+          fromPixel[1],
+          toPixel[0],
+          toPixel[1]
+        );
+
+        pop();
+      }
     }
 
-    // IMPORTANT: Do NOT highlight the "closest" edge.
-    // Highlighting is what makes it look like a click turned the segment red.
-    // If you want hover feedback later, we can add a subtle highlight only on hover,
-    // but for now this makes trimming feel instant and unambiguous.
+    // Keep existing trimming behavior
+    if (mode === trimmodemode && !mapPanZoomMode) {
+      let d = e.distanceToPoint(mouseX, mouseY);
+
+      if (d < closestedgetomousedist) {
+        closestedgetomousedist = d;
+        closestedgetomouse = i;
+      }
+    }
+  }
 }
 
 
