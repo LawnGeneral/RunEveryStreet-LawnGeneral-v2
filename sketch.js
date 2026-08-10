@@ -160,6 +160,36 @@ function cyclePlannerMode() {
   redraw();
   openlayersmap.render();
 }
+
+function drawPlannerModeButton() {
+  const x = 370;
+  const y = height - 60;
+  const w = 170;
+  const h = 40;
+
+  push();
+  colorMode(RGB);
+
+  fill(35, 35, 35, 220);
+  stroke(255);
+  strokeWeight(2);
+  rect(x, y, w, h, 8);
+
+  fill(255);
+  noStroke();
+  textAlign(CENTER, CENTER);
+  textSize(12);
+  textStyle(BOLD);
+
+  const label =
+    selectedPlannerMode === "manual"
+      ? "PLAN: MANUAL AREA"
+      : "PLAN: FIND NEW ROADS";
+
+  text(label, x + w / 2, y + h / 2);
+
+  pop();
+}
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
