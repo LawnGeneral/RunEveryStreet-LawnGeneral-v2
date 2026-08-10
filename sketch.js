@@ -147,6 +147,7 @@ const PLANNER_MODES = [
 ];
 
 let selectedPlannerMode = "manual";
+let discoverySeedCandidate = null;
 
 function cyclePlannerMode() {
   if (selectedPlannerMode === "manual") {
@@ -434,7 +435,11 @@ function startDiscoveryPlanner() {
 
 	const scoredSeeds =
   scoreDiscoverySeeds(candidates, targetM);
-
+discoverySeedCandidate =
+  scoredSeeds.length > 0
+    ? scoredSeeds[0].candidate
+    : null;
+	
 console.log(
   "Top discovery seeds:",
   scoredSeeds.slice(0, 10).map((item, index) => ({
