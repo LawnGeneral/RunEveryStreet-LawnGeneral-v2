@@ -836,6 +836,81 @@ function buildFastDiscoveryNetwork() {
     "mi"
   );
 }
+
+function solveDiscoveryNetwork() {
+  if (
+    !discoverySelectedEdges ||
+    discoverySelectedEdges.length === 0
+  ) {
+    showMessage("Discovery did not select any roads.");
+    return;
+  }
+
+  // Preserve the complete loaded map.
+  const fullEdges = edges;
+  const fullNodes = nodes;
+
+  const fullTotalEdgeDistance = totaledgedistance;
+  const fullTotalRoadsDist = totalRoadsDist;
+  const fullTotalUniqueRoads = totaluniqueroads;
+
+  // Give the existing solver ONLY the roads selected
+  // by the Discovery planner.
+  edges = discoverySelectedEdges.slice();
+
+  const discoveryNodeSet = new Set();
+
+  for (const edge of edges) {
+    if (!edge || !edge.from || !edge.to) continue;
+
+    discoveryNodeSet.add(edge.from);
+    discoveryNodeSet.add(edge.to);
+  }
+
+  if (startnode) {
+    discoveryNodeSet.add(startnode);
+  }
+
+  nodes = Array.from(discoveryNodeSet);
+
+  // Recalculate the temporary graph's road distance.
+  totaledgedistance = 0;
+
+  for (const edge of edges) {
+    totaledgedistance += edge.distance || 0;
+  }
+
+  totalRoadsDist = totaledgedistance;
+  totaluniqueroads = edges.length;
+
+  resetEdges();
+  rebuildEdgeLookup();
+
+  console.log(
+    "Solving Discovery subgraph:",
+    edges.length,
+    "edges |",
+    (totalRoadsDist / 1609.344).toFixed(2),
+    "unique miles"
+  );
+
+  // Use the existing proven closed-route solver.
+  solveRES();
+
+  // Restore the complete loaded map after solving.
+  edges = fullEdges;
+  nodes = fullNodes;
+
+  totaledgedistance = fullTotalEdgeDistance;
+  totalRoadsDist = fullTotalRoadsDist;
+  totaluniqueroads = fullTotalUniqueRoads;
+
+  resetEdges();
+  rebuildEdgeLookup();
+
+  redraw();
+  openlayersmap.render();
+}
 function getDiscoveryFrontierCandidates() {
   if (
     !discoverySelectedEdges ||
