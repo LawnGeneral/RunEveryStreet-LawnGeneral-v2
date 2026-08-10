@@ -2336,7 +2336,10 @@ function mousePressed() {
       openlayersmap.render();
       return;
     }
-
+if (selectedPlannerMode === "discovery") {
+  startDiscoveryPlanner();
+  return;
+}
     mode = solveRESmode;
     solverRunning = false;
 
