@@ -805,6 +805,16 @@ out;
 
       totalRoadsDist = totaledgedistance;
       totaluniqueroads = edges.length;
+		const traveledCount = edges.filter(e => e.traveled === true).length;
+const untraveledCount = edges.length - traveledCount;
+
+console.log(
+  "LifeMap match:",
+  traveledCount,
+  "traveled segments,",
+  untraveledCount,
+  "untraveled segments"
+);
 
       // --- NEW: allow lookup of edges by node pair for cue generation ---
       rebuildEdgeLookup();
