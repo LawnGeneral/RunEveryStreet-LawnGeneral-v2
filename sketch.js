@@ -321,6 +321,17 @@ function startDiscoveryPlanner() {
 	const clusters =
   getDiscoveryCandidateClusters(candidates);
 
+	console.table(
+  clusters.map((cluster, index) => ({
+    cluster: index + 1,
+    segments: cluster.edges.length,
+    newRoadMiles:
+      (cluster.newRoadDistance / 1609.344).toFixed(2),
+    nearestLoopMiles:
+      (cluster.minimumLoopCost / 1609.344).toFixed(2)
+  }))
+);
+
   const targetMiles =
     targetM / 1609.344;
 
