@@ -351,11 +351,6 @@ function scoreDiscoverySeeds(candidates, targetM) {
   return scored;
 }
 
-  scored.sort((a, b) => b.score - a.score);
-
-  return scored;
-}
-
 function getDiscoveryCandidateClusters(candidates) {
   const candidateByEdge = new Map();
 
