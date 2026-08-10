@@ -149,6 +149,7 @@ const PLANNER_MODES = [
 let selectedPlannerMode = "manual";
 let discoverySeedCandidate = null;
 let discoverySelectedEdges = [];
+let discoveryTargetM = null;
 
 function cyclePlannerMode() {
   if (selectedPlannerMode === "manual") {
@@ -190,11 +191,13 @@ function getDiscoveryCandidateEdges(targetM) {
   const candidates = [];
 
   for (const edge of edges) {
-    if (!edge || !edge.from || !edge.to) continue;
+  if (!edge || !edge.from || !edge.to) continue;
 
-    // Discovery mode cares about roads you have NOT run
-    if (edge.traveled === true) continue;
+  // Manual connectors help routing but are not real "new road"
+  if (edge.isManualConnector) continue;
 
+  // Discovery mode cares about roads you have NOT run
+  if (edge.traveled === true) continue;
     const distToFrom = dist.get(edge.from);
     const distToTo = dist.get(edge.to);
 
@@ -426,6 +429,7 @@ function getDiscoveryCandidateClusters(candidates) {
 
 function startDiscoveryPlanner() {
   const targetM = getDiscoveryTargetDistance();
+	discoveryTargetM = targetM;
 
   if (targetM === null) {
     return;
