@@ -43,6 +43,26 @@ async function loadLifeMapGrid() {
   }
 }
 
+function getLifeMapCellKey(lat, lon) {
+  const CELL_M = 10;
+  const LAT_STEP = CELL_M / 111320;
+
+  const lat_i = Math.round(lat / LAT_STEP);
+  const representativeLat = lat_i * LAT_STEP;
+
+  const lonStep =
+    CELL_M /
+    (111320 *
+      Math.max(
+        0.2,
+        Math.cos(representativeLat * Math.PI / 180)
+      ));
+
+  const lon_i = Math.round(lon / lonStep);
+
+  return lat_i + "," + lon_i;
+}
+
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
