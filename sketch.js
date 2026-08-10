@@ -63,6 +63,13 @@ function getLifeMapCellKey(lat, lon) {
   return lat_i + "," + lon_i;
 }
 
+function isLifeMapLocationVisited(lat, lon) {
+  if (!lifeMapLoaded) return false;
+
+  const key = getLifeMapCellKey(lat, lon);
+  return lifeMapVisitedCells.has(key);
+}
+
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
