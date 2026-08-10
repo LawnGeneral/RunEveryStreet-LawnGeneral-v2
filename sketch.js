@@ -237,6 +237,104 @@ candidates.push({
   return candidates;
 }
 
+function getEdgeMidpoint(edge) {
+  return {
+    lat: (edge.from.lat + edge.to.lat) / 2,
+    lon: (edge.from.lon + edge.to.lon) / 2
+  };
+}
+
+function getLatLonDistanceM(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+
+  const p1 = lat1 * Math.PI / 180;
+  const p2 = lat2 * Math.PI / 180;
+
+  const dLat =
+    (lat2 - lat1) * Math.PI / 180;
+
+  const dLon =
+    (lon2 - lon1) * Math.PI / 180;
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(p1) *
+      Math.cos(p2) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+
+  const c =
+    2 * Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    );
+
+  return R * c;
+}
+
+function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
+  const seedMid =
+    getEdgeMidpoint(seedCandidate.edge);
+
+  let newRoadM = 0;
+
+  for (const candidate of candidates) {
+    const mid =
+      getEdgeMidpoint(candidate.edge);
+
+    const distanceM =
+      getLatLonDistanceM(
+        seedMid.lat,
+        seedMid.lon,
+        mid.lat,
+        mid.lon
+      );
+
+    if (distanceM <= radiusM) {
+      newRoadM += candidate.newRoadValue;
+    }
+  }
+
+  return newRoadM;
+}
+
+function scoreDiscoverySeeds(candidates, targetM) {
+  // Look roughly 3/4 mile around each possible seed.
+  const radiusM = 1200;
+
+  const scored = [];
+
+  for (const candidate of candidates) {
+    const localNewRoadM =
+      getDiscoveryLocalNewRoad(
+        candidates,
+        candidate,
+        radiusM
+      );
+
+    const accessFraction =
+      candidate.minimumLoopCost / targetM;
+
+    // Nearby dense pockets score highest.
+    // Far-away pockets lose value because getting there
+    // consumes more of the route-distance budget.
+    const score =
+      localNewRoadM *
+      Math.max(0, 1 - accessFraction);
+
+    scored.push({
+      candidate: candidate,
+      localNewRoadM: localNewRoadM,
+      accessFraction: accessFraction,
+      score: score
+    });
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored;
+}
+
 function getDiscoveryCandidateClusters(candidates) {
   const candidateByEdge = new Map();
 
@@ -317,6 +415,22 @@ function startDiscoveryPlanner() {
 
   const candidates =
     getDiscoveryCandidateEdges(targetM);
+
+	const scoredSeeds =
+  scoreDiscoverySeeds(candidates, targetM);
+
+console.log(
+  "Top discovery seeds:",
+  scoredSeeds.slice(0, 10).map((item, index) => ({
+    rank: index + 1,
+    localNewMiles:
+      (item.localNewRoadM / 1609.344).toFixed(2),
+    accessLoopMiles:
+      (item.candidate.minimumLoopCost / 1609.344).toFixed(2),
+    score:
+      item.score.toFixed(0)
+  }))
+);
 
 	const clusters =
   getDiscoveryCandidateClusters(candidates);
