@@ -318,16 +318,21 @@ function startDiscoveryPlanner() {
   const candidates =
     getDiscoveryCandidateEdges(targetM);
 
+	const clusters =
+  getDiscoveryCandidateClusters(candidates);
+
   const targetMiles =
     targetM / 1609.344;
 
   console.log(
-    "Discovery planner:",
-    targetMiles.toFixed(2),
-    "mile target,",
-    candidates.length,
-    "candidate new-road segments"
-  );
+  "Discovery planner:",
+  targetMiles.toFixed(2),
+  "mile target,",
+  candidates.length,
+  "candidate new-road segments,",
+  clusters.length,
+  "clusters"
+);
 
   showMessage(
     "Found " +
