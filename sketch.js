@@ -150,6 +150,7 @@ let selectedPlannerMode = "manual";
 let discoverySeedCandidate = null;
 let discoverySelectedEdges = [];
 let discoveryTargetM = null;
+let discoveryCandidates = [];
 
 function cyclePlannerMode() {
   if (selectedPlannerMode === "manual") {
@@ -437,6 +438,8 @@ function startDiscoveryPlanner() {
 
   const candidates =
     getDiscoveryCandidateEdges(targetM);
+	
+	discoveryCandidates = candidates;
 
 	const scoredSeeds =
   scoreDiscoverySeeds(candidates, targetM);
