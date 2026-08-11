@@ -191,6 +191,41 @@ function getDiscoverySearchRadiusM(targetM) {
   return targetM / 2 + HALF_MILE_M;
 }
 
+function getDiscoverySearchBounds(startNode, radiusM) {
+  if (
+    !startNode ||
+    !Number.isFinite(startNode.lat) ||
+    !Number.isFinite(startNode.lon) ||
+    !Number.isFinite(radiusM) ||
+    radiusM <= 0
+  ) {
+    return null;
+  }
+
+  const latDelta =
+    radiusM / 111320;
+
+  const lonDelta =
+    radiusM /
+    (
+      111320 *
+      Math.max(
+        0.2,
+        Math.cos(
+          startNode.lat *
+          Math.PI / 180
+        )
+      )
+    );
+
+  return {
+    south: startNode.lat - latDelta,
+    west: startNode.lon - lonDelta,
+    north: startNode.lat + latDelta,
+    east: startNode.lon + lonDelta
+  };
+}
+
 function getEdgeMidpoint(edge) {
   return {
     lat: (edge.from.lat + edge.to.lat) / 2,
@@ -244,6 +279,24 @@ function startDiscoveryPlanner() {
 
   const searchRadiusM =
     getDiscoverySearchRadiusM(targetM);
+
+	const searchBounds =
+  getDiscoverySearchBounds(
+    startnode,
+    searchRadiusM
+  );
+
+if (!searchBounds) {
+  showMessage(
+    "Could not calculate Discovery search area."
+  );
+  return;
+}
+
+console.log(
+  "Discovery search bounds:",
+  searchBounds
+);
 
   console.log(
     "Route-first Discovery requested:",
