@@ -243,58 +243,6 @@ function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
   return newRoadM;
 }
 
-function scoreDiscoverySeeds(candidates, targetM) {
-  // Look roughly 3/4 mile around each possible seed.
-  const radiusM = 1200;
-
-  const scored = [];
-
-  for (const candidate of candidates) {
-    const localNewRoadM =
-      getDiscoveryLocalNewRoad(
-        candidates,
-        candidate,
-        radiusM
-      );
-
-    // How much route distance remains after the minimum
-    // travel needed to reach this road and return home.
-    const remainingBudgetM =
-      Math.max(
-        0,
-        targetM - candidate.minimumLoopCost
-      );
-
-    // The seed road itself is already included in the
-    // minimum loop cost, so it can still count as new road.
-    const maxPossibleNewRoadM =
-      candidate.newRoadValue +
-      remainingBudgetM;
-
-    // Don't give a huge dense area credit for more new road
-    // than could actually fit inside this route.
-    const realisticNewRoadM =
-      Math.min(
-        localNewRoadM,
-        maxPossibleNewRoadM
-      );
-
-    const score = realisticNewRoadM;
-
-    scored.push({
-      candidate: candidate,
-      localNewRoadM: localNewRoadM,
-      remainingBudgetM: remainingBudgetM,
-      realisticNewRoadM: realisticNewRoadM,
-      score: score
-    });
-  }
-
-  // Best realistic new-road opportunity first.
-  scored.sort((a, b) => b.score - a.score);
-
-  return scored;
-}
 
 
 function startDiscoveryPlanner() {
