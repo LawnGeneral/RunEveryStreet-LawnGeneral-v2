@@ -11,6 +11,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.LIFEMAP_GITHUB_TOKEN }}
+          persist-credentials: true
+
       - name: Refresh Strava access token
         env:
           STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
@@ -55,65 +61,27 @@ jobs:
 
           echo "Newest Strava refresh token saved."
 
-      - name: Test latest run GPS stream
+      - name: Update LifeMap from Strava
         run: |
-          ACTIVITIES_FILE=$(mktemp)
+          python3 update_lifemap.py
 
-          HTTP_CODE=$(curl --silent --show-error \
-            --output "$ACTIVITIES_FILE" \
-            --write-out "%{http_code}" \
-            -H "Authorization: Bearer $STRAVA_ACCESS_TOKEN" \
-            "https://www.strava.com/api/v3/athlete/activities?per_page=30")
+      - name: Commit LifeMap changes
+        run: |
+          if git diff --quiet -- \
+            strava_lifemap_grid_10m.csv.gz \
+            lifemap_state.json
+          then
+            echo "LifeMap is already current."
+          else
+            git config user.name "LifeMap Updater"
+            git config user.email "actions@users.noreply.github.com"
 
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Could not retrieve Strava activities."
-            exit 1
+            git add \
+              strava_lifemap_grid_10m.csv.gz \
+              lifemap_state.json
+
+            git commit -m "Update Strava LifeMap"
+            git push
+
+            echo "Updated LifeMap committed to GitHub."
           fi
-
-          LATEST_RUN_ID=$(jq -r \
-            '[.[] | select(.sport_type == "Run" or .type == "Run")][0].id // empty' \
-            "$ACTIVITIES_FILE")
-
-          LATEST_RUN_NAME=$(jq -r \
-            '[.[] | select(.sport_type == "Run" or .type == "Run")][0].name // "Unnamed run"' \
-            "$ACTIVITIES_FILE")
-
-          if [ -z "$LATEST_RUN_ID" ]; then
-            echo "No recent run was found."
-            exit 1
-          fi
-
-          echo "Latest run: $LATEST_RUN_NAME"
-
-          STREAM_FILE=$(mktemp)
-
-          HTTP_CODE=$(curl --silent --show-error \
-            --output "$STREAM_FILE" \
-            --write-out "%{http_code}" \
-            -H "Authorization: Bearer $STRAVA_ACCESS_TOKEN" \
-            "https://www.strava.com/api/v3/activities/$LATEST_RUN_ID/streams?keys=latlng&key_by_type=true")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "Could not retrieve GPS stream. HTTP $HTTP_CODE"
-            jq '{message, errors}' "$STREAM_FILE"
-            exit 1
-          fi
-
-          GPS_COUNT=$(jq '
-            if type == "object" then
-              (.latlng.data // [] | length)
-            elif type == "array" then
-              ([.[] | select(.type == "latlng")][0].data // [] | length)
-            else
-              0
-            end
-          ' "$STREAM_FILE")
-
-          echo "GPS points received: $GPS_COUNT"
-
-          if [ "$GPS_COUNT" -eq 0 ]; then
-            echo "No GPS points were returned."
-            exit 1
-          fi
-
-          echo "Latest run GPS access successful."
