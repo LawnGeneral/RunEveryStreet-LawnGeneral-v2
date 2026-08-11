@@ -162,69 +162,7 @@ function cyclePlannerMode() {
   redraw();
   openlayersmap.render();
 }
-function getDiscoveryTargetDistance() {
-  const answer = prompt(
-    "Target route distance in miles?",
-    "6"
-  );
 
-  const miles = Number(answer);
-
-  if (!Number.isFinite(miles) || miles <= 0) {
-    showMessage("Invalid target distance.");
-    return null;
-  }
-
-  return miles * 1609.344;
-}
-
-function getDiscoverySearchRadiusM(targetM) {
-  if (
-    !Number.isFinite(targetM) ||
-    targetM <= 0
-  ) {
-    return null;
-  }
-
-  const HALF_MILE_M = 804.672;
-
-  return targetM / 2 + HALF_MILE_M;
-}
-
-function getDiscoverySearchBounds(startNode, radiusM) {
-  if (
-    !startNode ||
-    !Number.isFinite(startNode.lat) ||
-    !Number.isFinite(startNode.lon) ||
-    !Number.isFinite(radiusM) ||
-    radiusM <= 0
-  ) {
-    return null;
-  }
-
-  const latDelta =
-    radiusM / 111320;
-
-  const lonDelta =
-    radiusM /
-    (
-      111320 *
-      Math.max(
-        0.2,
-        Math.cos(
-          startNode.lat *
-          Math.PI / 180
-        )
-      )
-    );
-
-  return {
-    south: startNode.lat - latDelta,
-    west: startNode.lon - lonDelta,
-    north: startNode.lat + latDelta,
-    east: startNode.lon + lonDelta
-  };
-}
 
 function getEdgeMidpoint(edge) {
   return {
@@ -270,38 +208,6 @@ function startDiscoveryPlanner() {
 
   redraw();
   openlayersmap.render();
-}
-
-
-
-function drawPlannerModeButton() {
-  const x = 370;
-  const y = height - 60;
-  const w = 170;
-  const h = 40;
-
-  push();
-  colorMode(RGB);
-
-  fill(35, 35, 35, 220);
-  stroke(255);
-  strokeWeight(2);
-  rect(x, y, w, h, 8);
-
-  fill(255);
-  noStroke();
-  textAlign(CENTER, CENTER);
-  textSize(12);
-  textStyle(BOLD);
-
-  const label =
-    selectedPlannerMode === "manual"
-      ? "PLAN: MANUAL AREA"
-      : "PLAN: FIND NEW ROADS";
-
-  text(label, x + w / 2, y + h / 2);
-
-  pop();
 }
 
 
@@ -679,7 +585,7 @@ function renderRouteGraphics() {
  */
 
 function renderUIOverlays() {
-	drawPlannerModeButton();
+
 
   // 1) MAP PREPARATION STATS (Selection / Trimming)
   if (mode === trimmodemode || mode === selectnodemode) {
@@ -2358,10 +2264,7 @@ function mousePressed() {
       openlayersmap.render();
       return;
     }
-if (selectedPlannerMode === "discovery") {
-  startDiscoveryPlanner();
-  return;
-}
+
     mode = solveRESmode;
     solverRunning = false;
 
@@ -2391,21 +2294,7 @@ solveRES();
       return;
     }
   }
-// 2.6) PLANNER MODE BUTTON
-const plannerX = 370;
-const plannerY = height - 60;
-const plannerW = 170;
-const plannerH = 40;
 
-if (
-  mouseX > plannerX &&
-  mouseX < plannerX + plannerW &&
-  mouseY > plannerY &&
-  mouseY < plannerY + plannerH
-) {
-  cyclePlannerMode();
-  return;
-}
   // 3) If we're in PAN/ZOOM mode, ignore canvas editing clicks
   if (mapPanZoomMode) return;
 
