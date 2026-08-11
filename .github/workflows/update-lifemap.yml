@@ -1,0 +1,55 @@
+name: Update Strava LifeMap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-lifemap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Refresh Strava access token
+        env:
+          STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
+          STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
+          STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
+        run: |
+          RESPONSE=$(curl --fail --silent --show-error \
+            -X POST https://www.strava.com/oauth/token \
+            -d client_id="$STRAVA_CLIENT_ID" \
+            -d client_secret="$STRAVA_CLIENT_SECRET" \
+            -d grant_type=refresh_token \
+            -d refresh_token="$STRAVA_REFRESH_TOKEN")
+
+          ACCESS_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
+          NEW_REFRESH_TOKEN=$(echo "$RESPONSE" | jq -r '.refresh_token')
+
+          if [ "$ACCESS_TOKEN" = "null" ] || [ -z "$ACCESS_TOKEN" ]; then
+            echo "Strava did not return an access token."
+            exit 1
+          fi
+
+          if [ "$NEW_REFRESH_TOKEN" = "null" ] || [ -z "$NEW_REFRESH_TOKEN" ]; then
+            echo "Strava did not return a refresh token."
+            exit 1
+          fi
+
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "::add-mask::$NEW_REFRESH_TOKEN"
+
+          echo "Strava authentication successful."
+
+          echo "NEW_REFRESH_TOKEN=$NEW_REFRESH_TOKEN" >> "$GITHUB_ENV"
+
+      - name: Save newest Strava refresh token
+        env:
+          GH_TOKEN: ${{ secrets.LIFEMAP_GITHUB_TOKEN }}
+        run: |
+          gh secret set STRAVA_REFRESH_TOKEN \
+            --body "$NEW_REFRESH_TOKEN" \
+            --repo "$GITHUB_REPOSITORY"
+
+          echo "Newest Strava refresh token saved."
