@@ -135,34 +135,6 @@ function isLifeMapEdgeVisited(edge) {
   return visitedFraction >= 0.6;
 }
 
-const PLANNER_MODES = [
-  {
-    key: "manual",
-    label: "Manual Area"
-  },
-  {
-    key: "discovery",
-    label: "Find New Roads"
-  }
-];
-
-let selectedPlannerMode = "manual";
-
-
-
-function cyclePlannerMode() {
-  if (selectedPlannerMode === "manual") {
-    selectedPlannerMode = "discovery";
-    showMessage("Planner: Find New Roads");
-  } else {
-    selectedPlannerMode = "manual";
-    showMessage("Planner: Manual Area");
-  }
-
-  redraw();
-  openlayersmap.render();
-}
-
 
 function getEdgeMidpoint(edge) {
   return {
