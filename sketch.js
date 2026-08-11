@@ -261,7 +261,702 @@ function getLatLonDistanceM(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
+function buildDiscoveryTestRoute(targetM) {
+  if (
+    !startnode ||
+    !Number.isFinite(targetM) ||
+    targetM <= 0
+  ) {
+    return null;
+  }
 
+  // Make sure node adjacency matches the current road graph.
+  resetEdges();
+
+  // ------------------------------------------------------------
+  // Reconstruct a path from a previousEdge map.
+  // ------------------------------------------------------------
+  function reconstructPath(
+    previousEdge,
+    source,
+    target
+  ) {
+    const path = [];
+    const seen = new Set();
+
+    let current = target;
+
+    while (
+      current &&
+      current !== source
+    ) {
+      if (seen.has(current)) {
+        return null;
+      }
+
+      seen.add(current);
+
+      const edge =
+        previousEdge.get(current);
+
+      if (!edge) {
+        return null;
+      }
+
+      path.push(edge);
+
+      current =
+        edge.OtherNodeofEdge(current);
+    }
+
+    if (current !== source) {
+      return null;
+    }
+
+    path.reverse();
+
+    return path;
+  }
+
+  // ------------------------------------------------------------
+  // Find a return path.
+  //
+  // Roads used on the outbound leg become expensive, encouraging
+  // the return leg to form a real loop instead of simply reversing
+  // the outbound route.
+  //
+  // Untraveled roads get a modest discount.
+  // ------------------------------------------------------------
+  function findBiasedReturnPath(
+    source,
+    target,
+    outboundEdges
+  ) {
+    const distances = new Map();
+    const previousEdge = new Map();
+
+    const heap = [];
+
+    function heapPush(item) {
+      heap.push(item);
+
+      let index =
+        heap.length - 1;
+
+      while (index > 0) {
+        const parent =
+          Math.floor(
+            (index - 1) / 2
+          );
+
+        if (
+          heap[parent].cost <=
+          heap[index].cost
+        ) {
+          break;
+        }
+
+        const temp =
+          heap[parent];
+
+        heap[parent] =
+          heap[index];
+
+        heap[index] =
+          temp;
+
+        index = parent;
+      }
+    }
+
+    function heapPop() {
+      if (heap.length === 0) {
+        return null;
+      }
+
+      const result =
+        heap[0];
+
+      const last =
+        heap.pop();
+
+      if (heap.length > 0) {
+        heap[0] = last;
+
+        let index = 0;
+
+        while (true) {
+          const left =
+            index * 2 + 1;
+
+          const right =
+            index * 2 + 2;
+
+          let smallest =
+            index;
+
+          if (
+            left < heap.length &&
+            heap[left].cost <
+            heap[smallest].cost
+          ) {
+            smallest = left;
+          }
+
+          if (
+            right < heap.length &&
+            heap[right].cost <
+            heap[smallest].cost
+          ) {
+            smallest = right;
+          }
+
+          if (smallest === index) {
+            break;
+          }
+
+          const temp =
+            heap[index];
+
+          heap[index] =
+            heap[smallest];
+
+          heap[smallest] =
+            temp;
+
+          index = smallest;
+        }
+      }
+
+      return result;
+    }
+
+    distances.set(
+      source,
+      0
+    );
+
+    heapPush({
+      node: source,
+      cost: 0
+    });
+
+    while (heap.length > 0) {
+      const item =
+        heapPop();
+
+      if (!item) {
+        break;
+      }
+
+      const node =
+        item.node;
+
+      const currentCost =
+        item.cost;
+
+      const knownCost =
+        distances.get(node);
+
+      if (
+        knownCost !== undefined &&
+        currentCost > knownCost
+      ) {
+        continue;
+      }
+
+      if (node === target) {
+        break;
+      }
+
+      for (
+        const edge of
+        node.edges || []
+      ) {
+        if (
+          !edge ||
+          !edge.from ||
+          !edge.to
+        ) {
+          continue;
+        }
+
+        const next =
+          edge.OtherNodeofEdge(node);
+
+        if (!next) {
+          continue;
+        }
+
+        const edgeDistance =
+          edge.distance || 0;
+
+        if (edgeDistance <= 0) {
+          continue;
+        }
+
+        let costFactor = 1;
+
+        // Strongly discourage simply retracing
+        // the outbound route.
+        if (
+          outboundEdges.has(edge)
+        ) {
+          costFactor *= 6;
+        }
+
+        // Prefer untraveled roads when possible.
+        if (
+          edge.traveled === false &&
+          !edge.isManualConnector
+        ) {
+          costFactor *= 0.72;
+        }
+
+        const nextCost =
+          currentCost +
+          edgeDistance *
+          costFactor;
+
+        const oldCost =
+          distances.has(next)
+            ? distances.get(next)
+            : Infinity;
+
+        if (
+          nextCost < oldCost
+        ) {
+          distances.set(
+            next,
+            nextCost
+          );
+
+          previousEdge.set(
+            next,
+            edge
+          );
+
+          heapPush({
+            node: next,
+            cost: nextCost
+          });
+        }
+      }
+    }
+
+    return reconstructPath(
+      previousEdge,
+      source,
+      target
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Shortest paths outward from the start.
+  // ------------------------------------------------------------
+  const startSearch =
+    dijkstra(startnode);
+
+  const distFromStart =
+    startSearch.distances;
+
+  const previousFromStart =
+    startSearch.previousEdge;
+
+  // A useful loop anchor should generally be somewhere around
+  // halfway through the total distance budget.
+  const minAnchorM =
+    targetM * 0.28;
+
+  const maxAnchorM =
+    targetM * 0.58;
+
+  const desiredAnchorM =
+    targetM * 0.44;
+
+  const anchorBuckets =
+    Array.from(
+      { length: 16 },
+      () => []
+    );
+
+  const cosLat =
+    Math.cos(
+      startnode.lat *
+      Math.PI / 180
+    );
+
+  // ------------------------------------------------------------
+  // Collect geographically distributed candidate anchor nodes.
+  // ------------------------------------------------------------
+  for (const node of nodes) {
+    if (
+      !node ||
+      node === startnode
+    ) {
+      continue;
+    }
+
+    const d =
+      distFromStart.get(node);
+
+    if (
+      !Number.isFinite(d) ||
+      d < minAnchorM ||
+      d > maxAnchorM
+    ) {
+      continue;
+    }
+
+    const dx =
+      (
+        node.lon -
+        startnode.lon
+      ) * cosLat;
+
+    const dy =
+      node.lat -
+      startnode.lat;
+
+    let angle =
+      Math.atan2(
+        dx,
+        dy
+      );
+
+    if (angle < 0) {
+      angle +=
+        Math.PI * 2;
+    }
+
+    const bucketIndex =
+      Math.min(
+        15,
+        Math.floor(
+          angle /
+          (Math.PI * 2) *
+          16
+        )
+      );
+
+    const touchesNewRoad =
+      (node.edges || []).some(
+        edge =>
+          edge &&
+          edge.traveled === false &&
+          !edge.isManualConnector
+      );
+
+    let anchorScore =
+      Math.abs(
+        d -
+        desiredAnchorM
+      );
+
+    // Prefer anchors that are already touching new roads.
+    if (touchesNewRoad) {
+      anchorScore -=
+        targetM * 0.10;
+    }
+
+    anchorBuckets[
+      bucketIndex
+    ].push({
+      node: node,
+      score: anchorScore
+    });
+  }
+
+  const anchors = [];
+
+  for (
+    const bucket of
+    anchorBuckets
+  ) {
+    bucket.sort(
+      (a, b) =>
+        a.score - b.score
+    );
+
+    // Up to four candidates in each direction.
+    for (
+      let i = 0;
+      i <
+      Math.min(
+        4,
+        bucket.length
+      );
+      i++
+    ) {
+      anchors.push(
+        bucket[i].node
+      );
+    }
+  }
+
+  console.log(
+    "Discovery loop anchors:",
+    anchors.length
+  );
+
+  if (anchors.length === 0) {
+    showMessage(
+      "No usable loop anchors were found in the loaded roads."
+    );
+
+    return null;
+  }
+
+  let bestCandidate = null;
+
+  // ------------------------------------------------------------
+  // Build ACTUAL closed-route candidates.
+  // ------------------------------------------------------------
+  for (const anchor of anchors) {
+    const outbound =
+      reconstructPath(
+        previousFromStart,
+        startnode,
+        anchor
+      );
+
+    if (
+      !outbound ||
+      outbound.length === 0
+    ) {
+      continue;
+    }
+
+    const outboundSet =
+      new Set(outbound);
+
+    const returnPath =
+      findBiasedReturnPath(
+        anchor,
+        startnode,
+        outboundSet
+      );
+
+    if (
+      !returnPath ||
+      returnPath.length === 0
+    ) {
+      continue;
+    }
+
+    const routeEdges = [
+      ...outbound,
+      ...returnPath
+    ];
+
+    let totalM = 0;
+    let newRoadM = 0;
+    let repeatedM = 0;
+
+    const usedEdges =
+      new Set();
+
+    for (
+      const edge of routeEdges
+    ) {
+      const d =
+        edge.distance || 0;
+
+      totalM += d;
+
+      if (
+        usedEdges.has(edge)
+      ) {
+        repeatedM += d;
+      } else {
+        usedEdges.add(edge);
+
+        if (
+          edge.traveled === false &&
+          !edge.isManualConnector
+        ) {
+          newRoadM += d;
+        }
+      }
+    }
+
+    const errorM =
+      Math.abs(
+        totalM -
+        targetM
+      );
+
+    const errorFraction =
+      errorM /
+      targetM;
+
+    // Distance is the first priority.
+    //
+    // Once routes are in the same distance band,
+    // reward new roads and punish repeats.
+    let distanceBand = 0;
+
+    if (errorFraction <= 0.03) {
+      distanceBand = 4;
+    } else if (
+      errorFraction <= 0.05
+    ) {
+      distanceBand = 3;
+    } else if (
+      errorFraction <= 0.10
+    ) {
+      distanceBand = 2;
+    } else if (
+      errorFraction <= 0.15
+    ) {
+      distanceBand = 1;
+    }
+
+    const score =
+      distanceBand *
+        100000000 +
+      newRoadM * 10 -
+      repeatedM * 6 -
+      errorM * 4;
+
+    if (
+      !bestCandidate ||
+      score >
+        bestCandidate.score
+    ) {
+      bestCandidate = {
+        edges: routeEdges,
+        totalM: totalM,
+        newRoadM: newRoadM,
+        repeatedM: repeatedM,
+        errorM: errorM,
+        score: score
+      };
+    }
+  }
+
+  if (!bestCandidate) {
+    showMessage(
+      "Could not build a closed Discovery route."
+    );
+
+    return null;
+  }
+
+  // ------------------------------------------------------------
+  // Convert the winning edge sequence into your normal Route.
+  // ------------------------------------------------------------
+  const route =
+    new Route(
+      startnode,
+      null
+    );
+
+  let current =
+    startnode;
+
+  for (
+    const edge of
+    bestCandidate.edges
+  ) {
+    const next =
+      edge.OtherNodeofEdge(
+        current
+      );
+
+    if (!next) {
+      console.error(
+        "Discovery route lost connectivity:",
+        edge
+      );
+
+      showMessage(
+        "Discovery route could not be assembled."
+      );
+
+      return null;
+    }
+
+    route.addWaypoint(
+      next,
+      edge.distance,
+      0
+    );
+
+    current = next;
+  }
+
+  if (current !== startnode) {
+    console.error(
+      "Discovery candidate was not closed."
+    );
+
+    showMessage(
+      "Discovery candidate did not return to the start."
+    );
+
+    return null;
+  }
+
+  // ------------------------------------------------------------
+  // Publish it as the active route.
+  // ------------------------------------------------------------
+  mode =
+    solveRESmode;
+
+  currentroute =
+    route;
+
+  bestroute =
+    route.copy
+      ? route.copy()
+      : route;
+
+  bestdistance =
+    route.distance;
+
+  remainingedges = 0;
+  navMode = false;
+  solverRunning = false;
+
+  console.log(
+    "Route-first TEST:",
+    (
+      bestCandidate.totalM /
+      1609.344
+    ).toFixed(2),
+    "mi | new:",
+    (
+      bestCandidate.newRoadM /
+      1609.344
+    ).toFixed(2),
+    "mi | repeated:",
+    (
+      bestCandidate.repeatedM /
+      1609.344
+    ).toFixed(2),
+    "mi | target:",
+    (
+      targetM /
+      1609.344
+    ).toFixed(2),
+    "mi"
+  );
+
+  showMessage(
+    "Discovery test route: " +
+    (
+      route.distance /
+      1609.344
+    ).toFixed(2) +
+    " miles"
+  );
+
+  redraw();
+  openlayersmap.render();
+
+  return bestCandidate;
+}
 function startDiscoveryPlanner() {
   if (!startnode) {
     showMessage(
@@ -311,7 +1006,7 @@ console.log(
     (targetM / 1609.344).toFixed(2) +
     " miles"
   );
-
+buildDiscoveryTestRoute(targetM);
   redraw();
   openlayersmap.render();
 }
