@@ -148,7 +148,6 @@ const PLANNER_MODES = [
 
 let selectedPlannerMode = "manual";
 let discoverySeedCandidate = null;
-let discoverySelectedEdges = [];
 let discoveryTargetM = null;
 let discoveryCandidates = [];
 
@@ -180,68 +179,7 @@ function getDiscoveryTargetDistance() {
   return miles * 1609.344;
 }
 
-function getDiscoveryCandidateEdges(targetM) {
-  if (!startnode || !Number.isFinite(targetM)) {
-    return [];
-  }
 
-  // Shortest distance from the start to every node
-  const result = dijkstra(startnode);
-  const dist = result.distances;
-
-  const candidates = [];
-
-  for (const edge of edges) {
-  if (!edge || !edge.from || !edge.to) continue;
-
-  // Manual connectors help routing but are not real "new road"
-  if (edge.isManualConnector) continue;
-
-  // Discovery mode cares about roads you have NOT run
-  if (edge.traveled === true) continue;
-    const distToFrom = dist.get(edge.from);
-    const distToTo = dist.get(edge.to);
-
-    if (!Number.isFinite(distToFrom) ||
-        !Number.isFinite(distToTo)) {
-      continue;
-    }
-
-    // Minimum closed-loop distance needed to:
-    // start -> reach this road -> run it -> return home
-    const minimumLoopCost =
-      distToFrom +
-      edge.distance +
-      distToTo;
-
-    if (minimumLoopCost <= targetM) {
-   const newRoadValue =
-  edge.newRoadValue || edge.distance;
-
-candidates.push({
-  edge: edge,
-  minimumLoopCost: minimumLoopCost,
-  newRoadValue: newRoadValue,
-
-  // Higher = more new road gained for the travel
-  // required to reach it and return home.
-  efficiency:
-    newRoadValue / minimumLoopCost
-});
-    }
-  }
-
-	candidates.sort(
-  (a, b) => a.minimumLoopCost - b.minimumLoopCost
-);
-  console.log(
-    "Discovery candidates:",
-    candidates.length,
-    "untraveled segments fit within target distance"
-  );
-
-  return candidates;
-}
 
 function getEdgeMidpoint(edge) {
   return {
