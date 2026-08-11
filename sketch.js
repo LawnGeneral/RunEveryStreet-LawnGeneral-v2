@@ -2580,7 +2580,7 @@ function drawRouteStyleButton() {
 
 // Map Initialization
 var openlayersmap = new ol.Map({
-  target: 'map',
+  target: 'ol-map',
 
   // ✅ OpenLayers v7 legacy build: defaults.defaults(...)
   controls: ol.control.defaults.defaults({
