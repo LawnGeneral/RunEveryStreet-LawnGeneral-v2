@@ -980,10 +980,14 @@ function startDiscoveryPlanner() {
   // the second attempt radically different.
   // -----------------------------------------
 
-  let correctionScale =
-    targetM /
-    firstSolvedM;
+const rawCorrection =
+  targetM /
+  firstSolvedM;
 
+let correctionScale =
+  1 +
+  (rawCorrection - 1) * 0.45;
+	
   correctionScale =
     Math.max(
       0.85,
