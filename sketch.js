@@ -2750,7 +2750,7 @@ function setup() {
     });
 
     // 5) HARD-FORCE map div size (fixes 400px-wide bug)
-    const mapEl = document.getElementById('map');
+    const mapEl = document.getElementById('ol-map');
     if (mapEl) {
         mapEl.style.width = window.innerWidth + "px";
         mapEl.style.height = (window.innerHeight - HEADER_H) + "px";
@@ -4850,7 +4850,7 @@ function windowResized() {
     canvas.position(0, HEADER_H);
 
     // Force map div size again
-    const mapEl = document.getElementById('map');
+    const mapEl = document.getElementById('ol-map');
     if (mapEl) {
         mapEl.style.width = window.innerWidth + "px";
         mapEl.style.height = (window.innerHeight - HEADER_H) + "px";
