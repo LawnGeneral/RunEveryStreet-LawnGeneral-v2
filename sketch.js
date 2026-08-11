@@ -270,208 +270,256 @@ function buildDiscoveryTestRoute(targetM) {
     return null;
   }
 
-  // Make sure node adjacency matches the current road graph.
   resetEdges();
 
   // ------------------------------------------------------------
-  // Reconstruct a path from a previousEdge map.
+  // Shortest distance home from every reachable node.
+  // Because our street graph is undirected, a Dijkstra from
+  // startnode also gives us the shortest return-home distance.
   // ------------------------------------------------------------
-  function reconstructPath(
-    previousEdge,
-    source,
-    target
-  ) {
-    const path = [];
-    const seen = new Set();
+  const homeSearch =
+    dijkstra(startnode);
 
-    let current = target;
+  const distHome =
+    homeSearch.distances;
 
-    while (
-      current &&
-      current !== source
-    ) {
-      if (seen.has(current)) {
-        return null;
-      }
+  const targetLower =
+    targetM * 0.97;
 
-      seen.add(current);
+  const targetUpper =
+    targetM * 1.03;
 
-      const edge =
-        previousEdge.get(current);
+  const absoluteUpper =
+    targetM * 1.06;
 
-      if (!edge) {
-        return null;
-      }
-
-      path.push(edge);
-
-      current =
-        edge.OtherNodeofEdge(current);
+  // ------------------------------------------------------------
+  // Reconstruct the normal shortest path from any node home.
+  // ------------------------------------------------------------
+  function getHomePath(node) {
+    if (node === startnode) {
+      return [];
     }
 
-    if (current !== source) {
-      return null;
-    }
-
-    path.reverse();
-
-    return path;
+    return getPathEdges(
+      node,
+      startnode
+    );
   }
 
   // ------------------------------------------------------------
-  // Find a return path.
-  //
-  // Roads used on the outbound leg become expensive, encouraging
-  // the return leg to form a real loop instead of simply reversing
-  // the outbound route.
-  //
-  // Untraveled roads get a modest discount.
+  // Calculate the statistics for an ACTUAL edge sequence.
   // ------------------------------------------------------------
-  function findBiasedReturnPath(
-    source,
-    target,
-    outboundEdges
-  ) {
-    const distances = new Map();
-    const previousEdge = new Map();
+  function getRouteStats(routeEdges) {
+    let totalM = 0;
+    let newRoadM = 0;
+    let repeatedM = 0;
+    let oldRoadM = 0;
 
-    const heap = [];
+    const used =
+      new Set();
 
-    function heapPush(item) {
-      heap.push(item);
+    for (const edge of routeEdges) {
+      if (!edge) continue;
 
-      let index =
-        heap.length - 1;
+      const d =
+        edge.distance || 0;
 
-      while (index > 0) {
-        const parent =
-          Math.floor(
-            (index - 1) / 2
-          );
+      totalM += d;
 
-        if (
-          heap[parent].cost <=
-          heap[index].cost
-        ) {
-          break;
-        }
-
-        const temp =
-          heap[parent];
-
-        heap[parent] =
-          heap[index];
-
-        heap[index] =
-          temp;
-
-        index = parent;
-      }
-    }
-
-    function heapPop() {
-      if (heap.length === 0) {
-        return null;
-      }
-
-      const result =
-        heap[0];
-
-      const last =
-        heap.pop();
-
-      if (heap.length > 0) {
-        heap[0] = last;
-
-        let index = 0;
-
-        while (true) {
-          const left =
-            index * 2 + 1;
-
-          const right =
-            index * 2 + 2;
-
-          let smallest =
-            index;
-
-          if (
-            left < heap.length &&
-            heap[left].cost <
-            heap[smallest].cost
-          ) {
-            smallest = left;
-          }
-
-          if (
-            right < heap.length &&
-            heap[right].cost <
-            heap[smallest].cost
-          ) {
-            smallest = right;
-          }
-
-          if (smallest === index) {
-            break;
-          }
-
-          const temp =
-            heap[index];
-
-          heap[index] =
-            heap[smallest];
-
-          heap[smallest] =
-            temp;
-
-          index = smallest;
-        }
-      }
-
-      return result;
-    }
-
-    distances.set(
-      source,
-      0
-    );
-
-    heapPush({
-      node: source,
-      cost: 0
-    });
-
-    while (heap.length > 0) {
-      const item =
-        heapPop();
-
-      if (!item) {
-        break;
-      }
-
-      const node =
-        item.node;
-
-      const currentCost =
-        item.cost;
-
-      const knownCost =
-        distances.get(node);
-
-      if (
-        knownCost !== undefined &&
-        currentCost > knownCost
-      ) {
+      if (used.has(edge)) {
+        repeatedM += d;
         continue;
       }
 
-      if (node === target) {
-        break;
+      used.add(edge);
+
+      if (
+        edge.traveled === false &&
+        !edge.isManualConnector
+      ) {
+        newRoadM += d;
+      } else {
+        oldRoadM += d;
+      }
+    }
+
+    return {
+      totalM: totalM,
+      newRoadM: newRoadM,
+      repeatedM: repeatedM,
+      oldRoadM: oldRoadM
+    };
+  }
+
+  // ------------------------------------------------------------
+  // Score a completed CLOSED route.
+  //
+  // Distance band comes first.
+  // Within the same band, new-road mileage is the major goal.
+  // ------------------------------------------------------------
+  function scoreCompletedRoute(stats) {
+    const errorM =
+      Math.abs(
+        stats.totalM -
+        targetM
+      );
+
+    const errorFraction =
+      errorM / targetM;
+
+    let distanceBand = 0;
+
+    if (errorFraction <= 0.03) {
+      distanceBand = 4;
+    } else if (errorFraction <= 0.05) {
+      distanceBand = 3;
+    } else if (errorFraction <= 0.08) {
+      distanceBand = 2;
+    } else if (errorFraction <= 0.12) {
+      distanceBand = 1;
+    }
+
+    return (
+      distanceBand * 100000000 +
+      stats.newRoadM * 100 -
+      stats.repeatedM * 35 -
+      stats.oldRoadM * 3 -
+      errorM * 8
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Score a PARTIAL route for beam-search survival.
+  //
+  // We strongly reward collecting new road.
+  // Reusing the same edge is expensive.
+  // We also give a small reward for continuing outward rather
+  // than immediately collapsing back toward home.
+  // ------------------------------------------------------------
+  function scorePartialState(state) {
+    const homeM =
+      distHome.get(state.node);
+
+    const projectedM =
+      state.distanceM +
+      (
+        Number.isFinite(homeM)
+          ? homeM
+          : targetM
+      );
+
+    const targetProgress =
+      Math.min(
+        1,
+        state.distanceM /
+        targetM
+      );
+
+    const distanceError =
+      Math.abs(
+        projectedM -
+        targetM
+      );
+
+    return (
+      state.newRoadM * 120 -
+      state.repeatM * 55 -
+      state.oldRoadM * 2 -
+      distanceError * 0.8 +
+      targetProgress * 300
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Initial beam.
+  // ------------------------------------------------------------
+  let beam = [
+    {
+      node: startnode,
+      edges: [],
+      usedEdges: new Set(),
+      distanceM: 0,
+      newRoadM: 0,
+      oldRoadM: 0,
+      repeatM: 0,
+      previousNode: null
+    }
+  ];
+
+  const completed = [];
+
+  const BEAM_WIDTH = 120;
+  const MAX_STEPS = 220;
+
+  // ------------------------------------------------------------
+  // Explore actual runnable routes.
+  // ------------------------------------------------------------
+  for (
+    let step = 0;
+    step < MAX_STEPS;
+    step++
+  ) {
+    const nextStates = [];
+
+    for (const state of beam) {
+      const current =
+        state.node;
+
+      const currentHome =
+        distHome.get(current);
+
+      // --------------------------------------------------------
+      // If we're far enough into the run, try closing it now.
+      // --------------------------------------------------------
+      if (
+        state.distanceM >=
+          targetM * 0.55 &&
+        Number.isFinite(currentHome)
+      ) {
+        const homeEdges =
+          getHomePath(current);
+
+        let closeDistanceM =
+          state.distanceM;
+
+        for (const edge of homeEdges) {
+          closeDistanceM +=
+            edge.distance || 0;
+        }
+
+        if (
+          closeDistanceM >=
+            targetM * 0.90 &&
+          closeDistanceM <=
+            absoluteUpper
+        ) {
+          const closedEdges = [
+            ...state.edges,
+            ...homeEdges
+          ];
+
+          const stats =
+            getRouteStats(
+              closedEdges
+            );
+
+          completed.push({
+            edges: closedEdges,
+            stats: stats,
+            score:
+              scoreCompletedRoute(
+                stats
+              )
+          });
+        }
       }
 
+      // --------------------------------------------------------
+      // Expand one street farther.
+      // --------------------------------------------------------
       for (
         const edge of
-        node.edges || []
+        current.edges || []
       ) {
         if (
           !edge ||
@@ -481,391 +529,206 @@ function buildDiscoveryTestRoute(targetM) {
           continue;
         }
 
-        const next =
-          edge.OtherNodeofEdge(node);
+        const nextNode =
+          edge.OtherNodeofEdge(
+            current
+          );
 
-        if (!next) {
+        if (!nextNode) {
           continue;
         }
 
-        const edgeDistance =
+        const edgeM =
           edge.distance || 0;
 
-        if (edgeDistance <= 0) {
+        if (edgeM <= 0) {
           continue;
         }
 
-        let costFactor = 1;
+        const nextHome =
+          distHome.get(nextNode);
 
-        // Strongly discourage simply retracing
-        // the outbound route.
         if (
-          outboundEdges.has(edge)
+          !Number.isFinite(nextHome)
         ) {
-          costFactor *= 6;
+          continue;
         }
 
-        // Prefer untraveled roads when possible.
+        const nextDistanceM =
+          state.distanceM +
+          edgeM;
+
+        // Must still be able to get home.
         if (
+          nextDistanceM +
+            nextHome >
+          absoluteUpper
+        ) {
+          continue;
+        }
+
+        const alreadyUsed =
+          state.usedEdges.has(edge);
+
+        const isNewRoad =
           edge.traveled === false &&
-          !edge.isManualConnector
-        ) {
-          costFactor *= 0.72;
-        }
+          !edge.isManualConnector;
 
-        const nextCost =
-          currentCost +
-          edgeDistance *
-          costFactor;
-
-        const oldCost =
-          distances.has(next)
-            ? distances.get(next)
-            : Infinity;
-
+        // Don't immediately U-turn unless there is no
+        // reasonable alternative.
         if (
-          nextCost < oldCost
+          state.previousNode &&
+          nextNode ===
+            state.previousNode &&
+          !isNewRoad
         ) {
-          distances.set(
-            next,
-            nextCost
-          );
-
-          previousEdge.set(
-            next,
-            edge
-          );
-
-          heapPush({
-            node: next,
-            cost: nextCost
-          });
+          continue;
         }
+
+        const nextUsedEdges =
+          new Set(
+            state.usedEdges
+          );
+
+        nextUsedEdges.add(edge);
+
+        nextStates.push({
+          node: nextNode,
+
+          edges: [
+            ...state.edges,
+            edge
+          ],
+
+          usedEdges:
+            nextUsedEdges,
+
+          distanceM:
+            nextDistanceM,
+
+          newRoadM:
+            state.newRoadM +
+            (
+              !alreadyUsed &&
+              isNewRoad
+                ? edgeM
+                : 0
+            ),
+
+          oldRoadM:
+            state.oldRoadM +
+            (
+              !alreadyUsed &&
+              !isNewRoad
+                ? edgeM
+                : 0
+            ),
+
+          repeatM:
+            state.repeatM +
+            (
+              alreadyUsed
+                ? edgeM
+                : 0
+            ),
+
+          previousNode:
+            current
+        });
       }
     }
 
-    return reconstructPath(
-      previousEdge,
-      source,
-      target
-    );
-  }
-
-  // ------------------------------------------------------------
-  // Shortest paths outward from the start.
-  // ------------------------------------------------------------
-  const startSearch =
-    dijkstra(startnode);
-
-  const distFromStart =
-    startSearch.distances;
-
-  const previousFromStart =
-    startSearch.previousEdge;
-
-  // A useful loop anchor should generally be somewhere around
-  // halfway through the total distance budget.
-  const minAnchorM =
-    targetM * 0.28;
-
-  const maxAnchorM =
-    targetM * 0.58;
-
-  const desiredAnchorM =
-    targetM * 0.44;
-
-  const anchorBuckets =
-    Array.from(
-      { length: 16 },
-      () => []
-    );
-
-  const cosLat =
-    Math.cos(
-      startnode.lat *
-      Math.PI / 180
-    );
-
-  // ------------------------------------------------------------
-  // Collect geographically distributed candidate anchor nodes.
-  // ------------------------------------------------------------
-  for (const node of nodes) {
     if (
-      !node ||
-      node === startnode
+      nextStates.length === 0
     ) {
-      continue;
+      break;
     }
 
-    const d =
-      distFromStart.get(node);
-
-    if (
-      !Number.isFinite(d) ||
-      d < minAnchorM ||
-      d > maxAnchorM
-    ) {
-      continue;
-    }
-
-    const dx =
-      (
-        node.lon -
-        startnode.lon
-      ) * cosLat;
-
-    const dy =
-      node.lat -
-      startnode.lat;
-
-    let angle =
-      Math.atan2(
-        dx,
-        dy
-      );
-
-    if (angle < 0) {
-      angle +=
-        Math.PI * 2;
-    }
-
-    const bucketIndex =
-      Math.min(
-        15,
-        Math.floor(
-          angle /
-          (Math.PI * 2) *
-          16
-        )
-      );
-
-    const touchesNewRoad =
-      (node.edges || []).some(
-        edge =>
-          edge &&
-          edge.traveled === false &&
-          !edge.isManualConnector
-      );
-
-    let anchorScore =
-      Math.abs(
-        d -
-        desiredAnchorM
-      );
-
-    // Prefer anchors that are already touching new roads.
-    if (touchesNewRoad) {
-      anchorScore -=
-        targetM * 0.10;
-    }
-
-    anchorBuckets[
-      bucketIndex
-    ].push({
-      node: node,
-      score: anchorScore
-    });
-  }
-
-  const anchors = [];
-
-  for (
-    const bucket of
-    anchorBuckets
-  ) {
-    bucket.sort(
+    // ----------------------------------------------------------
+    // Keep only the strongest partial routes.
+    // ----------------------------------------------------------
+    nextStates.sort(
       (a, b) =>
-        a.score - b.score
+        scorePartialState(b) -
+        scorePartialState(a)
     );
 
-    // Up to four candidates in each direction.
-    for (
-      let i = 0;
-      i <
-      Math.min(
-        4,
-        bucket.length
+    beam =
+      nextStates.slice(
+        0,
+        BEAM_WIDTH
       );
-      i++
-    ) {
-      anchors.push(
-        bucket[i].node
-      );
-    }
   }
 
   console.log(
-    "Discovery loop anchors:",
-    anchors.length
+    "Discovery beam candidates:",
+    completed.length
   );
 
-  if (anchors.length === 0) {
+  if (
+    completed.length === 0
+  ) {
     showMessage(
-      "No usable loop anchors were found in the loaded roads."
+      "Discovery could not build a closed route near the requested distance."
     );
 
     return null;
   }
 
-  let bestCandidate = null;
-
   // ------------------------------------------------------------
-  // Build ACTUAL closed-route candidates.
+  // Best completed actual route.
   // ------------------------------------------------------------
-  for (const anchor of anchors) {
-    const outbound =
-  findBiasedReturnPath(
-    startnode,
-    anchor,
-    new Set()
+  completed.sort(
+    (a, b) =>
+      b.score - a.score
   );
 
-    if (
-      !outbound ||
-      outbound.length === 0
-    ) {
-      continue;
-    }
+  const winner =
+    completed[0];
 
-    const outboundSet =
-      new Set(outbound);
+  const bestCandidate = {
+    edges:
+      winner.edges,
 
-    const returnPath =
-      findBiasedReturnPath(
-        anchor,
-        startnode,
-        outboundSet
-      );
+    totalM:
+      winner.stats.totalM,
 
-    if (
-      !returnPath ||
-      returnPath.length === 0
-    ) {
-      continue;
-    }
+    newRoadM:
+      winner.stats.newRoadM,
 
-    const routeEdges = [
-      ...outbound,
-      ...returnPath
-    ];
+    repeatedM:
+      winner.stats.repeatedM,
 
-    let totalM = 0;
-    let newRoadM = 0;
-    let repeatedM = 0;
+    oldRoadM:
+      winner.stats.oldRoadM
+  };
 
-    const usedEdges =
-      new Set();
-
-    for (
-      const edge of routeEdges
-    ) {
-      const d =
-        edge.distance || 0;
-
-      totalM += d;
-
-      if (
-        usedEdges.has(edge)
-      ) {
-        repeatedM += d;
-      } else {
-        usedEdges.add(edge);
-
-        if (
-          edge.traveled === false &&
-          !edge.isManualConnector
-        ) {
-          newRoadM += d;
-        }
-      }
-    }
-
-    const errorM =
-      Math.abs(
-        totalM -
-        targetM
-      );
-
-    const errorFraction =
-      errorM /
-      targetM;
-
-    // Distance is the first priority.
-    //
-    // Once routes are in the same distance band,
-    // reward new roads and punish repeats.
-    let distanceBand = 0;
-
-    if (errorFraction <= 0.03) {
-      distanceBand = 4;
-    } else if (
-      errorFraction <= 0.05
-    ) {
-      distanceBand = 3;
-    } else if (
-      errorFraction <= 0.10
-    ) {
-      distanceBand = 2;
-    } else if (
-      errorFraction <= 0.15
-    ) {
-      distanceBand = 1;
-    }
-
-    const score =
-      distanceBand *
-        100000000 +
-      newRoadM * 10 -
-      repeatedM * 6 -
-      errorM * 4;
-
-    if (
-      !bestCandidate ||
-      score >
-        bestCandidate.score
-    ) {
-      bestCandidate = {
-        edges: routeEdges,
-        totalM: totalM,
-        newRoadM: newRoadM,
-        repeatedM: repeatedM,
-        errorM: errorM,
-        score: score
-      };
-    }
-  }
-
-  if (!bestCandidate) {
-    showMessage(
-      "Could not build a closed Discovery route."
+  // ------------------------------------------------------------
+  // Diagnose orphans, but DO NOT score them yet.
+  // ------------------------------------------------------------
+  const orphanAnalysis =
+    analyzeDiscoveryOrphans(
+      bestCandidate.edges,
+      targetM
     );
 
-    return null;
-  }
-
-const orphanAnalysis =
-  analyzeDiscoveryOrphans(
-    bestCandidate.edges,
-    targetM
+  console.log(
+    "Discovery orphan check:",
+    orphanAnalysis.orphanCount,
+    "orphans |",
+    (
+      orphanAnalysis.orphanM /
+      1609.344
+    ).toFixed(2),
+    "mi stranded |",
+    orphanAnalysis.largeCutoffCount,
+    "large areas left |",
+    orphanAnalysis.boundaryIgnoredCount,
+    "boundary fragments ignored"
   );
 
-console.log(
-  "Discovery orphan check:",
-  orphanAnalysis.orphanCount,
-  "orphans |",
-  (
-    orphanAnalysis.orphanM /
-    1609.344
-  ).toFixed(2),
-  "mi stranded |",
-  orphanAnalysis.largeCutoffCount,
-  "large areas left |",
-  orphanAnalysis.boundaryIgnoredCount,
-  "boundary fragments ignored"
-);	
-	
   // ------------------------------------------------------------
-  // Convert the winning edge sequence into your normal Route.
+  // Convert edge sequence into normal Route.
   // ------------------------------------------------------------
   const route =
     new Route(
@@ -887,7 +750,7 @@ console.log(
 
     if (!next) {
       console.error(
-        "Discovery route lost connectivity:",
+        "Discovery beam route lost connectivity.",
         edge
       );
 
@@ -909,21 +772,15 @@ console.log(
 
   if (current !== startnode) {
     console.error(
-      "Discovery candidate was not closed."
+      "Discovery beam route did not close."
     );
 
     showMessage(
-      "Discovery candidate did not return to the start."
+      "Discovery route did not return to the start."
     );
 
     return null;
   }
-
-  // ------------------------------------------------------------
-  // Publish it as the active route.
-  // ------------------------------------------------------------
-  mode =
-    solveRESmode;
 
   currentroute =
     route;
@@ -940,8 +797,11 @@ console.log(
   navMode = false;
   solverRunning = false;
 
+  mode =
+    solveRESmode;
+
   console.log(
-    "Route-first TEST:",
+    "Route-first BEAM:",
     (
       bestCandidate.totalM /
       1609.344
@@ -949,6 +809,11 @@ console.log(
     "mi | new:",
     (
       bestCandidate.newRoadM /
+      1609.344
+    ).toFixed(2),
+    "mi | old:",
+    (
+      bestCandidate.oldRoadM /
       1609.344
     ).toFixed(2),
     "mi | repeated:",
@@ -965,7 +830,7 @@ console.log(
   );
 
   showMessage(
-    "Discovery test route: " +
+    "Discovery route: " +
     (
       route.distance /
       1609.344
@@ -978,6 +843,7 @@ console.log(
 
   return bestCandidate;
 }
+
 function startDiscoveryPlanner() {
   if (!startnode) {
     showMessage(
