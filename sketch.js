@@ -1217,76 +1217,7 @@ function growDiscoveryOneStep() {
 
   return true;
 }
-function getDiscoveryCandidateClusters(candidates) {
-  const candidateByEdge = new Map();
 
-  for (const candidate of candidates) {
-    candidateByEdge.set(candidate.edge, candidate);
-  }
-
-  const visited = new Set();
-  const clusters = [];
-
-  for (const candidate of candidates) {
-    const startEdge = candidate.edge;
-
-    if (visited.has(startEdge)) continue;
-
-    const stack = [startEdge];
-    const clusterEdges = [];
-
-    while (stack.length > 0) {
-      const edge = stack.pop();
-
-      if (visited.has(edge)) continue;
-      if (!candidateByEdge.has(edge)) continue;
-
-      visited.add(edge);
-      clusterEdges.push(edge);
-
-      const connectedEdges = [
-        ...(edge.from.edges || []),
-        ...(edge.to.edges || [])
-      ];
-
-      for (const nextEdge of connectedEdges) {
-        if (
-          candidateByEdge.has(nextEdge) &&
-          !visited.has(nextEdge)
-        ) {
-          stack.push(nextEdge);
-        }
-      }
-    }
-
-    let newRoadDistance = 0;
-    let minimumLoopCost = Infinity;
-
-    for (const edge of clusterEdges) {
-      const info = candidateByEdge.get(edge);
-
-      newRoadDistance += info.newRoadValue;
-
-      if (info.minimumLoopCost < minimumLoopCost) {
-        minimumLoopCost = info.minimumLoopCost;
-      }
-    }
-
-    clusters.push({
-      edges: clusterEdges,
-      newRoadDistance: newRoadDistance,
-      minimumLoopCost: minimumLoopCost
-    });
-  }
-
-  console.log(
-    "Discovery clusters:",
-    clusters.length,
-    "connected groups of new roads"
-  );
-
-  return clusters;
-}
 
 function startDiscoveryPlanner() {
   const targetM =
