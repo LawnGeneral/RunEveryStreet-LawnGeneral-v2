@@ -678,13 +678,22 @@ function buildDiscoveryTestRoute(targetM) {
   // ------------------------------------------------------------
   // Best completed actual route.
   // ------------------------------------------------------------
-  completed.sort(
-    (a, b) =>
-      b.score - a.score
+ const cleanupWinner =
+  chooseDiscoveryOrphanAwareWinner(
+    completed,
+    targetM
   );
 
-  const winner =
-    completed[0];
+if (!cleanupWinner) {
+  showMessage(
+    "Discovery could not choose a cleanup-aware route."
+  );
+
+  return null;
+}
+
+const winner =
+  cleanupWinner.candidate;
 
   const bestCandidate = {
     edges:
@@ -1148,6 +1157,161 @@ function analyzeDiscoveryOrphans(routeEdges, targetM) {
   };
 }
 
+function chooseDiscoveryOrphanAwareWinner(
+  completed,
+  targetM
+) {
+  if (
+    !completed ||
+    completed.length === 0
+  ) {
+    return null;
+  }
+
+  function getDistanceBand(totalM) {
+    const errorFraction =
+      Math.abs(totalM - targetM) /
+      targetM;
+
+    if (errorFraction <= 0.03) {
+      return 4;
+    }
+
+    if (errorFraction <= 0.05) {
+      return 3;
+    }
+
+    if (errorFraction <= 0.08) {
+      return 2;
+    }
+
+    if (errorFraction <= 0.12) {
+      return 1;
+    }
+
+    return 0;
+  }
+
+  // ------------------------------------------------------------
+  // Distance remains the first constraint.
+  // Only compare routes from the best distance band available.
+  // ------------------------------------------------------------
+  let bestDistanceBand = 0;
+
+  for (const candidate of completed) {
+    bestDistanceBand =
+      Math.max(
+        bestDistanceBand,
+        getDistanceBand(
+          candidate.stats.totalM
+        )
+      );
+  }
+
+  const sameDistanceBand =
+    completed.filter(
+      candidate =>
+        getDistanceBand(
+          candidate.stats.totalM
+        ) === bestDistanceBand
+    );
+
+  // Start with the routes that were already strongest for
+  // new-road coverage and general route quality.
+  sameDistanceBand.sort(
+    (a, b) =>
+      b.score - a.score
+  );
+
+  // Orphan analysis is relatively expensive, so inspect the
+  // strongest 400 rather than thousands of candidates.
+  const finalists =
+    sameDistanceBand.slice(
+      0,
+      400
+    );
+
+  let winner = null;
+
+  for (const candidate of finalists) {
+    const orphan =
+      analyzeDiscoveryOrphans(
+        candidate.edges,
+        targetM
+      );
+
+    const stats =
+      candidate.stats;
+
+    const errorM =
+      Math.abs(
+        stats.totalM -
+        targetM
+      );
+
+    // ----------------------------------------------------------
+    // Priority inside the same distance band:
+    //
+    // 1. Avoid orphaned fragments.
+    // 2. Minimize stranded orphan mileage.
+    // 3. Maximize new road.
+    // 4. Minimize repeats.
+    // 5. Minimize old-road mileage.
+    // 6. Fine-tune distance.
+    //
+    // One orphan is deliberately VERY expensive.
+    // ----------------------------------------------------------
+    const cleanupScore =
+      -orphan.orphanCount *
+        1000000000
+      -
+      orphan.orphanM *
+        100000
+      +
+      stats.newRoadM *
+        1000
+      -
+      stats.repeatedM *
+        100
+      -
+      stats.oldRoadM *
+        10
+      -
+      errorM;
+
+    if (
+      !winner ||
+      cleanupScore >
+        winner.cleanupScore
+    ) {
+      winner = {
+        candidate: candidate,
+        orphan: orphan,
+        cleanupScore:
+          cleanupScore
+      };
+    }
+  }
+
+  if (!winner) {
+    return null;
+  }
+
+  console.log(
+    "Discovery cleanup selection:",
+    finalists.length,
+    "finalists |",
+    winner.orphan.orphanCount,
+    "orphans |",
+    (
+      winner.orphan.orphanM /
+      1609.344
+    ).toFixed(2),
+    "mi stranded"
+  );
+
+  return winner;
+}
 
 function drawPlannerModeButton() {
   const x = 370;
