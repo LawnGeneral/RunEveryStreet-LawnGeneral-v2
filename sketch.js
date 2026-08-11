@@ -4534,12 +4534,7 @@ if (selectedPlannerMode === "discovery") {
     mode = solveRESmode;
     solverRunning = false;
 
-   if (keyIsDown(SHIFT)) {
-  solveBudgetedRun();   // SHIFT + START = distance-limited
-} else {
-  solveRES();           // normal click = cover-everything solver
-}
-
+solveRES();
 
     noLoop();
     navMode = true;
