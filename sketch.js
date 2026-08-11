@@ -1040,6 +1040,73 @@ function getDiscoveryNetworkStats(edgeList) {
   };
 }
 
+function scoreDiscoveryNetworkQuality(
+  stats,
+  targetM
+) {
+  if (
+    !stats ||
+    !Number.isFinite(targetM) ||
+    targetM <= 0
+  ) {
+    return -Infinity;
+  }
+
+  const distanceErrorM =
+    Math.abs(
+      stats.estimatedRouteM -
+      targetM
+    );
+
+  const withinTolerance =
+    distanceErrorM <=
+    targetM * 0.03;
+
+  /*
+    Distance remains the hard priority.
+
+    A network inside ±3% gets a huge bonus so
+    one outside the requested mileage cannot
+    win merely because its topology is prettier.
+  */
+  let score =
+    withinTolerance
+      ? 100000
+      : 0;
+
+  // Closer to requested mileage is better.
+  score -=
+    distanceErrorM * 4;
+
+  /*
+    Then maximize genuinely new road.
+  */
+  score +=
+    stats.newRoadM * 2;
+
+  /*
+    Topology matters because today's leftovers
+    become tomorrow's Discovery problem.
+
+    Dead ends are especially undesirable.
+  */
+  score -=
+    stats.deadEnds * 180;
+
+  score -=
+    stats.odd * 45;
+
+  /*
+    More independent cycles generally means
+    fewer forced repeats and cleaner future
+    street coverage.
+  */
+  score +=
+    stats.cycleSignal * 120;
+
+  return score;
+}
+
 function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
   const seedMid =
     getEdgeMidpoint(seedCandidate.edge);
