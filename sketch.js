@@ -948,6 +948,98 @@ function estimateDiscoveryClosedDistance(edgeList) {
   return uniqueM + repeatM;
 }
 
+function getDiscoveryNetworkStats(edgeList) {
+  if (
+    !edgeList ||
+    edgeList.length === 0
+  ) {
+    return {
+      uniqueM: 0,
+      newRoadM: 0,
+      estimatedRouteM: 0,
+      odd: 0,
+      deadEnds: 0,
+      cycleSignal: 0
+    };
+  }
+
+  let uniqueM = 0;
+  let newRoadM = 0;
+
+  const degree = new Map();
+  const nodeSet = new Set();
+
+  for (const edge of edgeList) {
+    if (
+      !edge ||
+      !edge.from ||
+      !edge.to
+    ) {
+      continue;
+    }
+
+    const d =
+      edge.distance || 0;
+
+    uniqueM += d;
+
+    if (
+      edge.traveled === false &&
+      !edge.isManualConnector
+    ) {
+      newRoadM += d;
+    }
+
+    nodeSet.add(edge.from);
+    nodeSet.add(edge.to);
+
+    degree.set(
+      edge.from,
+      (degree.get(edge.from) || 0) + 1
+    );
+
+    degree.set(
+      edge.to,
+      (degree.get(edge.to) || 0) + 1
+    );
+  }
+
+  let odd = 0;
+  let deadEnds = 0;
+
+  for (const node of nodeSet) {
+    const d =
+      degree.get(node) || 0;
+
+    if (d === 1) {
+      deadEnds++;
+    }
+
+    if (d % 2 !== 0) {
+      odd++;
+    }
+  }
+
+  const cycleSignal =
+    edgeList.length -
+    nodeSet.size +
+    1;
+
+  return {
+    uniqueM: uniqueM,
+    newRoadM: newRoadM,
+
+    estimatedRouteM:
+      estimateDiscoveryClosedDistance(
+        edgeList
+      ),
+
+    odd: odd,
+    deadEnds: deadEnds,
+    cycleSignal: cycleSignal
+  };
+}
+
 function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
   const seedMid =
     getEdgeMidpoint(seedCandidate.edge);
