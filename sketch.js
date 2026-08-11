@@ -441,6 +441,231 @@ function scoreDiscoveryCleanupEdge(
 
   return score;
 }
+
+function findDiscoveryClosurePath(
+  startNode,
+  selectedSet,
+  selectedNodes
+) {
+  if (
+    !startNode ||
+    !selectedSet ||
+    !selectedNodes
+  ) {
+    return null;
+  }
+
+  const dist = new Map();
+  const actualDist = new Map();
+  const previousEdge = new Map();
+
+  for (const node of nodes) {
+    dist.set(node, Infinity);
+    actualDist.set(node, Infinity);
+  }
+
+  dist.set(startNode, 0);
+  actualDist.set(startNode, 0);
+
+  const queue = [
+    {
+      node: startNode,
+      cost: 0
+    }
+  ];
+
+  let destination = null;
+
+  while (queue.length > 0) {
+    let bestIndex = 0;
+
+    for (let i = 1; i < queue.length; i++) {
+      if (
+        queue[i].cost <
+        queue[bestIndex].cost
+      ) {
+        bestIndex = i;
+      }
+    }
+
+    const item =
+      queue.splice(bestIndex, 1)[0];
+
+    const node =
+      item.node;
+
+    const currentCost =
+      item.cost;
+
+    if (
+      currentCost >
+      dist.get(node)
+    ) {
+      continue;
+    }
+
+    /*
+      We found our way back into the existing
+      selected network at a DIFFERENT node.
+
+      That means the path we just found can
+      create a real cycle.
+    */
+    if (
+      node !== startNode &&
+      selectedNodes.has(node)
+    ) {
+      destination = node;
+      break;
+    }
+
+    if (!node.edges) {
+      continue;
+    }
+
+    for (const edge of node.edges) {
+      if (
+        !edge ||
+        !edge.from ||
+        !edge.to
+      ) {
+        continue;
+      }
+
+      /*
+        Don't simply walk along roads that are
+        already selected. We are specifically
+        looking for an ALTERNATE path back into
+        the selected network.
+      */
+      if (selectedSet.has(edge)) {
+        continue;
+      }
+
+      const other =
+        edge.from === node
+          ? edge.to
+          : edge.from;
+
+      if (!other) {
+        continue;
+      }
+
+      const edgeDistance =
+        edge.distance || 0;
+
+      const isNew =
+        edge.traveled === false &&
+        !edge.isManualConnector;
+
+      /*
+        Prefer closure paths made from new roads.
+
+        Old roads are still allowed when they are
+        genuinely useful for completing a loop.
+      */
+      const factor =
+        isNew
+          ? 0.35
+          : 1.0;
+
+      const nextCost =
+        currentCost +
+        edgeDistance * factor;
+
+      const nextActualDist =
+        actualDist.get(node) +
+        edgeDistance;
+
+      if (
+        nextCost <
+        dist.get(other)
+      ) {
+        dist.set(
+          other,
+          nextCost
+        );
+
+        actualDist.set(
+          other,
+          nextActualDist
+        );
+
+        previousEdge.set(
+          other,
+          edge
+        );
+
+        queue.push({
+          node: other,
+          cost: nextCost
+        });
+      }
+    }
+  }
+
+  if (!destination) {
+    return null;
+  }
+
+  const path = [];
+
+  let current =
+    destination;
+
+  let guard = 0;
+
+  while (
+    current !== startNode &&
+    guard < nodes.length
+  ) {
+    guard++;
+
+    const edge =
+      previousEdge.get(current);
+
+    if (!edge) {
+      return null;
+    }
+
+    path.push(edge);
+
+    current =
+      edge.from === current
+        ? edge.to
+        : edge.from;
+  }
+
+  path.reverse();
+
+  let newRoadM = 0;
+  let oldRoadM = 0;
+  let totalM = 0;
+
+  for (const edge of path) {
+    const d =
+      edge.distance || 0;
+
+    totalM += d;
+
+    if (
+      edge.traveled === false &&
+      !edge.isManualConnector
+    ) {
+      newRoadM += d;
+    } else {
+      oldRoadM += d;
+    }
+  }
+
+  return {
+    path: path,
+    destination: destination,
+    totalM: totalM,
+    newRoadM: newRoadM,
+    oldRoadM: oldRoadM
+  };
+}
 function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
   const seedMid =
     getEdgeMidpoint(seedCandidate.edge);
