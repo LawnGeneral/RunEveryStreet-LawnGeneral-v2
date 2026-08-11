@@ -1556,67 +1556,57 @@ function buildFastDiscoveryNetwork() {
   // with more new-road mileage.
   // -----------------------------------------
 
-  let bestEdges =
+ let bestEdges =
+  getSelectedArray();
+
+let bestStats =
+  getDiscoveryNetworkStats(
+    bestEdges
+  );
+
+let bestEstimateM =
+  bestStats.estimatedRouteM;
+
+let bestQualityScore =
+  scoreDiscoveryNetworkQuality(
+    bestStats,
+    targetM
+  );
+
+function rememberIfBetter() {
+  const currentEdges =
     getSelectedArray();
 
-  let bestEstimateM =
-    getEstimatedRouteM();
-
-  let bestNewRoadM =
-    getNewRoadDistanceM(
-      bestEdges
+  const currentStats =
+    getDiscoveryNetworkStats(
+      currentEdges
     );
 
-  function rememberIfBetter() {
-    const currentEdges =
-      getSelectedArray();
+  const currentQualityScore =
+    scoreDiscoveryNetworkQuality(
+      currentStats,
+      targetM
+    );
 
-    const estimateM =
-      estimateDiscoveryClosedDistance(
-        currentEdges
-      );
+  if (
+    currentQualityScore >
+    bestQualityScore
+  ) {
+    bestEdges =
+      currentEdges.slice();
 
-    const newRoadM =
-      getNewRoadDistanceM(
-        currentEdges
-      );
+    bestStats =
+      currentStats;
 
-    const currentError =
-      Math.abs(
-        estimateM -
-        targetM
-      );
+    bestEstimateM =
+      currentStats.estimatedRouteM;
 
-    const bestError =
-      Math.abs(
-        bestEstimateM -
-        targetM
-      );
-
-    if (
-      currentError <
-        bestError - 10 ||
-      (
-        Math.abs(
-          currentError -
-          bestError
-        ) <= 10 &&
-        newRoadM >
-          bestNewRoadM
-      )
-    ) {
-      bestEdges =
-        currentEdges.slice();
-
-      bestEstimateM =
-        estimateM;
-
-      bestNewRoadM =
-        newRoadM;
-    }
-
-    return estimateM;
+    bestQualityScore =
+      currentQualityScore;
   }
+
+  return currentStats.estimatedRouteM;
+}
 
   // =========================================
   // PHASE 1
