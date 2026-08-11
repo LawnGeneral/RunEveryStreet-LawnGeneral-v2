@@ -396,39 +396,157 @@ function buildDiscoveryTestRoute(targetM) {
   // We also give a small reward for continuing outward rather
   // than immediately collapsing back toward home.
   // ------------------------------------------------------------
-  function scorePartialState(state) {
-    const homeM =
-      distHome.get(state.node);
+function scorePartialState(state) {
+  const homeM =
+    distHome.get(state.node);
 
-    const projectedM =
-      state.distanceM +
-      (
-        Number.isFinite(homeM)
-          ? homeM
-          : targetM
-      );
-
-    const targetProgress =
-      Math.min(
-        1,
-        state.distanceM /
-        targetM
-      );
-
-    const distanceError =
-      Math.abs(
-        projectedM -
-        targetM
-      );
-
-    return (
-      state.newRoadM * 120 -
-      state.repeatM * 55 -
-      state.oldRoadM * 2 -
-      distanceError * 0.8 +
-      targetProgress * 300
+  const projectedM =
+    state.distanceM +
+    (
+      Number.isFinite(homeM)
+        ? homeM
+        : targetM
     );
+
+  const targetProgress =
+    Math.min(
+      1,
+      state.distanceM /
+      targetM
+    );
+
+  const distanceError =
+    Math.abs(
+      projectedM -
+      targetM
+    );
+
+  // ------------------------------------------------------------
+  // Detect obvious "leave-behind" situations DURING route
+  // construction.
+  //
+  // Example:
+  //
+  //       new cul-de-sac
+  //            |
+  // route -----+----- route
+  //
+  // If we've already passed through that junction and exactly
+  // one untraveled branch remains, heavily penalize the state.
+  //
+  // Do NOT penalize the current frontier node because the route
+  // may simply be continuing through it on the next step.
+  // ------------------------------------------------------------
+  const touchedNewNodes =
+    new Set();
+
+  for (
+    const usedEdge of
+    state.usedEdges
+  ) {
+    if (
+      !usedEdge ||
+      usedEdge.traveled !== false ||
+      usedEdge.isManualConnector
+    ) {
+      continue;
+    }
+
+    if (usedEdge.from) {
+      touchedNewNodes.add(
+        usedEdge.from
+      );
+    }
+
+    if (usedEdge.to) {
+      touchedNewNodes.add(
+        usedEdge.to
+      );
+    }
   }
+
+  let cleanupPenalty = 0;
+
+  const penalizedLeftovers =
+    new Set();
+
+  for (
+    const node of
+    touchedNewNodes
+  ) {
+    if (
+      !node ||
+      node === state.node ||
+      node === startnode
+    ) {
+      continue;
+    }
+
+    let usedNewCount = 0;
+
+    const remainingNewEdges = [];
+
+    for (
+      const edge of
+      node.edges || []
+    ) {
+      if (
+        !edge ||
+        edge.traveled !== false ||
+        edge.isManualConnector
+      ) {
+        continue;
+      }
+
+      if (
+        state.usedEdges.has(edge)
+      ) {
+        usedNewCount++;
+      } else {
+        remainingNewEdges.push(
+          edge
+        );
+      }
+    }
+
+    // We've already run new road through this location
+    // but left exactly one new-road branch behind.
+    //
+    // This is the classic cul-de-sac / small-fragment problem.
+    if (
+      usedNewCount > 0 &&
+      remainingNewEdges.length === 1
+    ) {
+      const leftover =
+        remainingNewEdges[0];
+
+      if (
+        !penalizedLeftovers.has(
+          leftover
+        )
+      ) {
+        penalizedLeftovers.add(
+          leftover
+        );
+
+        cleanupPenalty +=
+          60000 +
+          (leftover.distance || 0) *
+          100;
+      }
+    }
+  }
+
+  return (
+    state.newRoadM * 120 -
+    state.repeatM * 55 -
+    state.oldRoadM * 2 -
+    distanceError * 0.8 +
+    targetProgress * 300 -
+    cleanupPenalty
+  );
+}
+
 
   // ------------------------------------------------------------
   // Initial beam.
