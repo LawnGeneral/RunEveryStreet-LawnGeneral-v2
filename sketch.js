@@ -1003,10 +1003,20 @@ function buildFastDiscoveryNetwork() {
     return;
   }
 
-  // Still provisional. Once the street-selection behavior
-  // looks right, we'll make this respond to actual route cost.
+  // Main street-selection budget.
   const uniqueBudgetM =
     discoveryTargetM * 0.72;
+
+  /*
+    After the sensible new-road network is chosen,
+    allow some extra distance specifically for roads
+    that close loops.
+
+    We will tune this later against actual final
+    route distance.
+  */
+  const closureBudgetM =
+    discoveryTargetM * 0.18;
 
   const selected =
     new Set(discoverySelectedEdges);
@@ -1020,8 +1030,7 @@ function buildFastDiscoveryNetwork() {
   let selectedDistanceM = 0;
 
   // -----------------------------------------
-  // Start with our existing start-to-seed
-  // skeleton.
+  // Start with existing start-to-seed skeleton.
   // -----------------------------------------
 
   for (const edge of selected) {
@@ -1047,8 +1056,8 @@ function buildFastDiscoveryNetwork() {
   }
 
   // -----------------------------------------
-  // Helper for adding one edge and updating
-  // all of our network bookkeeping.
+  // Helper for adding an edge while keeping
+  // all bookkeeping correct.
   // -----------------------------------------
 
   function addSelectedEdge(edge) {
@@ -1078,13 +1087,10 @@ function buildFastDiscoveryNetwork() {
     );
   }
 
-  // -----------------------------------------
-  // Grow dynamically.
-  //
-  // Unlike the previous version, every choice
-  // is re-evaluated after the previous road is
-  // selected.
-  // -----------------------------------------
+  // =========================================
+  // PHASE 1
+  // Choose sensible new-road coverage.
+  // =========================================
 
   let guard = 0;
 
@@ -1125,7 +1131,7 @@ function buildFastDiscoveryNetwork() {
       const toSelected =
         selectedNodes.has(edge.to);
 
-      // Must touch the network we already have.
+      // Must touch the current network.
       if (
         !fromSelected &&
         !toSelected
@@ -1155,13 +1161,6 @@ function buildFastDiscoveryNetwork() {
             selectedNodes,
             0
           );
-
-        // -----------------------------------
-        // Look one intersection ahead.
-        //
-        // Reward a road that opens access to
-        // more untraveled streets.
-        // -----------------------------------
 
         if (!closesCycle) {
           const outwardNode =
@@ -1197,9 +1196,6 @@ function buildFastDiscoveryNetwork() {
           score +=
             onwardNewM * 1.5;
 
-          // Extending from an odd-degree node is
-          // somewhat better than creating two new
-          // odd-degree points.
           const attachedNode =
             fromSelected
               ? edge.from
@@ -1216,19 +1212,12 @@ function buildFastDiscoveryNetwork() {
             score -= 150;
           }
 
-          // A road that immediately creates a new
-          // dead end is allowed, but it needs to be
-          // valuable enough to justify it.
           if (onwardNewM === 0) {
             score -= 350;
           }
         }
 
-        // -----------------------------------
-        // A NEW road that closes a cycle is
-        // especially valuable.
-        // -----------------------------------
-
+        // New road directly closing a cycle.
         if (closesCycle) {
           const fromDegree =
             degree.get(edge.from) || 0;
@@ -1246,14 +1235,11 @@ function buildFastDiscoveryNetwork() {
             fromOdd &&
             toOdd
           ) {
-            // New road + loop + removes two odd nodes.
             score += 1000;
           } else if (
             !fromOdd &&
             !toOdd
           ) {
-            // Still a useful new loop, but it creates
-            // two odd nodes.
             score -= 200;
           }
         }
@@ -1264,14 +1250,11 @@ function buildFastDiscoveryNetwork() {
       // =====================================
 
       else {
-        // -----------------------------------
-        // OLD road connecting two nodes that
-        // are already selected.
-        //
-        // Only use it when it closes a cycle
-        // AND fixes two odd-degree nodes.
-        // -----------------------------------
-
+        /*
+          Old road already connecting two selected
+          nodes is useful only if it also fixes two
+          odd-degree nodes.
+        */
         if (closesCycle) {
           const fromDegree =
             degree.get(edge.from) || 0;
@@ -1293,19 +1276,14 @@ function buildFastDiscoveryNetwork() {
               1400 -
               edgeDistance * 2;
           } else {
-            // Don't cover an old road merely because
-            // it happens to sit inside the area.
             continue;
           }
         }
 
-        // -----------------------------------
-        // OLD road extending outward.
-        //
-        // Only allow it if the far end directly
-        // opens access to new streets.
-        // -----------------------------------
-
+        /*
+          Old road extending outward is allowed only
+          if it immediately opens access to new road.
+        */
         else {
           const outwardNode =
             fromSelected
@@ -1336,9 +1314,6 @@ function buildFastDiscoveryNetwork() {
             }
           }
 
-          // No new road at the other end?
-          // Then there is no Discovery reason
-          // to run this old road.
           if (
             newRoadBeyondM <= 0
           ) {
@@ -1365,6 +1340,160 @@ function buildFastDiscoveryNetwork() {
     }
 
     addSelectedEdge(bestEdge);
+  }
+
+  // =========================================
+  // PHASE 2
+  // Repair topology by closing loops.
+  // =========================================
+
+  const closureLimitM =
+    selectedDistanceM +
+    closureBudgetM;
+
+  let closuresAdded = 0;
+
+  // A handful of good closures is enough.
+  const maxClosures = 8;
+
+  while (
+    closuresAdded < maxClosures &&
+    selectedDistanceM <
+      closureLimitM
+  ) {
+    let bestClosure = null;
+    let bestClosureScore = -Infinity;
+
+    /*
+      Look primarily from trouble spots:
+      dead ends and odd-degree nodes.
+    */
+    for (const node of selectedNodes) {
+      const nodeDegree =
+        degree.get(node) || 0;
+
+      const isDeadEnd =
+        nodeDegree === 1;
+
+      const isOdd =
+        nodeDegree % 2 === 1;
+
+      if (
+        !isDeadEnd &&
+        !isOdd
+      ) {
+        continue;
+      }
+
+      const closure =
+        findDiscoveryClosurePath(
+          node,
+          selected,
+          selectedNodes
+        );
+
+      if (
+        !closure ||
+        !closure.path ||
+        closure.path.length === 0
+      ) {
+        continue;
+      }
+
+      if (
+        selectedDistanceM +
+          closure.totalM >
+        closureLimitM
+      ) {
+        continue;
+      }
+
+      /*
+        Don't make one enormous detour merely
+        to manufacture a loop.
+      */
+      if (
+        closure.totalM >
+        discoveryTargetM * 0.15
+      ) {
+        continue;
+      }
+
+      const destinationDegree =
+        degree.get(
+          closure.destination
+        ) || 0;
+
+      const destinationOdd =
+        destinationDegree % 2 === 1;
+
+      const fixesTwoOdd =
+        isOdd &&
+        destinationOdd;
+
+      const newFraction =
+        closure.totalM > 0
+          ? closure.newRoadM /
+            closure.totalM
+          : 0;
+
+      let score = 0;
+
+      // Eliminating a dead end is extremely valuable.
+      if (isDeadEnd) {
+        score += 2500;
+      } else {
+        score += 700;
+      }
+
+      // Toggling two odd nodes to even can directly
+      // reduce postman duplication.
+      if (fixesTwoOdd) {
+        score += 1800;
+      }
+
+      // Prefer closures that themselves cover new road.
+      score +=
+        closure.newRoadM * 4;
+
+      // Old road is permitted, but it must justify itself.
+      score -=
+        closure.oldRoadM * 2.5;
+
+      // Short closures are preferable.
+      score -=
+        closure.totalM * 0.75;
+
+      // Mostly-old detours should rarely win.
+      if (newFraction < 0.25) {
+        score -= 1200;
+      }
+
+      if (
+        score >
+        bestClosureScore
+      ) {
+        bestClosureScore = score;
+
+        bestClosure = {
+          startNode: node,
+          result: closure
+        };
+      }
+    }
+
+    if (!bestClosure) {
+      break;
+    }
+
+    for (
+      const edge
+      of bestClosure.result.path
+    ) {
+      addSelectedEdge(edge);
+    }
+
+    closuresAdded++;
   }
 
   discoverySelectedEdges =
@@ -1427,6 +1556,7 @@ function buildFastDiscoveryNetwork() {
     "odd=" + odd,
     "| deadEnds=" + deadEnds,
     "| cycleSignal=" + cycleSignal,
+    "| closures=" + closuresAdded,
     "| target",
     (
       discoveryTargetM /
