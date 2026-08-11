@@ -1188,98 +1188,16 @@ function scoreDiscoverySeeds(candidates, targetM) {
 
 
 function startDiscoveryPlanner() {
-  const targetM =
-    getDiscoveryTargetDistance();
-
-  if (targetM === null) {
-    return;
-  }
-
-  // Reset previous Discovery state.
-  discoveryTargetM = targetM;
-  discoverySeedCandidate = null;
-  discoverySelectedEdges = [];
-  discoveryCandidates = [];
-
-  // -----------------------------------------
-  // 1. Find reachable untraveled roads.
-  // -----------------------------------------
-
-  const candidates =
-    getDiscoveryCandidateEdges(
-      targetM
-    );
-
-  discoveryCandidates =
-    candidates;
-
-  if (candidates.length === 0) {
-    showMessage(
-      "No reachable untraveled roads found for this distance."
-    );
-
-    redraw();
-    openlayersmap.render();
-    return;
-  }
-
-  // -----------------------------------------
-  // 2. Find the most promising Discovery area.
-  // -----------------------------------------
-
-  const scoredSeeds =
-    scoreDiscoverySeeds(
-      candidates,
-      targetM
-    );
-
-  if (scoredSeeds.length === 0) {
-    showMessage(
-      "Could not identify a Discovery starting area."
-    );
-
-    redraw();
-    openlayersmap.render();
-    return;
-  }
-
-  discoverySeedCandidate =
-    scoredSeeds[0].candidate;
-
-  // -----------------------------------------
-  // 3. Build the current Discovery network.
-  // -----------------------------------------
-
-  buildDiscoverySeedNetwork(
-    discoverySeedCandidate
+  showMessage(
+    "Find New Roads is being rebuilt with the new route-first planner."
   );
 
-  buildFastDiscoveryNetwork();
+  console.log(
+    "Discovery planner temporarily disabled during route-first rebuild."
+  );
 
-  // -----------------------------------------
-  // 4. Solve it once.
-  // -----------------------------------------
-
-  const solvedDistanceM =
-    solveDiscoveryNetwork();
-
-  if (
-    Number.isFinite(solvedDistanceM)
-  ) {
-    console.log(
-      "Discovery result:",
-      (
-        solvedDistanceM /
-        1609.344
-      ).toFixed(2),
-      "mi | requested",
-      (
-        targetM /
-        1609.344
-      ).toFixed(2),
-      "mi"
-    );
-  }
+  redraw();
+  openlayersmap.render();
 }
 
 function buildDiscoverySeedNetwork(seedCandidate) {
