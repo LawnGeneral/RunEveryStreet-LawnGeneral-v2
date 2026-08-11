@@ -666,6 +666,288 @@ function findDiscoveryClosurePath(
     oldRoadM: oldRoadM
   };
 }
+
+function estimateDiscoveryClosedDistance(edgeList) {
+  if (
+    !edgeList ||
+    edgeList.length === 0
+  ) {
+    return 0;
+  }
+
+  // -----------------------------------------
+  // 1. Build a LOCAL adjacency map.
+  //
+  // This does not touch the real global graph.
+  // -----------------------------------------
+
+  const adjacency = new Map();
+  const nodeSet = new Set();
+
+  let uniqueM = 0;
+
+  for (const edge of edgeList) {
+    if (
+      !edge ||
+      !edge.from ||
+      !edge.to
+    ) {
+      continue;
+    }
+
+    uniqueM +=
+      edge.distance || 0;
+
+    nodeSet.add(edge.from);
+    nodeSet.add(edge.to);
+
+    if (!adjacency.has(edge.from)) {
+      adjacency.set(
+        edge.from,
+        []
+      );
+    }
+
+    if (!adjacency.has(edge.to)) {
+      adjacency.set(
+        edge.to,
+        []
+      );
+    }
+
+    adjacency.get(edge.from).push(edge);
+    adjacency.get(edge.to).push(edge);
+  }
+
+  // -----------------------------------------
+  // 2. Find odd-degree nodes and topology.
+  // -----------------------------------------
+
+  const oddNodes = [];
+
+  for (const node of nodeSet) {
+    const degree =
+      adjacency.has(node)
+        ? adjacency.get(node).length
+        : 0;
+
+    if (degree % 2 !== 0) {
+      oddNodes.push(node);
+    }
+  }
+
+  const cycleSignal =
+    edgeList.length -
+    nodeSet.size +
+    1;
+
+  /*
+    A connected tree has no cycles.
+
+    For a closed route every tree edge must
+    effectively be traveled twice.
+
+    This case is exact.
+  */
+  if (cycleSignal === 0) {
+    return uniqueM * 2;
+  }
+
+  /*
+    Already Eulerian:
+    every selected edge can be covered once
+    in one closed tour.
+  */
+  if (oddNodes.length === 0) {
+    return uniqueM;
+  }
+
+  // -----------------------------------------
+  // 3. Local Dijkstra that uses ONLY the
+  //    selected Discovery streets.
+  // -----------------------------------------
+
+  function localDijkstra(source) {
+    const distances =
+      new Map();
+
+    for (const node of nodeSet) {
+      distances.set(
+        node,
+        Infinity
+      );
+    }
+
+    distances.set(
+      source,
+      0
+    );
+
+    const queue = [
+      {
+        node: source,
+        dist: 0
+      }
+    ];
+
+    while (queue.length > 0) {
+      let bestIndex = 0;
+
+      for (
+        let i = 1;
+        i < queue.length;
+        i++
+      ) {
+        if (
+          queue[i].dist <
+          queue[bestIndex].dist
+        ) {
+          bestIndex = i;
+        }
+      }
+
+      const item =
+        queue.splice(
+          bestIndex,
+          1
+        )[0];
+
+      const node =
+        item.node;
+
+      const currentDist =
+        item.dist;
+
+      if (
+        currentDist >
+        distances.get(node)
+      ) {
+        continue;
+      }
+
+      const connected =
+        adjacency.get(node) || [];
+
+      for (const edge of connected) {
+        const other =
+          edge.from === node
+            ? edge.to
+            : edge.from;
+
+        const nextDist =
+          currentDist +
+          (edge.distance || 0);
+
+        if (
+          nextDist <
+          distances.get(other)
+        ) {
+          distances.set(
+            other,
+            nextDist
+          );
+
+          queue.push({
+            node: other,
+            dist: nextDist
+          });
+        }
+      }
+    }
+
+    return distances;
+  }
+
+  // -----------------------------------------
+  // 4. Calculate distances between odd nodes.
+  // -----------------------------------------
+
+  const oddDistanceMaps =
+    new Map();
+
+  for (const oddNode of oddNodes) {
+    oddDistanceMaps.set(
+      oddNode,
+      localDijkstra(oddNode)
+    );
+  }
+
+  // -----------------------------------------
+  // 5. Greedily pair the nearest remaining
+  //    odd nodes.
+  //
+  // This is an estimate, not the expensive
+  // full postman optimization.
+  // -----------------------------------------
+
+  const remaining =
+    oddNodes.slice();
+
+  let repeatM = 0;
+
+  while (remaining.length >= 2) {
+    let bestI = -1;
+    let bestJ = -1;
+    let bestDist = Infinity;
+
+    for (
+      let i = 0;
+      i < remaining.length - 1;
+      i++
+    ) {
+      const distances =
+        oddDistanceMaps.get(
+          remaining[i]
+        );
+
+      for (
+        let j = i + 1;
+        j < remaining.length;
+        j++
+      ) {
+        const d =
+          distances.get(
+            remaining[j]
+          );
+
+        if (
+          Number.isFinite(d) &&
+          d < bestDist
+        ) {
+          bestDist = d;
+          bestI = i;
+          bestJ = j;
+        }
+      }
+    }
+
+    if (
+      bestI === -1 ||
+      bestJ === -1
+    ) {
+      // Something is disconnected.
+      // Be conservative.
+      return uniqueM * 2;
+    }
+
+    repeatM +=
+      bestDist;
+
+    // Remove higher index first.
+    remaining.splice(
+      bestJ,
+      1
+    );
+
+    remaining.splice(
+      bestI,
+      1
+    );
+  }
+
+  return uniqueM + repeatM;
+}
+
 function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
   const seedMid =
     getEdgeMidpoint(seedCandidate.edge);
@@ -884,7 +1166,7 @@ function startDiscoveryPlanner() {
   }
 
   // -----------------------------------------
-  // 2. Find the best Discovery area.
+  // 2. Find the most promising Discovery area.
   // -----------------------------------------
 
   const scoredSeeds =
@@ -907,129 +1189,32 @@ function startDiscoveryPlanner() {
     scoredSeeds[0].candidate;
 
   // -----------------------------------------
-  // 3. First attempt.
+  // 3. Build the current Discovery network.
   // -----------------------------------------
 
   buildDiscoverySeedNetwork(
     discoverySeedCandidate
   );
 
-  buildFastDiscoveryNetwork(
-    1.0
-  );
+  buildFastDiscoveryNetwork();
 
-  const firstSolvedM =
+  // -----------------------------------------
+  // 4. Solve it once.
+  // -----------------------------------------
+
+  const solvedDistanceM =
     solveDiscoveryNetwork();
 
   if (
-    !Number.isFinite(firstSolvedM) ||
-    firstSolvedM <= 0
-  ) {
-    console.warn(
-      "Discovery could not measure first solved route."
-    );
-
-    return;
-  }
-
-  const firstErrorM =
-    firstSolvedM -
-    targetM;
-
-  const firstErrorFraction =
-    Math.abs(firstErrorM) /
-    targetM;
-
-  console.log(
-    "Discovery first solve:",
-    (
-      firstSolvedM /
-      1609.344
-    ).toFixed(2),
-    "mi | target",
-    (
-      targetM /
-      1609.344
-    ).toFixed(2),
-    "mi"
-  );
-
-  // -----------------------------------------
-  // 4. If already reasonably close, keep it.
-  //
-  // Within 3% is good enough to avoid changing
-  // a sensible route for a tiny mileage gain.
-  // -----------------------------------------
-
-  if (firstErrorFraction <= 0.03) {
-    console.log(
-      "Discovery route accepted without correction."
-    );
-
-    return;
-  }
-
-  // -----------------------------------------
-  // 5. Calculate one automatic correction.
-  //
-  // Example:
-  // 5.65 mi actual for a 6.00 mi target
-  // gives approximately 1.06.
-  //
-  // Clamp it so a weird first solve cannot make
-  // the second attempt radically different.
-  // -----------------------------------------
-
-const rawCorrection =
-  targetM /
-  firstSolvedM;
-
-let correctionScale =
-  1 +
-  (rawCorrection - 1) * 0.24;
-	
-  correctionScale =
-    Math.max(
-      0.85,
-      Math.min(
-        1.18,
-        correctionScale
-      )
-    );
-
-  console.log(
-    "Discovery correcting budget by",
-    correctionScale.toFixed(3)
-  );
-
-  // -----------------------------------------
-  // 6. Rebuild from the SAME seed.
-  //
-  // This is important: don't grow the second
-  // attempt on top of the first network.
-  // -----------------------------------------
-
-  buildDiscoverySeedNetwork(
-    discoverySeedCandidate
-  );
-
-  buildFastDiscoveryNetwork(
-    correctionScale
-  );
-
-  const finalSolvedM =
-    solveDiscoveryNetwork();
-
-  if (
-    Number.isFinite(finalSolvedM)
+    Number.isFinite(solvedDistanceM)
   ) {
     console.log(
-      "Discovery final solve:",
+      "Discovery result:",
       (
-        finalSolvedM /
+        solvedDistanceM /
         1609.344
       ).toFixed(2),
-      "mi | target",
+      "mi | requested",
       (
         targetM /
         1609.344
