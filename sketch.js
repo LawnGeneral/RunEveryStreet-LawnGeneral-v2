@@ -147,9 +147,8 @@ const PLANNER_MODES = [
 ];
 
 let selectedPlannerMode = "manual";
-let discoverySeedCandidate = null;
-let discoveryTargetM = null;
-let discoveryCandidates = [];
+
+
 
 function cyclePlannerMode() {
   if (selectedPlannerMode === "manual") {
@@ -217,41 +216,31 @@ function getLatLonDistanceM(lat1, lon1, lat2, lon2) {
 }
 
 
-function getDiscoveryLocalNewRoad(candidates, seedCandidate, radiusM) {
-  const seedMid =
-    getEdgeMidpoint(seedCandidate.edge);
-
-  let newRoadM = 0;
-
-  for (const candidate of candidates) {
-    const mid =
-      getEdgeMidpoint(candidate.edge);
-
-    const distanceM =
-      getLatLonDistanceM(
-        seedMid.lat,
-        seedMid.lon,
-        mid.lat,
-        mid.lon
-      );
-
-    if (distanceM <= radiusM) {
-      newRoadM += candidate.newRoadValue;
-    }
+function startDiscoveryPlanner() {
+  if (!startnode) {
+    showMessage(
+      "Choose a start point before finding new roads."
+    );
+    return;
   }
 
-  return newRoadM;
-}
+  const targetM =
+    getDiscoveryTargetDistance();
 
-
-
-function startDiscoveryPlanner() {
-  showMessage(
-    "Find New Roads is being rebuilt with the new route-first planner."
-  );
+  if (targetM === null) {
+    return;
+  }
 
   console.log(
-    "Discovery planner temporarily disabled during route-first rebuild."
+    "Route-first Discovery requested:",
+    (targetM / 1609.344).toFixed(2),
+    "mi"
+  );
+
+  showMessage(
+    "Discovery target: " +
+    (targetM / 1609.344).toFixed(2) +
+    " miles"
   );
 
   redraw();
@@ -285,51 +274,6 @@ function drawPlannerModeButton() {
       : "PLAN: FIND NEW ROADS";
 
   text(label, x + w / 2, y + h / 2);
-
-  pop();
-}
-
-function drawDiscoverySeed() {
-  if (
-    selectedPlannerMode !== "discovery" ||
-    !discoverySeedCandidate ||
-    !discoverySeedCandidate.edge
-  ) {
-    return;
-  }
-
-  const e = discoverySeedCandidate.edge;
-
-  const fromCoord = ol.proj.fromLonLat([
-    e.from.lon,
-    e.from.lat
-  ]);
-
-  const toCoord = ol.proj.fromLonLat([
-    e.to.lon,
-    e.to.lat
-  ]);
-
-  const fromPixel =
-    openlayersmap.getPixelFromCoordinate(fromCoord);
-
-  const toPixel =
-    openlayersmap.getPixelFromCoordinate(toCoord);
-
-  if (!fromPixel || !toPixel) return;
-
-  push();
-  colorMode(RGB);
-
-  stroke(255, 0, 255);
-  strokeWeight(10);
-
-  line(
-    fromPixel[0],
-    fromPixel[1],
-    toPixel[0],
-    toPixel[1]
-  );
 
   pop();
 }
@@ -711,7 +655,6 @@ function renderRouteGraphics() {
 function renderUIOverlays() {
 	drawPlannerModeButton();
 
-drawDiscoverySeed();
   // 1) MAP PREPARATION STATS (Selection / Trimming)
   if (mode === trimmodemode || mode === selectnodemode) {
     // --- Current selected-road length (this is the lower bound) ---
