@@ -1276,76 +1276,79 @@ function buildDiscoverySeedNetwork(seedCandidate) {
   );
 }
 
-function buildFastDiscoveryNetwork(budgetScale = 1.0) {
+function buildFastDiscoveryNetwork() {
   if (
     !startnode ||
     !discoveryTargetM ||
     !discoverySeedCandidate ||
-    !discoverySeedCandidate.edge ||
     !discoverySelectedEdges ||
     discoverySelectedEdges.length === 0
   ) {
     return;
   }
 
-  // Main street-selection budget.
-  const uniqueBudgetM =
-    discoveryTargetM * 0.62 * budgetScale;
+  const targetM =
+    discoveryTargetM;
 
-  /*
-    After the sensible new-road network is chosen,
-    allow some extra distance specifically for roads
-    that close loops.
+  // We consider ±3% a good route-distance result.
+  const lowerTargetM =
+    targetM * 0.97;
 
-    We will tune this later against actual final
-    route distance.
-  */
-  const finalNetworkBudgetM =
-  discoveryTargetM * 0.77 * budgetScale;
+  const upperTargetM =
+    targetM * 1.03;
 
   const selected =
     new Set(discoverySelectedEdges);
 
-  const selectedNodes =
+  let selectedNodes =
     new Set();
 
-  const degree =
+  let degree =
     new Map();
 
   let selectedDistanceM = 0;
 
   // -----------------------------------------
-  // Start with existing start-to-seed skeleton.
+  // Rebuild network bookkeeping.
   // -----------------------------------------
 
-  for (const edge of selected) {
-    if (!edge || !edge.from || !edge.to) {
-      continue;
+  function rebuildDiscoveryBookkeeping() {
+    selectedNodes =
+      new Set();
+
+    degree =
+      new Map();
+
+    selectedDistanceM = 0;
+
+    for (const edge of selected) {
+      if (
+        !edge ||
+        !edge.from ||
+        !edge.to
+      ) {
+        continue;
+      }
+
+      selectedDistanceM +=
+        edge.distance || 0;
+
+      selectedNodes.add(edge.from);
+      selectedNodes.add(edge.to);
+
+      degree.set(
+        edge.from,
+        (degree.get(edge.from) || 0) + 1
+      );
+
+      degree.set(
+        edge.to,
+        (degree.get(edge.to) || 0) + 1
+      );
     }
-
-    selectedDistanceM +=
-      edge.distance || 0;
-
-    selectedNodes.add(edge.from);
-    selectedNodes.add(edge.to);
-
-    degree.set(
-      edge.from,
-      (degree.get(edge.from) || 0) + 1
-    );
-
-    degree.set(
-      edge.to,
-      (degree.get(edge.to) || 0) + 1
-    );
   }
 
-  // -----------------------------------------
-  // Helper for adding an edge while keeping
-  // all bookkeeping correct.
-  // -----------------------------------------
-
-  function addSelectedEdge(edge) {
+  function addDiscoveryEdge(edge) {
     if (
       !edge ||
       selected.has(edge)
@@ -1354,34 +1357,123 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
     }
 
     selected.add(edge);
+    rebuildDiscoveryBookkeeping();
+  }
 
-    selectedDistanceM +=
-      edge.distance || 0;
+  function getSelectedArray() {
+    return Array.from(selected);
+  }
 
-    selectedNodes.add(edge.from);
-    selectedNodes.add(edge.to);
+  function getEstimatedRouteM() {
+    return estimateDiscoveryClosedDistance(
+      getSelectedArray()
+    );
+  }
 
-    degree.set(
-      edge.from,
-      (degree.get(edge.from) || 0) + 1
+  function getNewRoadDistanceM(edgeArray) {
+    let total = 0;
+
+    for (const edge of edgeArray) {
+      if (
+        edge &&
+        edge.traveled === false &&
+        !edge.isManualConnector
+      ) {
+        total +=
+          edge.distance || 0;
+      }
+    }
+
+    return total;
+  }
+
+  rebuildDiscoveryBookkeeping();
+
+  // -----------------------------------------
+  // Keep the best network we encounter.
+  //
+  // "Best" means closest to requested mileage.
+  // If two are essentially tied, prefer the one
+  // with more new-road mileage.
+  // -----------------------------------------
+
+  let bestEdges =
+    getSelectedArray();
+
+  let bestEstimateM =
+    getEstimatedRouteM();
+
+  let bestNewRoadM =
+    getNewRoadDistanceM(
+      bestEdges
     );
 
-    degree.set(
-      edge.to,
-      (degree.get(edge.to) || 0) + 1
-    );
+  function rememberIfBetter() {
+    const currentEdges =
+      getSelectedArray();
+
+    const estimateM =
+      estimateDiscoveryClosedDistance(
+        currentEdges
+      );
+
+    const newRoadM =
+      getNewRoadDistanceM(
+        currentEdges
+      );
+
+    const currentError =
+      Math.abs(
+        estimateM -
+        targetM
+      );
+
+    const bestError =
+      Math.abs(
+        bestEstimateM -
+        targetM
+      );
+
+    if (
+      currentError <
+        bestError - 10 ||
+      (
+        Math.abs(
+          currentError -
+          bestError
+        ) <= 10 &&
+        newRoadM >
+          bestNewRoadM
+      )
+    ) {
+      bestEdges =
+        currentEdges.slice();
+
+      bestEstimateM =
+        estimateM;
+
+      bestNewRoadM =
+        newRoadM;
+    }
+
+    return estimateM;
   }
 
   // =========================================
   // PHASE 1
-  // Choose sensible new-road coverage.
+  //
+  // Grow sensible NEW-road coverage until the
+  // estimated closed route approaches target.
   // =========================================
+
+  let estimatedRouteM =
+    bestEstimateM;
 
   let guard = 0;
 
   while (
-    selectedDistanceM <
-      uniqueBudgetM &&
+    estimatedRouteM <
+      lowerTargetM &&
     guard < edges.length * 2
   ) {
     guard++;
@@ -1399,30 +1491,26 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
         continue;
       }
 
-      const edgeDistance =
-        edge.distance || 0;
-
-      if (
-        selectedDistanceM +
-          edgeDistance >
-        uniqueBudgetM
-      ) {
-        continue;
-      }
-
       const fromSelected =
-        selectedNodes.has(edge.from);
+        selectedNodes.has(
+          edge.from
+        );
 
       const toSelected =
-        selectedNodes.has(edge.to);
+        selectedNodes.has(
+          edge.to
+        );
 
-      // Must touch the current network.
+      // Growth must remain connected.
       if (
         !fromSelected &&
         !toSelected
       ) {
         continue;
       }
+
+      const edgeDistance =
+        edge.distance || 0;
 
       const isNew =
         edge.traveled === false &&
@@ -1432,7 +1520,8 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
         fromSelected &&
         toSelected;
 
-      let score = -Infinity;
+      let score =
+        -Infinity;
 
       // =====================================
       // NEW ROAD
@@ -1447,6 +1536,7 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
             0
           );
 
+        // Look one intersection ahead.
         if (!closesCycle) {
           const outwardNode =
             fromSelected
@@ -1478,6 +1568,8 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
             }
           }
 
+          // Roads leading into more untraveled
+          // streets are especially valuable.
           score +=
             onwardNewM * 1.5;
 
@@ -1487,7 +1579,9 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
               : edge.to;
 
           const attachedDegree =
-            degree.get(attachedNode) || 0;
+            degree.get(
+              attachedNode
+            ) || 0;
 
           if (
             attachedDegree % 2 === 1
@@ -1497,79 +1591,69 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
             score -= 150;
           }
 
+          // Avoid creating isolated future leftovers.
           if (onwardNewM === 0) {
             score -= 350;
           }
         }
 
-        // New road directly closing a cycle.
+        // New road closing a loop gets a major bonus.
         if (closesCycle) {
           const fromDegree =
-            degree.get(edge.from) || 0;
+            degree.get(
+              edge.from
+            ) || 0;
 
           const toDegree =
-            degree.get(edge.to) || 0;
-
-          const fromOdd =
-            fromDegree % 2 === 1;
-
-          const toOdd =
-            toDegree % 2 === 1;
+            degree.get(
+              edge.to
+            ) || 0;
 
           if (
-            fromOdd &&
-            toOdd
+            fromDegree % 2 === 1 &&
+            toDegree % 2 === 1
           ) {
-            score += 1000;
-          } else if (
-            !fromOdd &&
-            !toOdd
-          ) {
-            score -= 200;
+            score += 1200;
+          } else {
+            score += 400;
           }
         }
       }
 
       // =====================================
-      // PREVIOUSLY-RUN ROAD
+      // OLD ROAD
+      //
+      // During the new-road phase, only use an
+      // old road when it actually helps us get
+      // somewhere useful.
       // =====================================
 
       else {
-        /*
-          Old road already connecting two selected
-          nodes is useful only if it also fixes two
-          odd-degree nodes.
-        */
         if (closesCycle) {
           const fromDegree =
-            degree.get(edge.from) || 0;
+            degree.get(
+              edge.from
+            ) || 0;
 
           const toDegree =
-            degree.get(edge.to) || 0;
+            degree.get(
+              edge.to
+            ) || 0;
 
-          const fromOdd =
-            fromDegree % 2 === 1;
-
-          const toOdd =
-            toDegree % 2 === 1;
-
+          // Old road closing a useful loop.
           if (
-            fromOdd &&
-            toOdd
+            fromDegree % 2 === 1 &&
+            toDegree % 2 === 1
           ) {
             score =
-              1400 -
-              edgeDistance * 2;
+              900 -
+              edgeDistance;
           } else {
-            continue;
+            score =
+              150 -
+              edgeDistance * 2;
           }
-        }
-
-        /*
-          Old road extending outward is allowed only
-          if it immediately opens access to new road.
-        */
-        else {
+        } else {
           const outwardNode =
             fromSelected
               ? edge.to
@@ -1599,6 +1683,9 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
             }
           }
 
+          // No new street immediately beyond it?
+          // Save this old road for the mileage
+          // completion phase later.
           if (
             newRoadBeyondM <= 0
           ) {
@@ -1607,7 +1694,7 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
 
           score =
             newRoadBeyondM * 2.5 -
-            edgeDistance * 6;
+            edgeDistance * 5;
         }
       }
 
@@ -1615,43 +1702,69 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
         score >
         bestScore
       ) {
-        bestScore = score;
-        bestEdge = edge;
+        bestScore =
+          score;
+
+        bestEdge =
+          edge;
       }
     }
 
+    // No more useful new-road growth.
     if (!bestEdge) {
       break;
     }
 
-    addSelectedEdge(bestEdge);
+    addDiscoveryEdge(
+      bestEdge
+    );
+
+    estimatedRouteM =
+      rememberIfBetter();
+
+    /*
+      Don't let Phase 1 run wildly beyond the
+      requested distance. We may still improve
+      things later with loop repair.
+    */
+    if (
+      estimatedRouteM >
+      targetM * 1.08
+    ) {
+      break;
+    }
   }
 
   // =========================================
   // PHASE 2
-  // Repair topology by closing loops.
+  //
+  // Try to repair dangling branches by adding
+  // alternate paths that form actual cycles.
   // =========================================
 
-  const closureLimitM =
-  finalNetworkBudgetM;
-
-  let closuresAdded = 0;
-
-  // A handful of good closures is enough.
-  const maxClosures = 8;
+  let closureGuard = 0;
 
   while (
-    closuresAdded < maxClosures &&
-    selectedDistanceM <
-      closureLimitM
+    closureGuard < 6
   ) {
-    let bestClosure = null;
-    let bestClosureScore = -Infinity;
+    closureGuard++;
 
-    /*
-      Look primarily from trouble spots:
-      dead ends and odd-degree nodes.
-    */
+    const currentEstimateM =
+      getEstimatedRouteM();
+
+    const currentErrorM =
+      Math.abs(
+        currentEstimateM -
+        targetM
+      );
+
+    let bestClosure = null;
+    let bestClosureEstimateM =
+      null;
+
+    let bestClosureScore =
+      -Infinity;
+
     for (const node of selectedNodes) {
       const nodeDegree =
         degree.get(node) || 0;
@@ -1684,85 +1797,78 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
         continue;
       }
 
+      const trialSet =
+        new Set(selected);
+
+      for (const edge of closure.path) {
+        trialSet.add(edge);
+      }
+
+      const trialEdges =
+        Array.from(trialSet);
+
+      const trialEstimateM =
+        estimateDiscoveryClosedDistance(
+          trialEdges
+        );
+
+      // Don't accept a closure that creates
+      // a wildly oversized route.
       if (
-        selectedDistanceM +
-          closure.totalM >
-        closureLimitM
+        trialEstimateM >
+        targetM * 1.08
       ) {
         continue;
       }
 
-      /*
-        Don't make one enormous detour merely
-        to manufacture a loop.
-      */
-      if (
-        closure.totalM >
-        discoveryTargetM * 0.15
-      ) {
-        continue;
-      }
+      const trialErrorM =
+        Math.abs(
+          trialEstimateM -
+          targetM
+        );
 
       const destinationDegree =
         degree.get(
           closure.destination
         ) || 0;
 
-      const destinationOdd =
-        destinationDegree % 2 === 1;
-
       const fixesTwoOdd =
         isOdd &&
-        destinationOdd;
+        destinationDegree % 2 === 1;
 
-      const newFraction =
-        closure.totalM > 0
-          ? closure.newRoadM /
-            closure.totalM
-          : 0;
+      let score =
+        (
+          currentErrorM -
+          trialErrorM
+        ) * 5;
 
-      let score = 0;
-
-      // Eliminating a dead end is extremely valuable.
       if (isDeadEnd) {
-        score += 2500;
-      } else {
-        score += 700;
+        score += 1200;
       }
 
-      // Toggling two odd nodes to even can directly
-      // reduce postman duplication.
       if (fixesTwoOdd) {
-        score += 1800;
+        score += 900;
       }
 
-      // Prefer closures that themselves cover new road.
+      // Prefer closures consisting of new road.
       score +=
-        closure.newRoadM * 4;
+        closure.newRoadM * 1.5;
 
-      // Old road is permitted, but it must justify itself.
       score -=
-        closure.oldRoadM * 2.5;
-
-      // Short closures are preferable.
-      score -=
-        closure.totalM * 0.75;
-
-      // Mostly-old detours should rarely win.
-      if (newFraction < 0.25) {
-        score -= 1200;
-      }
+        closure.oldRoadM * 0.75;
 
       if (
         score >
         bestClosureScore
       ) {
-        bestClosureScore = score;
+        bestClosureScore =
+          score;
 
-        bestClosure = {
-          startNode: node,
-          result: closure
-        };
+        bestClosure =
+          closure;
+
+        bestClosureEstimateM =
+          trialEstimateM;
       }
     }
 
@@ -1770,15 +1876,226 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
       break;
     }
 
-    for (
-      const edge
-      of bestClosure.result.path
+    /*
+      Only make the topology change if it either
+      improves target accuracy OR removes a bad
+      branch without pushing us too far away.
+    */
+    const existingError =
+      Math.abs(
+        getEstimatedRouteM() -
+        targetM
+      );
+
+    const closureError =
+      Math.abs(
+        bestClosureEstimateM -
+        targetM
+      );
+
+    if (
+      closureError >
+        existingError +
+        targetM * 0.03
     ) {
-      addSelectedEdge(edge);
+      break;
     }
 
-    closuresAdded++;
+    for (
+      const edge
+      of bestClosure.path
+    ) {
+      addDiscoveryEdge(edge);
+    }
+
+    rememberIfBetter();
   }
+
+  // =========================================
+  // PHASE 3
+  //
+  // DISTANCE TOP-OFF.
+  //
+  // If there aren't enough sensible new roads
+  // to reach the requested mileage, use old
+  // roads rather than returning a 1.29-mile
+  // route for a 5-mile request.
+  // =========================================
+
+  let topOffGuard = 0;
+
+  while (
+    getEstimatedRouteM() <
+      lowerTargetM &&
+    topOffGuard < 250
+  ) {
+    topOffGuard++;
+
+    const currentEstimateM =
+      getEstimatedRouteM();
+
+    const currentErrorM =
+      Math.abs(
+        targetM -
+        currentEstimateM
+      );
+
+    let bestTopOffEdge = null;
+    let bestTopOffScore =
+      -Infinity;
+
+    let bestTopOffEstimateM =
+      null;
+
+    for (const edge of edges) {
+      if (
+        !edge ||
+        !edge.from ||
+        !edge.to ||
+        selected.has(edge)
+      ) {
+        continue;
+      }
+
+      const fromSelected =
+        selectedNodes.has(
+          edge.from
+        );
+
+      const toSelected =
+        selectedNodes.has(
+          edge.to
+        );
+
+      if (
+        !fromSelected &&
+        !toSelected
+      ) {
+        continue;
+      }
+
+      const trialEdges =
+        getSelectedArray();
+
+      trialEdges.push(edge);
+
+      const trialEstimateM =
+        estimateDiscoveryClosedDistance(
+          trialEdges
+        );
+
+      /*
+        Prefer candidates that move us toward
+        target and stay reasonably close.
+      */
+      if (
+        trialEstimateM >
+        upperTargetM &&
+        currentEstimateM <
+        lowerTargetM
+      ) {
+        continue;
+      }
+
+      const trialErrorM =
+        Math.abs(
+          targetM -
+          trialEstimateM
+        );
+
+      const improvementM =
+        currentErrorM -
+        trialErrorM;
+
+      const isNew =
+        edge.traveled === false &&
+        !edge.isManualConnector;
+
+      const closesCycle =
+        fromSelected &&
+        toSelected;
+
+      let score =
+        improvementM * 10;
+
+      // Even in top-off mode, new road still wins
+      // when mileage accuracy is comparable.
+      if (isNew) {
+        score +=
+          (edge.distance || 0) * 2;
+      }
+
+      if (closesCycle) {
+        score += 250;
+      }
+
+      if (
+        score >
+        bestTopOffScore
+      ) {
+        bestTopOffScore =
+          score;
+
+        bestTopOffEdge =
+          edge;
+
+        bestTopOffEstimateM =
+          trialEstimateM;
+      }
+    }
+
+    if (!bestTopOffEdge) {
+      break;
+    }
+
+    addDiscoveryEdge(
+      bestTopOffEdge
+    );
+
+    estimatedRouteM =
+      rememberIfBetter();
+
+    if (
+      estimatedRouteM >=
+        lowerTargetM &&
+      estimatedRouteM <=
+        upperTargetM
+    ) {
+      break;
+    }
+
+    /*
+      If somehow the chosen edge did not move the
+      estimate toward target, stop instead of
+      wandering around the map.
+    */
+    if (
+      bestTopOffEstimateM !== null &&
+      Math.abs(
+        targetM -
+        bestTopOffEstimateM
+      ) >=
+        Math.abs(
+          targetM -
+          currentEstimateM
+        )
+    ) {
+      break;
+    }
+  }
+
+  // =========================================
+  // Use whichever network came closest to the
+  // requested route mileage.
+  // =========================================
+
+  selected.clear();
+
+  for (const edge of bestEdges) {
+    selected.add(edge);
+  }
+
+  rebuildDiscoveryBookkeeping();
 
   discoverySelectedEdges =
     Array.from(selected);
@@ -1823,8 +2140,13 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
     selectedNodes.size +
     1;
 
+  const finalEstimateM =
+    estimateDiscoveryClosedDistance(
+      discoverySelectedEdges
+    );
+
   console.log(
-    "Fast Discovery network:",
+    "Target-first Discovery:",
     discoverySelectedEdges.length,
     "segments |",
     (
@@ -1837,16 +2159,21 @@ function buildFastDiscoveryNetwork(budgetScale = 1.0) {
       1609.344
     ).toFixed(2),
     "new-road mi |",
+    "estimated route=" +
+      (
+        finalEstimateM /
+        1609.344
+      ).toFixed(2) +
+      " mi |",
     "odd=" + odd,
     "| deadEnds=" + deadEnds,
     "| cycleSignal=" + cycleSignal,
-    "| closures=" + closuresAdded,
-    "| target",
-    (
-      discoveryTargetM /
-      1609.344
-    ).toFixed(2),
-    "mi"
+    "| target=" +
+      (
+        targetM /
+        1609.344
+      ).toFixed(2) +
+      " mi"
   );
 }
 
