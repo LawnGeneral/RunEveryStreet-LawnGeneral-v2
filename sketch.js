@@ -172,17 +172,6 @@ function getLatLonDistanceM(lat1, lon1, lat2, lon2) {
 }
 
 
-
-function startDiscoveryPlanner() {
-  showMessage(
-    "Find New Roads is currently disabled."
-  );
-
-  redraw();
-  openlayersmap.render();
-}
-
-
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
