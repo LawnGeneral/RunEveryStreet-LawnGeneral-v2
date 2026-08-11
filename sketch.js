@@ -448,53 +448,7 @@ function drawDiscoverySeed() {
   pop();
 }
 
-function drawDiscoverySelectedEdges() {
-  if (
-    selectedPlannerMode !== "discovery" ||
-    !discoverySelectedEdges ||
-    discoverySelectedEdges.length === 0
-  ) {
-    return;
-  }
 
-  push();
-  colorMode(RGB);
-
-  stroke(255, 215, 0);
-  strokeWeight(5);
-  noFill();
-
-  for (const e of discoverySelectedEdges) {
-    if (!e || !e.from || !e.to) continue;
-
-    const fromCoord = ol.proj.fromLonLat([
-      e.from.lon,
-      e.from.lat
-    ]);
-
-    const toCoord = ol.proj.fromLonLat([
-      e.to.lon,
-      e.to.lat
-    ]);
-
-    const fromPixel =
-      openlayersmap.getPixelFromCoordinate(fromCoord);
-
-    const toPixel =
-      openlayersmap.getPixelFromCoordinate(toCoord);
-
-    if (!fromPixel || !toPixel) continue;
-
-    line(
-      fromPixel[0],
-      fromPixel[1],
-      toPixel[0],
-      toPixel[1]
-    );
-  }
-
-  pop();
-}
 // --- Route style selector ---
 // These profiles do NOT change the required road coverage.
 // They only change how the Euler route is ordered after the graph is made traversable.
@@ -870,7 +824,7 @@ function renderRouteGraphics() {
 
 function renderUIOverlays() {
 	drawPlannerModeButton();
-drawDiscoverySelectedEdges();
+
 drawDiscoverySeed();
   // 1) MAP PREPARATION STATS (Selection / Trimming)
   if (mode === trimmodemode || mode === selectnodemode) {
