@@ -44,6 +44,7 @@ jobs:
           echo "Strava authentication successful."
 
           echo "NEW_REFRESH_TOKEN=$NEW_REFRESH_TOKEN" >> "$GITHUB_ENV"
+          echo "STRAVA_ACCESS_TOKEN=$ACCESS_TOKEN" >> "$GITHUB_ENV"
 
       - name: Save newest Strava refresh token
         env:
