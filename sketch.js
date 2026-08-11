@@ -845,7 +845,8 @@ function buildDiscoveryTestRoute(targetM) {
 
 const orphanAnalysis =
   analyzeDiscoveryOrphans(
-    bestCandidate.edges
+    bestCandidate.edges,
+    targetM
   );
 
 console.log(
@@ -857,8 +858,10 @@ console.log(
     1609.344
   ).toFixed(2),
   "mi stranded |",
-  orphanAnalysis.completedComponents,
-  "new-road pockets completed"
+  orphanAnalysis.largeCutoffCount,
+  "large areas left |",
+  orphanAnalysis.boundaryIgnoredCount,
+  "boundary fragments ignored"
 );	
 	
   // ------------------------------------------------------------
@@ -1029,7 +1032,7 @@ buildDiscoveryTestRoute(targetM);
   openlayersmap.render();
 }
 
-function analyzeDiscoveryOrphans(routeEdges) {
+function analyzeDiscoveryOrphans(routeEdges, targetM) {
   if (
     !routeEdges ||
     routeEdges.length === 0
@@ -1037,47 +1040,105 @@ function analyzeDiscoveryOrphans(routeEdges) {
     return {
       orphanCount: 0,
       orphanM: 0,
-      completedComponents: 0
+      largeCutoffCount: 0,
+      boundaryIgnoredCount: 0
     };
   }
 
   const routeSet =
     new Set(routeEdges);
 
-  // Only roads that were untraveled BEFORE this proposed route.
-  const newEdges =
+  const routeNewEdges =
+    new Set(
+      routeEdges.filter(
+        edge =>
+          edge &&
+          edge.traveled === false &&
+          !edge.isManualConnector
+      )
+    );
+
+  // ------------------------------------------------------------
+  // Estimate the boundary of the currently loaded road graph.
+  // Anything near that boundary is uncertain because more roads
+  // may exist outside the loaded area.
+  // ------------------------------------------------------------
+  let minLat = Infinity;
+  let maxLat = -Infinity;
+  let minLon = Infinity;
+  let maxLon = -Infinity;
+
+  for (const node of nodes) {
+    if (!node) continue;
+
+    minLat =
+      Math.min(minLat, node.lat);
+
+    maxLat =
+      Math.max(maxLat, node.lat);
+
+    minLon =
+      Math.min(minLon, node.lon);
+
+    maxLon =
+      Math.max(maxLon, node.lon);
+  }
+
+  const latMargin =
+    (maxLat - minLat) * 0.03;
+
+  const lonMargin =
+    (maxLon - minLon) * 0.03;
+
+  function nodeTouchesBoundary(node) {
+    if (!node) return false;
+
+    return (
+      node.lat <=
+        minLat + latMargin ||
+      node.lat >=
+        maxLat - latMargin ||
+      node.lon <=
+        minLon + lonMargin ||
+      node.lon >=
+        maxLon - lonMargin
+    );
+  }
+
+  // ------------------------------------------------------------
+  // Remaining new roads AFTER this proposed route.
+  // ------------------------------------------------------------
+  const remainingEdges =
     edges.filter(
       edge =>
         edge &&
         edge.from &&
         edge.to &&
         edge.traveled === false &&
-        !edge.isManualConnector
+        !edge.isManualConnector &&
+        !routeSet.has(edge)
     );
 
-  const edgeToComponent =
-    new Map();
+  const remainingSet =
+    new Set(remainingEdges);
 
-  const baselineComponents = [];
+  const components = [];
 
-  const unvisited =
-    new Set(newEdges);
-
-  // ------------------------------------------------------------
-  // Find the connected new-road components BEFORE the route.
-  // ------------------------------------------------------------
-  while (unvisited.size > 0) {
+  while (remainingSet.size > 0) {
     const firstEdge =
-      unvisited.values().next().value;
+      remainingSet
+        .values()
+        .next()
+        .value;
 
     const componentEdges = [];
+    const componentNodes =
+      new Set();
+
     const queue = [
       firstEdge.from,
       firstEdge.to
     ];
-
-    const seenNodes =
-      new Set();
 
     while (queue.length > 0) {
       const node =
@@ -1085,12 +1146,12 @@ function analyzeDiscoveryOrphans(routeEdges) {
 
       if (
         !node ||
-        seenNodes.has(node)
+        componentNodes.has(node)
       ) {
         continue;
       }
 
-      seenNodes.add(node);
+      componentNodes.add(node);
 
       for (
         const edge of
@@ -1098,14 +1159,12 @@ function analyzeDiscoveryOrphans(routeEdges) {
       ) {
         if (
           !edge ||
-          edge.traveled !== false ||
-          edge.isManualConnector ||
-          !unvisited.has(edge)
+          !remainingSet.has(edge)
         ) {
           continue;
         }
 
-        unvisited.delete(edge);
+        remainingSet.delete(edge);
 
         componentEdges.push(edge);
 
@@ -1116,198 +1175,110 @@ function analyzeDiscoveryOrphans(routeEdges) {
       }
     }
 
-    const component = {
-      edges: componentEdges
-    };
-
-    baselineComponents.push(
-      component
-    );
-
-    for (
-      const edge of
-      componentEdges
-    ) {
-      edgeToComponent.set(
-        edge,
-        component
-      );
-    }
-  }
-
-  let orphanCount = 0;
-  let orphanM = 0;
-  let completedComponents = 0;
-
-  // ------------------------------------------------------------
-  // Examine only new-road components touched by this route.
-  // ------------------------------------------------------------
-  for (
-    const component of
-    baselineComponents
-  ) {
-    const usedInRoute =
-      component.edges.filter(
-        edge =>
-          routeSet.has(edge)
-      );
-
-    if (usedInRoute.length === 0) {
-      continue;
-    }
-
-    const remaining =
-      component.edges.filter(
-        edge =>
-          !routeSet.has(edge)
-      );
-
-    // Excellent: this entire connected new-road pocket
-    // would be completed.
-    if (remaining.length === 0) {
-      completedComponents++;
-      continue;
-    }
-
-    // ----------------------------------------------------------
-    // Break the remaining new roads into fragments AFTER the
-    // proposed route removes its newly completed edges.
-    // ----------------------------------------------------------
-    const remainingSet =
-      new Set(remaining);
-
-    const fragments = [];
-
-    while (remainingSet.size > 0) {
-      const firstEdge =
-        remainingSet.values().next().value;
-
-      const fragmentEdges = [];
-      const queue = [
-        firstEdge.from,
-        firstEdge.to
-      ];
-
-      const seenNodes =
-        new Set();
-
-      while (queue.length > 0) {
-        const node =
-          queue.pop();
-
-        if (
-          !node ||
-          seenNodes.has(node)
-        ) {
-          continue;
-        }
-
-        seenNodes.add(node);
-
-        for (
-          const edge of
-          node.edges || []
-        ) {
-          if (
-            !edge ||
-            !remainingSet.has(edge)
-          ) {
-            continue;
-          }
-
-          remainingSet.delete(edge);
-
-          fragmentEdges.push(edge);
-
-          queue.push(
-            edge.from,
-            edge.to
-          );
-        }
-      }
-
-      const fragmentM =
-        fragmentEdges.reduce(
-          (sum, edge) =>
-            sum +
-            (edge.distance || 0),
-          0
-        );
-
-      fragments.push({
-        edges: fragmentEdges,
-        distanceM: fragmentM
-      });
-    }
-
-    fragments.sort(
-      (a, b) =>
-        b.distanceM -
-        a.distanceM
-    );
-
-    const usedM =
-      usedInRoute.reduce(
+    const distanceM =
+      componentEdges.reduce(
         (sum, edge) =>
           sum +
           (edge.distance || 0),
         0
       );
 
-    const remainingM =
-      fragments.reduce(
-        (sum, fragment) =>
-          sum +
-          fragment.distanceM,
-        0
-      );
+    let touchesRoute = false;
+    let touchesBoundary = false;
 
-    // ----------------------------------------------------------
-    // Case 1:
-    // Route split one connected new-road area into two or more
-    // disconnected leftovers.
-    //
-    // Count every fragment except the largest as an orphan.
-    // ----------------------------------------------------------
-    if (fragments.length > 1) {
-      for (
-        let i = 1;
-        i < fragments.length;
-        i++
+    for (
+      const node of
+      componentNodes
+    ) {
+      if (
+        nodeTouchesBoundary(node)
       ) {
-        orphanCount++;
-        orphanM +=
-          fragments[i].distanceM;
+        touchesBoundary = true;
+      }
+
+      for (
+        const edge of
+        node.edges || []
+      ) {
+        if (
+          routeNewEdges.has(edge)
+        ) {
+          touchesRoute = true;
+        }
       }
     }
 
-    // ----------------------------------------------------------
-    // Case 2:
-    // Route nearly completed a pocket but left one small tail.
-    //
-    // Even if it is technically still one connected fragment,
-    // this is exactly the "why didn't it just finish that road?"
-    // behavior we want to detect.
-    // ----------------------------------------------------------
+    components.push({
+      edges: componentEdges,
+      nodes: componentNodes,
+      distanceM: distanceM,
+      touchesRoute: touchesRoute,
+      touchesBoundary: touchesBoundary
+    });
+  }
+
+  // ------------------------------------------------------------
+  // Only count reasonably finishable interior fragments as true
+  // orphans.
+  //
+  // Larger remaining areas are not automatically "orphans."
+  // They may simply be useful territory for another run.
+  // ------------------------------------------------------------
+  const finishableLimitM =
+    Math.min(
+      0.75 * 1609.344,
+      Number.isFinite(targetM)
+        ? targetM * 0.15
+        : 0.75 * 1609.344
+    );
+
+  let orphanCount = 0;
+  let orphanM = 0;
+
+  let largeCutoffCount = 0;
+  let boundaryIgnoredCount = 0;
+
+  for (
+    const component of
+    components
+  ) {
+    // If this route never touched the component,
+    // it did not create this leftover.
     if (
-      fragments.length === 1 &&
-      usedM > 0 &&
-      remainingM <
-        0.30 * 1609.344 &&
-      remainingM <
-        usedM * 0.40
+      !component.touchesRoute
+    ) {
+      continue;
+    }
+
+    // We cannot trust "orphan" status near the
+    // edge of our loaded road data.
+    if (
+      component.touchesBoundary
+    ) {
+      boundaryIgnoredCount++;
+      continue;
+    }
+
+    if (
+      component.distanceM <=
+      finishableLimitM
     ) {
       orphanCount++;
+
       orphanM +=
-        remainingM;
+        component.distanceM;
+    } else {
+      largeCutoffCount++;
     }
   }
 
   return {
     orphanCount: orphanCount,
     orphanM: orphanM,
-    completedComponents:
-      completedComponents
+    largeCutoffCount:
+      largeCutoffCount,
+    boundaryIgnoredCount:
+      boundaryIgnoredCount
   };
 }
 
