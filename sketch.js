@@ -848,24 +848,30 @@ function getDiscoveryCandidateClusters(candidates) {
 }
 
 function startDiscoveryPlanner() {
-  const targetM = getDiscoveryTargetDistance();
+  const targetM =
+    getDiscoveryTargetDistance();
 
   if (targetM === null) {
     return;
   }
 
-  // Reset any previous Discovery run.
+  // Reset previous Discovery state.
   discoveryTargetM = targetM;
   discoverySeedCandidate = null;
   discoverySelectedEdges = [];
   discoveryCandidates = [];
 
-  // 1. Find all untraveled roads that are realistically
-  // reachable within this closed-loop distance.
-  const candidates =
-    getDiscoveryCandidateEdges(targetM);
+  // -----------------------------------------
+  // 1. Find reachable untraveled roads.
+  // -----------------------------------------
 
-  discoveryCandidates = candidates;
+  const candidates =
+    getDiscoveryCandidateEdges(
+      targetM
+    );
+
+  discoveryCandidates =
+    candidates;
 
   if (candidates.length === 0) {
     showMessage(
@@ -877,7 +883,10 @@ function startDiscoveryPlanner() {
     return;
   }
 
-  // 2. Find the most promising area for collecting new roads.
+  // -----------------------------------------
+  // 2. Find the best Discovery area.
+  // -----------------------------------------
+
   const scoredSeeds =
     scoreDiscoverySeeds(
       candidates,
@@ -894,49 +903,136 @@ function startDiscoveryPlanner() {
     return;
   }
 
-  // 3. Remember the best seed.
   discoverySeedCandidate =
     scoredSeeds[0].candidate;
 
-  // 4. Build the initial connected skeleton from
-  // our start point to that new-road area.
+  // -----------------------------------------
+  // 3. First attempt.
+  // -----------------------------------------
+
   buildDiscoverySeedNetwork(
     discoverySeedCandidate
   );
-	
-buildFastDiscoveryNetwork();
 
-	solveDiscoveryNetwork();
-  const targetMiles =
-    targetM / 1609.344;
+  buildFastDiscoveryNetwork(
+    1.0
+  );
 
-  const initialNetworkM =
-    discoverySelectedEdges.reduce(
-      (sum, edge) =>
-        sum + (edge.distance || 0),
-      0
+  const firstSolvedM =
+    solveDiscoveryNetwork();
+
+  if (
+    !Number.isFinite(firstSolvedM) ||
+    firstSolvedM <= 0
+  ) {
+    console.warn(
+      "Discovery could not measure first solved route."
+    );
+
+    return;
+  }
+
+  const firstErrorM =
+    firstSolvedM -
+    targetM;
+
+  const firstErrorFraction =
+    Math.abs(firstErrorM) /
+    targetM;
+
+  console.log(
+    "Discovery first solve:",
+    (
+      firstSolvedM /
+      1609.344
+    ).toFixed(2),
+    "mi | target",
+    (
+      targetM /
+      1609.344
+    ).toFixed(2),
+    "mi"
+  );
+
+  // -----------------------------------------
+  // 4. If already reasonably close, keep it.
+  //
+  // Within 3% is good enough to avoid changing
+  // a sensible route for a tiny mileage gain.
+  // -----------------------------------------
+
+  if (firstErrorFraction <= 0.03) {
+    console.log(
+      "Discovery route accepted without correction."
+    );
+
+    return;
+  }
+
+  // -----------------------------------------
+  // 5. Calculate one automatic correction.
+  //
+  // Example:
+  // 5.65 mi actual for a 6.00 mi target
+  // gives approximately 1.06.
+  //
+  // Clamp it so a weird first solve cannot make
+  // the second attempt radically different.
+  // -----------------------------------------
+
+  let correctionScale =
+    targetM /
+    firstSolvedM;
+
+  correctionScale =
+    Math.max(
+      0.85,
+      Math.min(
+        1.18,
+        correctionScale
+      )
     );
 
   console.log(
-    "Discovery initialized:",
-    targetMiles.toFixed(2),
-    "mile target |",
-    candidates.length,
-    "candidate new-road segments |",
-    discoverySelectedEdges.length,
-    "initial network segments |",
-    (initialNetworkM / 1609.344).toFixed(2),
-    "initial unique miles"
+    "Discovery correcting budget by",
+    correctionScale.toFixed(3)
   );
 
-  showMessage(
-    "Discovery ready: building " +
-    targetMiles.toFixed(1) +
-    " mile new-road route."
+  // -----------------------------------------
+  // 6. Rebuild from the SAME seed.
+  //
+  // This is important: don't grow the second
+  // attempt on top of the first network.
+  // -----------------------------------------
+
+  buildDiscoverySeedNetwork(
+    discoverySeedCandidate
   );
 
-  redraw();
-  openlayersmap.render();
+  buildFastDiscoveryNetwork(
+    correctionScale
+  );
+
+  const finalSolvedM =
+    solveDiscoveryNetwork();
+
+  if (
+    Number.isFinite(finalSolvedM)
+  ) {
+    console.log(
+      "Discovery final solve:",
+      (
+        finalSolvedM /
+        1609.344
+      ).toFixed(2),
+      "mi | target",
+      (
+        targetM /
+        1609.344
+      ).toFixed(2),
+      "mi"
+    );
+  }
 }
 
 function buildDiscoverySeedNetwork(seedCandidate) {
@@ -991,7 +1087,7 @@ function buildDiscoverySeedNetwork(seedCandidate) {
   );
 }
 
-function buildFastDiscoveryNetwork() {
+function buildFastDiscoveryNetwork(budgetScale = 1.0) {
   if (
     !startnode ||
     !discoveryTargetM ||
@@ -1005,7 +1101,7 @@ function buildFastDiscoveryNetwork() {
 
   // Main street-selection budget.
   const uniqueBudgetM =
-    discoveryTargetM * 0.62;
+    discoveryTargetM * 0.62 * budgetScale;
 
   /*
     After the sensible new-road network is chosen,
@@ -1016,7 +1112,7 @@ function buildFastDiscoveryNetwork() {
     route distance.
   */
   const finalNetworkBudgetM =
-  discoveryTargetM * 0.77;
+  discoveryTargetM * 0.77 * budgetScale;
 
   const selected =
     new Set(discoverySelectedEdges);
@@ -1571,45 +1667,72 @@ function solveDiscoveryNetwork() {
     discoverySelectedEdges.length === 0
   ) {
     showMessage("Discovery did not select any roads.");
-    return;
+    return null;
   }
 
   // Preserve the complete loaded map.
   const fullEdges = edges;
   const fullNodes = nodes;
 
-  const fullTotalEdgeDistance = totaledgedistance;
-  const fullTotalRoadsDist = totalRoadsDist;
-  const fullTotalUniqueRoads = totaluniqueroads;
+  const fullTotalEdgeDistance =
+    totaledgedistance;
 
-  // Give the existing solver ONLY the roads selected
-  // by the Discovery planner.
-  edges = discoverySelectedEdges.slice();
+  const fullTotalRoadsDist =
+    totalRoadsDist;
 
-  const discoveryNodeSet = new Set();
+  const fullTotalUniqueRoads =
+    totaluniqueroads;
+
+  // Give the existing solver ONLY the roads
+  // selected by Discovery.
+  edges =
+    discoverySelectedEdges.slice();
+
+  const discoveryNodeSet =
+    new Set();
 
   for (const edge of edges) {
-    if (!edge || !edge.from || !edge.to) continue;
+    if (
+      !edge ||
+      !edge.from ||
+      !edge.to
+    ) {
+      continue;
+    }
 
-    discoveryNodeSet.add(edge.from);
-    discoveryNodeSet.add(edge.to);
+    discoveryNodeSet.add(
+      edge.from
+    );
+
+    discoveryNodeSet.add(
+      edge.to
+    );
   }
 
   if (startnode) {
-    discoveryNodeSet.add(startnode);
+    discoveryNodeSet.add(
+      startnode
+    );
   }
 
-  nodes = Array.from(discoveryNodeSet);
+  nodes =
+    Array.from(
+      discoveryNodeSet
+    );
 
-  // Recalculate the temporary graph's road distance.
+  // Recalculate temporary graph distance.
   totaledgedistance = 0;
 
   for (const edge of edges) {
-    totaledgedistance += edge.distance || 0;
+    totaledgedistance +=
+      edge.distance || 0;
   }
 
-  totalRoadsDist = totaledgedistance;
-  totaluniqueroads = edges.length;
+  totalRoadsDist =
+    totaledgedistance;
+
+  totaluniqueroads =
+    edges.length;
 
   resetEdges();
   rebuildEdgeLookup();
@@ -1618,26 +1741,49 @@ function solveDiscoveryNetwork() {
     "Solving Discovery subgraph:",
     edges.length,
     "edges |",
-    (totalRoadsDist / 1609.344).toFixed(2),
+    (
+      totalRoadsDist /
+      1609.344
+    ).toFixed(2),
     "unique miles"
   );
 
-  // Use the existing proven closed-route solver.
+  // Existing closed-route solver.
   solveRES();
 
-  // Restore the complete loaded map after solving.
+  /*
+    solveRES stores the finished route distance
+    in bestdistance.
+
+    Save it BEFORE restoring the full graph so
+    Discovery can use the real result to correct
+    its next attempt.
+  */
+  const solvedDistanceM =
+    Number.isFinite(bestdistance)
+      ? bestdistance
+      : null;
+
+  // Restore complete loaded map.
   edges = fullEdges;
   nodes = fullNodes;
 
-  totaledgedistance = fullTotalEdgeDistance;
-  totalRoadsDist = fullTotalRoadsDist;
-  totaluniqueroads = fullTotalUniqueRoads;
+  totaledgedistance =
+    fullTotalEdgeDistance;
+
+  totalRoadsDist =
+    fullTotalRoadsDist;
+
+  totaluniqueroads =
+    fullTotalUniqueRoads;
 
   resetEdges();
   rebuildEdgeLookup();
 
   redraw();
   openlayersmap.render();
+
+  return solvedDistanceM;
 }
 function getDiscoveryFrontierCandidates() {
   if (
