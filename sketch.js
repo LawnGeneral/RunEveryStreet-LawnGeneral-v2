@@ -986,7 +986,7 @@ const rawCorrection =
 
 let correctionScale =
   1 +
-  (rawCorrection - 1) * 0.45;
+  (rawCorrection - 1) * 0.24;
 	
   correctionScale =
     Math.max(
