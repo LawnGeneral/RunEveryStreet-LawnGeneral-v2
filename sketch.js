@@ -714,11 +714,11 @@ function buildDiscoveryTestRoute(targetM) {
   // ------------------------------------------------------------
   for (const anchor of anchors) {
     const outbound =
-      reconstructPath(
-        previousFromStart,
-        startnode,
-        anchor
-      );
+  findBiasedReturnPath(
+    startnode,
+    anchor,
+    new Set()
+  );
 
     if (
       !outbound ||
