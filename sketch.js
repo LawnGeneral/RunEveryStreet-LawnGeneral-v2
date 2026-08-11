@@ -178,7 +178,18 @@ function getDiscoveryTargetDistance() {
   return miles * 1609.344;
 }
 
+function getDiscoverySearchRadiusM(targetM) {
+  if (
+    !Number.isFinite(targetM) ||
+    targetM <= 0
+  ) {
+    return null;
+  }
 
+  const HALF_MILE_M = 804.672;
+
+  return targetM / 2 + HALF_MILE_M;
+}
 
 function getEdgeMidpoint(edge) {
   return {
@@ -231,9 +242,14 @@ function startDiscoveryPlanner() {
     return;
   }
 
+  const searchRadiusM =
+    getDiscoverySearchRadiusM(targetM);
+
   console.log(
     "Route-first Discovery requested:",
     (targetM / 1609.344).toFixed(2),
+    "mi | search radius:",
+    (searchRadiusM / 1609.344).toFixed(2),
     "mi"
   );
 
