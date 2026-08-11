@@ -1005,7 +1005,7 @@ function buildFastDiscoveryNetwork() {
 
   // Main street-selection budget.
   const uniqueBudgetM =
-    discoveryTargetM * 0.72;
+    discoveryTargetM * 0.58;
 
   /*
     After the sensible new-road network is chosen,
@@ -1015,8 +1015,8 @@ function buildFastDiscoveryNetwork() {
     We will tune this later against actual final
     route distance.
   */
-  const closureBudgetM =
-    discoveryTargetM * 0.18;
+  const finalNetworkBudgetM =
+  discoveryTargetM * 0.72;
 
   const selected =
     new Set(discoverySelectedEdges);
@@ -1348,8 +1348,7 @@ function buildFastDiscoveryNetwork() {
   // =========================================
 
   const closureLimitM =
-    selectedDistanceM +
-    closureBudgetM;
+  finalNetworkBudgetM;
 
   let closuresAdded = 0;
 
