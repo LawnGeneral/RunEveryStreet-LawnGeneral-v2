@@ -2462,7 +2462,7 @@ function showReportOut() {
     line(width / 2 - 50, y + 70, width / 2 + 50, y + 70);
     noStroke();
 
-    // 4. STATS (Converting meters to km)
+    // 4. STATS (Converting meters to miles)
     textSize(14);
     fill(200);
 
@@ -2477,8 +2477,8 @@ function showReportOut() {
     text("Total unique distance", width / 2, y + 145);
     fill(255);
     textSize(22);
-    let totalDistKm = (totalRoadsDist / 1000).toFixed(1);
-    text(`${totalDistKm} km`, width / 2, y + 170);
+ 	let totalDistMiles = (totalRoadsDist / 1609.344).toFixed(1);
+	text(`${totalDistMiles} mi`, width / 2, y + 170);
 
     // Final Route Length
     fill(200);
@@ -2486,8 +2486,8 @@ function showReportOut() {
     text("Length of final route", width / 2, y + 215);
     fill(255);
     textSize(22);
-    let finalRouteKm = (bestdistance / 1000).toFixed(1);
-    text(`${finalRouteKm} km`, width / 2, y + 240);
+    let finalRouteMiles = (bestdistance / 1609.344).toFixed(1);
+	text(`${finalRouteMiles} mi`, width / 2, y + 240);
 
     // Efficiency
     fill(200);
