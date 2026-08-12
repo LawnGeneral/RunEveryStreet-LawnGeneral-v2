@@ -2140,29 +2140,29 @@ function handleConnectorNodeClick() {
 
 
 function mousePressed() {
-  // 0) If the Route Summary modal is up, ONLY handle its button click
-  if (mode === downloadGPXmode) {
-    let boxW = 400;
-    let boxH = 450;
-    let y = height / 2 - boxH / 2;
+// 0) If the Route Summary modal is up, ONLY handle its button click
+if (mode === downloadGPXmode) {
+  let boxW = 400;
+  let boxH = 450;
+  let y = height / 2 - boxH / 2;
 
-    let btnW = 300;
-    let btnH = 50;
-    let btnX = width / 2 - btnW / 2;
-    let btnY = y + 350;
+  let btnW = 300;
+  let btnH = 50;
+  let btnX = width / 2 - btnW / 2;
+  let btnY = y + 350;
 
-    if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-      if (typeof downloadGPX === "function") {
-        downloadGPX();
-        showMessage("Downloading GPX...");
-      } else {
-        console.error("downloadGPX() not found.");
-        showMessage("Download failed: missing downloadGPX()");
-      }
-      return;
+  if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+    if (typeof downloadGPX === "function") {
+      downloadGPX();
+      showMessage("Downloading GPX...");
+    } else {
+      console.error("downloadGPX() not found.");
+      showMessage("Download failed: missing downloadGPX()");
     }
-    return; // keep modal open
+    return;
   }
+  return; // keep modal open
+}
 
   // 0.5) TOP TOOLBAR CLICK: UNDO TRIM (must be handled here because draw() is not looping)
   // These values MUST match drawToolbar()
@@ -2528,29 +2528,51 @@ function showReportOut() {
     let efficiency = (bestdistance === 0) ? 0 : (totalRoadsDist / bestdistance * 100).toFixed(0);
     text(`${efficiency}%`, width / 2, y + 310);
 
-    // 5. THE BUTTON
-    // We draw the button here, but mouse click logic goes in mousePressed()
-    let btnW = 300;
-    let btnH = 50;
-    let btnX = width / 2 - btnW / 2;
-    let btnY = y + 350;
+   // 5. BACK TO EDIT AND DOWNLOAD BUTTONS
+let btnW = 145;
+let btnH = 50;
+let gap = 20;
+let leftBtnX = width / 2 - btnW - gap / 2;
+let rightBtnX = width / 2 + gap / 2;
+let btnY = y + 350;
 
-    // Hover effect
-    if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
-        fill(60, 55, 50); 
-        cursor(HAND);
-    } else {
-        fill(20, 15, 10);
-        cursor(ARROW);
-    }
+let overBackButton =
+  mouseX > leftBtnX &&
+  mouseX < leftBtnX + btnW &&
+  mouseY > btnY &&
+  mouseY < btnY + btnH;
 
-    stroke(255);
-    rect(btnX, btnY, btnW, btnH, 8);
-    
-    fill(255);
-    noStroke();
-    textSize(18);
-    text("Download GPX Route", width / 2, btnY + 32);
+let overDownloadButton =
+  mouseX > rightBtnX &&
+  mouseX < rightBtnX + btnW &&
+  mouseY > btnY &&
+  mouseY < btnY + btnH;
+
+// Back to Edit button
+fill(overBackButton ? 60 : 20, overBackButton ? 55 : 15, overBackButton ? 50 : 10);
+stroke(255);
+rect(leftBtnX, btnY, btnW, btnH, 8);
+
+fill(255);
+noStroke();
+textSize(16);
+text("BACK TO EDIT", leftBtnX + btnW / 2, btnY + 32);
+
+// Download button
+fill(overDownloadButton ? 60 : 20, overDownloadButton ? 55 : 15, overDownloadButton ? 50 : 10);
+stroke(255);
+rect(rightBtnX, btnY, btnW, btnH, 8);
+
+fill(255);
+noStroke();
+textSize(16);
+text("DOWNLOAD GPX", rightBtnX + btnW / 2, btnY + 32);
+
+if (overBackButton || overDownloadButton) {
+  cursor(HAND);
+} else {
+  cursor(ARROW);
+}
 
     pop();
 }
