@@ -2429,6 +2429,36 @@ function hideMessage() {
   }
 }
 
+function returnToEditMode() {
+  // Remove solver-only traversal markings.
+  for (const edge of edges) {
+    if (!edge) continue;
+    edge.extraTraversals = 0;
+    edge.travels = 0;
+  }
+
+  // Clear the completed route without clearing the edited road graph.
+  bestroute = null;
+  bestdistance = Infinity;
+
+  currentroute =
+    startnode && typeof Route === "function"
+      ? new Route(startnode, null)
+      : null;
+
+  navMode = false;
+  solverRunning = false;
+
+  // Return directly to road trimming.
+  mapPanZoomMode = false;
+  resetEdges();
+  setMode(trimmodemode);
+
+  showMessage("Back in edit mode. Trim roads, then run the solver again.");
+
+  redraw();
+  openlayersmap.render();
+}
 
 function showReportOut() {
     push();
