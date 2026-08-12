@@ -2140,18 +2140,36 @@ function handleConnectorNodeClick() {
 
 
 function mousePressed() {
-// 0) If the Route Summary modal is up, ONLY handle its button click
+// 0) If the Route Summary modal is up, handle its two buttons only
 if (mode === downloadGPXmode) {
-  let boxW = 400;
   let boxH = 450;
   let y = height / 2 - boxH / 2;
 
-  let btnW = 300;
+  let btnW = 145;
   let btnH = 50;
-  let btnX = width / 2 - btnW / 2;
+  let gap = 20;
+  let leftBtnX = width / 2 - btnW - gap / 2;
+  let rightBtnX = width / 2 + gap / 2;
   let btnY = y + 350;
 
-  if (mouseX > btnX && mouseX < btnX + btnW && mouseY > btnY && mouseY < btnY + btnH) {
+  let clickedBack =
+    mouseX > leftBtnX &&
+    mouseX < leftBtnX + btnW &&
+    mouseY > btnY &&
+    mouseY < btnY + btnH;
+
+  let clickedDownload =
+    mouseX > rightBtnX &&
+    mouseX < rightBtnX + btnW &&
+    mouseY > btnY &&
+    mouseY < btnY + btnH;
+
+  if (clickedBack) {
+    returnToEditMode();
+    return;
+  }
+
+  if (clickedDownload) {
     if (typeof downloadGPX === "function") {
       downloadGPX();
       showMessage("Downloading GPX...");
@@ -2161,6 +2179,7 @@ if (mode === downloadGPXmode) {
     }
     return;
   }
+
   return; // keep modal open
 }
 
