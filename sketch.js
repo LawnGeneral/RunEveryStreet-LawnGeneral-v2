@@ -320,6 +320,18 @@ openlayersmap.addLayer(roadAreaLayer);
 
 let roadAreaDrawInteraction = null;
 let selectedRoadPolygon = null;
+function setDoubleClickZoomActive(isActive) {
+  openlayersmap.getInteractions().forEach(
+    function (interaction) {
+      if (
+        interaction instanceof
+        ol.interaction.DoubleClickZoom
+      ) {
+        interaction.setActive(isActive);
+      }
+    }
+  );
+}
 
 function startRoadAreaDrawing() {
   // Clicking START OVER aborts the unfinished polygon.
@@ -337,6 +349,7 @@ function startRoadAreaDrawing() {
   // Give polygon clicks to OpenLayers.
   mapPanZoomMode = true;
   applyInputMode();
+  setDoubleClickZoomActive(false);
 
   roadAreaDrawInteraction =
     new ol.interaction.Draw({
@@ -355,8 +368,8 @@ function startRoadAreaDrawing() {
     drawButton.textContent = "START OVER";
   }
 
- showMessage(
-  "Draw the area • Delete: undo last point • Escape: cancel • Double-click: finish",
+showMessage(
+  "Draw the area • Delete: undo • Escape: cancel • Click the starting point to finish",
   true
 );
 
@@ -371,6 +384,10 @@ function startRoadAreaDrawing() {
       );
 
       roadAreaDrawInteraction = null;
+	// Restore normal double-click zoom after this click finishes processing.
+setTimeout(function () {
+  setDoubleClickZoomActive(true);
+}, 0);
 
       if (drawButton) {
         drawButton.textContent = "REDRAW AREA";
@@ -393,6 +410,7 @@ function cancelRoadAreaDrawing() {
   );
 
   roadAreaDrawInteraction = null;
+	setDoubleClickZoomActive(true);
   roadAreaSource.clear();
   selectedRoadPolygon = null;
 
