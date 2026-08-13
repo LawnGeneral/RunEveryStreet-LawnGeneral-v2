@@ -292,9 +292,10 @@ var openlayersmap = new ol.Map({
   ],
 
   view: new ol.View({
-    center: ol.proj.fromLonLat([-76.88, 40.27]),
-    zoom: 14
-  })
+  center: ol.proj.fromLonLat([-76.88, 40.27]),
+  zoom: 14,
+  constrainResolution: true
+})
 });
 // --- ROAD AREA POLYGON SELECTION ---
 
