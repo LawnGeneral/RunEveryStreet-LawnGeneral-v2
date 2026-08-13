@@ -282,13 +282,8 @@ var openlayersmap = new ol.Map({
   target: 'ol-map',
 
   // ✅ OpenLayers v7 legacy build: defaults.defaults(...)
-  controls: ol.control.defaults.defaults({
-  zoom: false,
-  attributionOptions: {
-      collapsible: true,
-      collapsed: true
-    }
-  }),
+// The app supplies its own controls and attribution in the header.
+controls: [],
 
   layers: [
     new ol.layer.Tile({
