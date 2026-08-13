@@ -415,7 +415,57 @@ function isRoadSegmentInsideSelectedArea(from, to) {
     midpointCoordinate
   );
 }
+// TEMPORARY ROAD-AREA CLICK DIAGNOSTIC
+document.addEventListener(
+  "pointerdown",
+  function (event) {
+    if (!roadAreaDrawInteraction) return;
 
+    const target = event.target;
+    const targetName =
+      target.id ||
+      target.className ||
+      target.tagName ||
+      "unknown";
+
+    const drawButton =
+      document.getElementById("draw-area-btn");
+
+    if (drawButton) {
+      drawButton.textContent =
+        `DOC Y${Math.round(event.clientY)} ${String(targetName).slice(0, 12)}`;
+    }
+
+    console.log(
+      "Road-area document click:",
+      event.clientX,
+      event.clientY,
+      targetName
+    );
+  },
+  true
+);
+
+openlayersmap.on(
+  "pointerdown",
+  function (event) {
+    if (!roadAreaDrawInteraction) return;
+
+    const drawButton =
+      document.getElementById("draw-area-btn");
+
+    if (drawButton) {
+      drawButton.textContent =
+        `MAP Y${Math.round(event.pixel[1])}`;
+    }
+
+    console.log(
+      "Road-area map click:",
+      event.pixel
+    );
+  }
+);
+// END TEMPORARY DIAGNOSTIC
 var canvas;
 var mapHeight;
 var windowX, windowY;
