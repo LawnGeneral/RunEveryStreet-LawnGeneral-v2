@@ -1056,16 +1056,20 @@ console.log(
 roadAreaSource.clear();
 selectedRoadPolygon = null;
 
+// Area selection is complete. Restart the app to choose a new area.
 const drawAreaButton =
   document.getElementById("draw-area-btn");
 
+const loadRoadsButton =
+  document.getElementById("ingest-btn");
+
 if (drawAreaButton) {
-  drawAreaButton.textContent = "DRAW AREA";
+  drawAreaButton.style.display = "none";
 }
 
-      // ✅ SUCCESS: hide ingest button ONLY now
-      const panel = document.getElementById("ui-panel");
-      if (panel) panel.style.display = "none";
+if (loadRoadsButton) {
+  loadRoadsButton.style.display = "none";
+}
 
       // 6. Wake up UI
       setMode(selectnodemode);
