@@ -1036,7 +1036,9 @@ if (edges.length === 0) {
   setMode(choosemapmode);
   return;
 }
-      totaluniqueroads = edges.length;
+
+totalRoadsDist = totaledgedistance;
+totaluniqueroads = edges.length;
 		const traveledCount = edges.filter(e => e.traveled === true).length;
 const untraveledCount = edges.length - traveledCount;
 
@@ -1050,6 +1052,16 @@ console.log(
 
       // --- NEW: allow lookup of edges by node pair for cue generation ---
       rebuildEdgeLookup();
+	  // The boundary is no longer needed after successful filtering.
+roadAreaSource.clear();
+selectedRoadPolygon = null;
+
+const drawAreaButton =
+  document.getElementById("draw-area-btn");
+
+if (drawAreaButton) {
+  drawAreaButton.textContent = "DRAW AREA";
+}
 
       // ✅ SUCCESS: hide ingest button ONLY now
       const panel = document.getElementById("ui-panel");
