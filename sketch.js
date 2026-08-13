@@ -339,7 +339,14 @@ function startRoadAreaDrawing() {
 
   // Give map clicks to OpenLayers rather than the editing canvas.
   mapPanZoomMode = true;
-  applyInputMode();
+applyInputMode();
+
+// Put the interactive map above the p5 canvas while drawing.
+// The header remains above it because its z-index is much higher.
+const mapElement = document.getElementById("ol-map");
+if (mapElement) {
+  mapElement.style.zIndex = "10";
+}
 
   roadAreaDrawInteraction =
     new ol.interaction.Draw({
@@ -374,7 +381,13 @@ function startRoadAreaDrawing() {
 
       roadAreaDrawInteraction = null;
 
-      if (drawButton) {
+// Restore the normal stacking so routes and editing graphics
+// appear above the map again.
+if (mapElement) {
+  mapElement.style.zIndex = "1";
+}
+
+if (drawButton) {
         drawButton.textContent = "REDRAW AREA";
       }
 
