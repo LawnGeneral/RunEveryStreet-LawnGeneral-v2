@@ -44,7 +44,16 @@
       box-sizing: border-box;
       gap: 10px;
     }
+/* Let map clicks pass through any invisible part of the header layer. */
+.header-bar {
+  pointer-events: none;
+}
 
+/* Keep the visible header controls clickable. */
+.header-bar button,
+.header-bar a {
+  pointer-events: auto;
+}
     .left-group, .center-group, .right-group {
       display: flex;
       align-items: center;
