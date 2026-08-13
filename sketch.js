@@ -702,7 +702,9 @@ function renderRouteGraphics() {
  */
 
 function renderUIOverlays() {
-
+  if (Array.isArray(edges) && edges.length > 0) {
+    drawMapLegend();
+  }
 
   // 1) MAP PREPARATION STATS (Selection / Trimming)
   if (mode === trimmodemode || mode === selectnodemode) {
@@ -766,6 +768,70 @@ function renderUIOverlays() {
   }
 }
 
+function drawMapLegend() {
+  const boxW = 175;
+  const boxH = 126;
+  const x = Math.max(10, width - boxW - 14);
+  const y = Math.max(10, height - boxH - 14);
+
+  push();
+  colorMode(RGB);
+
+  // Background
+  fill(0, 0, 0, 185);
+  stroke(255, 255, 255, 90);
+  strokeWeight(1);
+  rect(x, y, boxW, boxH, 8);
+
+  // Title
+  fill(255);
+  noStroke();
+  textAlign(LEFT, CENTER);
+  textStyle(BOLD);
+  textSize(12);
+  text("MAP LEGEND", x + 14, y + 17);
+
+  textStyle(NORMAL);
+  textSize(12);
+
+  // Purple selected roads
+  stroke(125, 70, 255, 190);
+  strokeWeight(4);
+  line(x + 14, y + 42, x + 38, y + 42);
+
+  noStroke();
+  fill(255);
+  text("Selected roads", x + 48, y + 42);
+
+  // Cyan unrun roads
+  stroke(0, 230, 255, 180);
+  strokeWeight(6);
+  line(x + 14, y + 65, x + 38, y + 65);
+
+  noStroke();
+  fill(255);
+  text("Unrun roads", x + 48, y + 65);
+
+  // Red selectable node
+  fill(255, 0, 0, 190);
+  noStroke();
+  ellipse(x + 26, y + 88, 8, 8);
+
+  fill(255);
+  text("Selectable node", x + 48, y + 88);
+
+  // Green start point
+  fill(0, 255, 0);
+  stroke(255);
+  strokeWeight(1);
+  ellipse(x + 26, y + 111, 11, 11);
+
+  noStroke();
+  fill(255);
+  text("Start point", x + 48, y + 111);
+
+  pop();
+}
 
 // Helper to draw the Start/Stop button at the bottom
 function drawSolverToggleButton() {
