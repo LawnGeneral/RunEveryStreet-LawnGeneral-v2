@@ -2545,7 +2545,7 @@ solveRES();
       solverRunning = false;
 
       showMessage("Start Locked! Toggle PAN/ZOOM to move, or TRIM/EDIT to trim roads.");
-      mode = trimmodemode;
+      setMode(trimmodemode);
 
       redraw();
       openlayersmap.render();
