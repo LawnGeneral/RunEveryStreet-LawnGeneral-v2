@@ -301,7 +301,107 @@ var openlayersmap = new ol.Map({
     zoom: 14
   })
 });
+// --- ROAD AREA POLYGON SELECTION ---
 
+const roadAreaSource = new ol.source.Vector();
+
+const roadAreaLayer = new ol.layer.Vector({
+  source: roadAreaSource,
+  style: new ol.style.Style({
+    fill: new ol.style.Fill({
+      color: "rgba(0, 190, 255, 0.10)"
+    }),
+    stroke: new ol.style.Stroke({
+      color: "rgba(0, 190, 255, 0.95)",
+      width: 3,
+      lineDash: [10, 6]
+    })
+  })
+});
+
+roadAreaLayer.setZIndex(20);
+openlayersmap.addLayer(roadAreaLayer);
+
+let roadAreaDrawInteraction = null;
+let selectedRoadPolygon = null;
+
+function startRoadAreaDrawing() {
+  // Stop an unfinished drawing attempt.
+  if (roadAreaDrawInteraction) {
+    openlayersmap.removeInteraction(
+      roadAreaDrawInteraction
+    );
+  }
+
+  // Remove the previous boundary.
+  roadAreaSource.clear();
+  selectedRoadPolygon = null;
+
+  // Give map clicks to OpenLayers rather than the editing canvas.
+  mapPanZoomMode = true;
+  applyInputMode();
+
+  roadAreaDrawInteraction =
+    new ol.interaction.Draw({
+      source: roadAreaSource,
+      type: "Polygon"
+    });
+
+  openlayersmap.addInteraction(
+    roadAreaDrawInteraction
+  );
+
+  const drawButton =
+    document.getElementById("draw-area-btn");
+
+  if (drawButton) {
+    drawButton.textContent = "DRAWING...";
+  }
+
+  showMessage(
+    "Click around the desired area. Double-click to finish."
+  );
+
+  roadAreaDrawInteraction.once(
+    "drawend",
+    function (event) {
+      selectedRoadPolygon =
+        event.feature.getGeometry().clone();
+
+      openlayersmap.removeInteraction(
+        roadAreaDrawInteraction
+      );
+
+      roadAreaDrawInteraction = null;
+
+      if (drawButton) {
+        drawButton.textContent = "REDRAW AREA";
+      }
+
+      showMessage(
+        "Area selected. Review it, then click LOAD ROADS."
+      );
+    }
+  );
+}
+
+function isRoadSegmentInsideSelectedArea(from, to) {
+  if (!selectedRoadPolygon) return true;
+  if (!from || !to) return false;
+
+  const midpointLon = (from.lon + to.lon) / 2;
+  const midpointLat = (from.lat + to.lat) / 2;
+
+  const midpointCoordinate =
+    ol.proj.fromLonLat([
+      midpointLon,
+      midpointLat
+    ]);
+
+  return selectedRoadPolygon.intersectsCoordinate(
+    midpointCoordinate
+  );
+}
 
 var canvas;
 var mapHeight;
