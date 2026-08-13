@@ -1363,32 +1363,46 @@ function showEdges() {
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
 
-    // Draw road normally
-    e.show();
+    const isUntraveled =
+      lifeMapLoaded &&
+      e.traveled === false;
 
-    // Highlight roads NOT found in the LifeMap
-    if (lifeMapLoaded && e.traveled === false) {
-      const fromCoord = ol.proj.fromLonLat([
-        e.from.lon,
-        e.from.lat
-      ]);
+    // Traveled roads retain their normal appearance.
+    // Untraveled roads use only the cyan treatment so
+    // yellow does not accumulate beneath the transparency.
+    if (!isUntraveled) {
+      e.show();
+    }
 
-      const toCoord = ol.proj.fromLonLat([
-        e.to.lon,
-        e.to.lat
-      ]);
+    if (isUntraveled) {
+      const fromCoord =
+        ol.proj.fromLonLat([
+          e.from.lon,
+          e.from.lat
+        ]);
+
+      const toCoord =
+        ol.proj.fromLonLat([
+          e.to.lon,
+          e.to.lat
+        ]);
 
       const fromPixel =
-        openlayersmap.getPixelFromCoordinate(fromCoord);
+        openlayersmap.getPixelFromCoordinate(
+          fromCoord
+        );
 
       const toPixel =
-        openlayersmap.getPixelFromCoordinate(toCoord);
+        openlayersmap.getPixelFromCoordinate(
+          toCoord
+        );
 
       if (fromPixel && toPixel) {
         push();
         colorMode(RGB);
 
-        stroke(0, 230, 255);
+        // Thick but translucent so underlying road names remain readable.
+        stroke(0, 230, 255, 115);
         strokeWeight(6);
         noFill();
 
@@ -1403,9 +1417,13 @@ function showEdges() {
       }
     }
 
-    // Keep existing trimming behavior
-    if (mode === trimmodemode && !mapPanZoomMode) {
-      let d = e.distanceToPoint(mouseX, mouseY);
+    // Preserve existing trimming behavior.
+    if (
+      mode === trimmodemode &&
+      !mapPanZoomMode
+    ) {
+      let d =
+        e.distanceToPoint(mouseX, mouseY);
 
       if (d < closestedgetomousedist) {
         closestedgetomousedist = d;
