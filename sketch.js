@@ -278,33 +278,41 @@ function drawRouteStyleButton() {
 
 
 // Map Initialization
+const routePlannerBaseMap = new ol.layer.Group();
+
 var openlayersmap = new ol.Map({
   target: "ol-map",
 
   // The app supplies its own controls and attribution in the header.
   controls: [],
-	
+
   interactions: ol.interaction.defaults.defaults({
-  mouseWheelZoom: false
-}).extend([
-  new ol.interaction.MouseWheelZoom({
-    constrainResolution: true,
-    duration: 250
-  })
-]),
+    mouseWheelZoom: false
+  }).extend([
+    new ol.interaction.MouseWheelZoom({
+      constrainResolution: true,
+      duration: 250
+    })
+  ]),
 
   layers: [
-    new ol.layer.Tile({
-      source: new ol.source.OSM(),
-      opacity: 1.0
-    })
+    routePlannerBaseMap
   ],
 
   view: new ol.View({
-  center: ol.proj.fromLonLat([-76.88, 40.27]),
-  zoom: 14,
-  
-})
+    center: ol.proj.fromLonLat([-76.88, 40.27]),
+    zoom: 14
+  })
+});
+
+olms.apply(
+  routePlannerBaseMap,
+  "route-planner-style.json"
+).catch(function (error) {
+  console.error(
+    "Route-planner basemap failed to load:",
+    error
+  );
 });
 // --- ROAD AREA POLYGON SELECTION ---
 
