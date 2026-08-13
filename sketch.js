@@ -298,7 +298,7 @@ var openlayersmap = new ol.Map({
 
 olms.apply(
   libertyBaseMap,
-  "https://tiles.openfreemap.org/styles/liberty"
+  "https://tiles.openfreemap.org/styles/bright"
 ).catch(function (error) {
   console.error(
     "Liberty basemap failed to load:",
