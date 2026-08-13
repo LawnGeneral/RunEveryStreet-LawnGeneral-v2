@@ -837,54 +837,68 @@ function drawToolbar() {
 
 
 function getOverpassData() {
-  showMessage("Loading map data...");
+  // Require a completed polygon.
+  if (roadAreaDrawInteraction) {
+    showMessage("Finish the polygon before loading roads.");
+    return;
+  }
 
-  // Keep canvas aligned with map (below header)
+  if (!selectedRoadPolygon) {
+    showMessage("Click DRAW AREA and finish a polygon first.");
+    return;
+  }
+
+  // Convert the polygon's bounding box from map coordinates
+  // to latitude/longitude for the Overpass request.
+  const extent = ol.proj.transformExtent(
+    selectedRoadPolygon.getExtent(),
+    "EPSG:3857",
+    "EPSG:4326"
+  );
+
+  let dataminlon = extent[0];
+  let dataminlat = extent[1];
+  let datamaxlon = extent[2];
+  let datamaxlat = extent[3];
+
+  // Preserve these globals for the rest of the application.
+  mapminlat = dataminlat;
+  mapminlon = dataminlon;
+  mapmaxlat = datamaxlat;
+  mapmaxlon = datamaxlon;
+
+  // Safety guard against an excessively large Overpass request.
+  let area =
+    (datamaxlat - dataminlat) *
+    (datamaxlon - dataminlon);
+
+  if (area > 0.02) {
+    showMessage("The selected area is too large. Draw a smaller polygon.");
+    return;
+  }
+
+  showMessage("Loading roads inside the selected area...");
+
   canvas.position(0, HEADER_H);
 
-  // Reset global state
+  // Reset the previous road graph and route state.
+  startnode = null;
+  currentnode = null;
+  currentroute = null;
   bestroute = null;
+  bestdistance = Infinity;
+
+  navMode = false;
+  solverRunning = false;
+
   totaledgedistance = 0;
   totalRoadsDist = 0;
   totaluniqueroads = 0;
   showRoads = true;
 
+  deletedEdgesStack = [];
   nodes = [];
   edges = [];
-
-  // 1. Get current map bounds (EPSG:4326)
-  let extent = ol.proj.transformExtent(
-    openlayersmap.getView().calculateExtent(openlayersmap.getSize()),
-    "EPSG:3857",
-    "EPSG:4326"
-  );
-
-  mapminlat = extent[1];
-  mapminlon = extent[0];
-  mapmaxlat = extent[3];
-  mapmaxlon = extent[2];
-
-  // Apply margin
-  let latSize = mapmaxlat - mapminlat;
-  let lonSize = mapmaxlon - mapminlon;
-
-  let dataminlat = mapminlat + latSize * margin;
-  let dataminlon = mapminlon + lonSize * margin;
-  let datamaxlat = mapmaxlat - latSize * margin;
-  let datamaxlon = mapmaxlon - lonSize * margin;
-
-  // Safety guard against giant queries
-  let area = (datamaxlat - dataminlat) * (datamaxlon - dataminlon);
-  if (area > 0.02) {
-    showMessage("Zoom in more before loading roads");
-
-    // IMPORTANT: keep ingest button visible so user can retry
-    const panel = document.getElementById("ui-panel");
-    if (panel) panel.style.display = "block";
-
-    setMode(choosemapmode);
-    return;
-  }
 
   // 2. Build Overpass query (POST)
   let overpassquery = `
@@ -957,31 +971,71 @@ out;
         wayMetaById.set(wayid, { name, ref });
       }
 
-      // 5. Parse Ways → Edges
-      for (let i = 0; i < numways; i++) {
-        let wayid = String(XMLways[i].getAttribute("id"));
-        let nds = XMLways[i].getElementsByTagName("nd");
+// 5. Parse Ways → Edges
+// Keep only road segments whose midpoint is inside the polygon.
+const usedNodes = new Set();
 
-        const meta = wayMetaById.get(wayid) || { name: "", ref: "" };
+for (let i = 0; i < numways; i++) {
+  let wayid =
+    String(XMLways[i].getAttribute("id"));
 
-        for (let j = 0; j < nds.length - 1; j++) {
-          let from = getNodebyId(nds[j].getAttribute("ref"));
-          let to   = getNodebyId(nds[j + 1].getAttribute("ref"));
+  let nds =
+    XMLways[i].getElementsByTagName("nd");
 
-          if (from && to) {
-            // IMPORTANT: Edge constructor now accepts (from,to,wayid,name,ref)
+  const meta =
+    wayMetaById.get(wayid) ||
+    { name: "", ref: "" };
 
-			  let edge = new Edge(from, to, wayid, meta.name, meta.ref);
+  for (let j = 0; j < nds.length - 1; j++) {
+    let from =
+      getNodebyId(
+        nds[j].getAttribute("ref")
+      );
 
-		edge.traveled = isLifeMapEdgeVisited(edge);
-		edge.newRoadValue = edge.traveled ? 0 : edge.distance;
-		edges.push(edge);
-		totaledgedistance += edge.distance;
-          }
-        }
-      }
+    let to =
+      getNodebyId(
+        nds[j + 1].getAttribute("ref")
+      );
 
-      totalRoadsDist = totaledgedistance;
+    if (
+      from &&
+      to &&
+      isRoadSegmentInsideSelectedArea(from, to)
+    ) {
+      let edge =
+        new Edge(
+          from,
+          to,
+          wayid,
+          meta.name,
+          meta.ref
+        );
+
+      edge.traveled =
+        isLifeMapEdgeVisited(edge);
+
+      edge.newRoadValue =
+        edge.traveled ? 0 : edge.distance;
+
+      edges.push(edge);
+      totaledgedistance += edge.distance;
+
+      usedNodes.add(from);
+      usedNodes.add(to);
+    }
+  }
+}
+
+// Remove nodes belonging only to roads outside the polygon.
+nodes = nodes.filter(
+  node => usedNodes.has(node)
+);
+
+if (edges.length === 0) {
+  showMessage("No eligible roads were found inside the polygon.");
+  setMode(choosemapmode);
+  return;
+}
       totaluniqueroads = edges.length;
 		const traveledCount = edges.filter(e => e.traveled === true).length;
 const untraveledCount = edges.length - traveledCount;
