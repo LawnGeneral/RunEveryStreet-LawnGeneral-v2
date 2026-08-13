@@ -77,7 +77,7 @@
     }
     #mode-toggle:hover { background: #333; }
 
-    #ingest-btn, #undo-btn {
+    #draw-area-btn, #ingest-btn, #undo-btn {
       padding: 6px 10px;
       color: white;
       border: 1px solid rgba(255,255,255,0.85);
@@ -89,6 +89,13 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.35);
     }
 
+    #draw-area-btn {
+  background: #087c8c;
+}
+
+#draw-area-btn:hover {
+  background: #0aa0b5;
+}
     #ingest-btn {
       background: #7a0f05;
     }
@@ -161,6 +168,7 @@
 
     <div class="center-group">
       <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
+      <button id="draw-area-btn" onclick="startRoadAreaDrawing()">DRAW AREA</button>
       <button id="ingest-btn" onclick="triggerIngest()">LOAD ROADS</button>
       <button id="undo-btn" onclick="undoTrim()">UNDO TRIM</button>
       <button id="export-btn" onclick="exportPostmanBundle()">EXPORT FOR BLOSSOM</button>
