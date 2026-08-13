@@ -313,19 +313,20 @@ def main():
         f"{len(activities)}"
     )
 
-lifemap_activities = [
-    activity
-    for activity in activities
-    if is_lifemap_activity(activity)
-]
+    lifemap_activities = [
+        activity
+        for activity in activities
+        if is_lifemap_activity(activity)
+    ]
 
-print(
-    f"LifeMap GPS activities found: "
-    f"{len(lifemap_activities)}"
-)
+    print(
+        f"LifeMap GPS activities found: "
+        f"{len(lifemap_activities)}"
+    )
 
-for activity in lifemap_activities:
+    for activity in lifemap_activities:
         activity_id = activity["id"]
+
         activity_name = activity.get(
             "name",
             "Unnamed Activity"
