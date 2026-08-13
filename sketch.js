@@ -708,9 +708,8 @@ function renderUIOverlays() {
   if (mode === trimmodemode || mode === selectnodemode) {
     // --- Current selected-road length (this is the lower bound) ---
     let liveDistM = getLiveTotalDistance(); // meters
-    let displayDist = liveDistM > 1000
-      ? (liveDistM / 1000).toFixed(2) + " km"
-      : liveDistM.toFixed(0) + " m";
+    let displayDist =
+      (liveDistM / 1609.344).toFixed(2) + " mi";
 
     // --- Quick “likely final” estimate based on graph shape ---
     // This is NOT a solve; it's a heuristic driven by: dead ends, odd nodes, and cycle signal.
