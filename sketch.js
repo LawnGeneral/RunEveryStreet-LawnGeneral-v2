@@ -355,9 +355,10 @@ function startRoadAreaDrawing() {
     drawButton.textContent = "START OVER";
   }
 
-  showMessage(
-    "Draw the area. Mac Delete removes the last point; Escape cancels; double-click finishes."
-  );
+ showMessage(
+  "Draw the area • Delete: undo last point • Escape: cancel • Double-click: finish",
+  true
+);
 
   roadAreaDrawInteraction.once(
     "drawend",
@@ -2526,7 +2527,7 @@ function calcdistance(lat1, long1, lat2, long2) {
 let msgToast = null;
 let msgToastTimer = null;
 
-function showMessage(msg) {
+function showMessage(msg, stayVisible = false) {
   // Create once
   if (!msgToast) {
     msgToast = createDiv('');
@@ -2551,11 +2552,18 @@ function showMessage(msg) {
   msgToast.html(msg);
   msgToast.show();
 
-  // Auto-hide after a bit (prevents permanent clutter)
-  if (msgToastTimer) clearTimeout(msgToastTimer);
+ // Cancel any previous timer.
+if (msgToastTimer) {
+  clearTimeout(msgToastTimer);
+  msgToastTimer = null;
+}
+
+// Normal messages disappear; drawing instructions remain visible.
+if (!stayVisible) {
   msgToastTimer = setTimeout(() => {
     hideMessage();
   }, 2500);
+}
 }
 
 function hideMessage() {
@@ -2790,7 +2798,10 @@ function keyPressed() {
   if (roadAreaDrawInteraction) {
     if (keyCode === 8 || keyCode === 46) {
       roadAreaDrawInteraction.removeLastPoint();
-      showMessage("Last polygon point removed.");
+      showMessage(
+  "Last point removed • Delete: undo again • Escape: cancel • Double-click: finish",
+  true
+);
       return false;
     }
 
