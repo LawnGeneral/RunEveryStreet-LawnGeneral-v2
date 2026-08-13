@@ -322,27 +322,21 @@ let roadAreaDrawInteraction = null;
 let selectedRoadPolygon = null;
 
 function startRoadAreaDrawing() {
-  // Stop an unfinished drawing attempt.
+  // Clicking START OVER aborts the unfinished polygon.
   if (roadAreaDrawInteraction) {
+    roadAreaDrawInteraction.abortDrawing();
     openlayersmap.removeInteraction(
       roadAreaDrawInteraction
     );
+    roadAreaDrawInteraction = null;
   }
 
-  // Remove the previous boundary.
   roadAreaSource.clear();
   selectedRoadPolygon = null;
 
-  // Give map clicks to OpenLayers rather than the editing canvas.
+  // Give polygon clicks to OpenLayers.
   mapPanZoomMode = true;
-applyInputMode();
-
-// Put the interactive map above the p5 canvas while drawing.
-// The header remains above it because its z-index is much higher.
-const mapElement = document.getElementById("ol-map");
-if (mapElement) {
-  mapElement.style.zIndex = "10";
-}
+  applyInputMode();
 
   roadAreaDrawInteraction =
     new ol.interaction.Draw({
@@ -358,11 +352,11 @@ if (mapElement) {
     document.getElementById("draw-area-btn");
 
   if (drawButton) {
-    drawButton.textContent = "DRAWING...";
+    drawButton.textContent = "START OVER";
   }
 
   showMessage(
-    "Click around the desired area. Double-click to finish."
+    "Draw the area. Mac Delete removes the last point; Escape cancels; double-click finishes."
   );
 
   roadAreaDrawInteraction.once(
@@ -377,13 +371,7 @@ if (mapElement) {
 
       roadAreaDrawInteraction = null;
 
-// Restore the normal stacking so routes and editing graphics
-// appear above the map again.
-if (mapElement) {
-  mapElement.style.zIndex = "1";
-}
-
-if (drawButton) {
+      if (drawButton) {
         drawButton.textContent = "REDRAW AREA";
       }
 
@@ -392,6 +380,29 @@ if (drawButton) {
       );
     }
   );
+}
+
+function cancelRoadAreaDrawing() {
+  if (!roadAreaDrawInteraction) return;
+
+  roadAreaDrawInteraction.abortDrawing();
+
+  openlayersmap.removeInteraction(
+    roadAreaDrawInteraction
+  );
+
+  roadAreaDrawInteraction = null;
+  roadAreaSource.clear();
+  selectedRoadPolygon = null;
+
+  const drawButton =
+    document.getElementById("draw-area-btn");
+
+  if (drawButton) {
+    drawButton.textContent = "DRAW AREA";
+  }
+
+  showMessage("Area drawing canceled.");
 }
 
 function isRoadSegmentInsideSelectedArea(from, to) {
@@ -2773,6 +2784,21 @@ function acceptManualConnector() {
 }
 
 function keyPressed() {
+	  // Polygon controls:
+  // Mac Delete normally reports keyCode 8.
+  // Forward Delete may report keyCode 46.
+  if (roadAreaDrawInteraction) {
+    if (keyCode === 8 || keyCode === 46) {
+      roadAreaDrawInteraction.removeLastPoint();
+      showMessage("Last polygon point removed.");
+      return false;
+    }
+
+    if (keyCode === 27) {
+      cancelRoadAreaDrawing();
+      return false;
+    }
+  }
   // Hold ALT to temporarily pan/zoom the map
   if (keyCode === ALT) {
     canvas.elt.style.pointerEvents = "none";
