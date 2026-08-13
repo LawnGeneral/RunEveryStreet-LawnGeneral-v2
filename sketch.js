@@ -278,8 +278,6 @@ function drawRouteStyleButton() {
 
 
 // Map Initialization
-const libertyBaseMap = new ol.layer.Group();
-
 var openlayersmap = new ol.Map({
   target: "ol-map",
 
@@ -287,23 +285,16 @@ var openlayersmap = new ol.Map({
   controls: [],
 
   layers: [
-    libertyBaseMap
+    new ol.layer.Tile({
+      source: new ol.source.OSM(),
+      opacity: 1.0
+    })
   ],
 
   view: new ol.View({
     center: ol.proj.fromLonLat([-76.88, 40.27]),
     zoom: 14
   })
-});
-
-olms.apply(
-  libertyBaseMap,
-  "https://tiles.openfreemap.org/styles/bright"
-).catch(function (error) {
-  console.error(
-    "Liberty basemap failed to load:",
-    error
-  );
 });
 // --- ROAD AREA POLYGON SELECTION ---
 
