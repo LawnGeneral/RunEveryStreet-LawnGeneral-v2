@@ -41,7 +41,7 @@ class Edge {
         stroke(255, 0, 255, 180);
         strokeWeight(6);
       } else {
-        stroke(255, 255, 0, 150);
+        stroke(125, 75, 255, 190);
         strokeWeight(min(10, (this.travels + 1) * 2));
       }
 
