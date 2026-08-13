@@ -190,13 +190,26 @@ def get_new_activities(after_epoch):
     return activities
 
 
-def is_outdoor_run(activity):
+def is_lifemap_activity(activity):
     sport_type = activity.get("sport_type")
 
-    if sport_type in ("Run", "TrailRun"):
+    if sport_type in (
+        "Run",
+        "TrailRun",
+        "Walk",
+        "Hike"
+    ):
         return True
 
-    if not sport_type and activity.get("type") == "Run":
+    # Compatibility fallback for older Strava activity records.
+    if (
+        not sport_type and
+        activity.get("type") in (
+            "Run",
+            "Walk",
+            "Hike"
+        )
+    ):
         return True
 
     return False
@@ -300,21 +313,22 @@ def main():
         f"{len(activities)}"
     )
 
-    runs = [
-        activity
-        for activity in activities
-        if is_outdoor_run(activity)
-    ]
+lifemap_activities = [
+    activity
+    for activity in activities
+    if is_lifemap_activity(activity)
+]
 
-    print(
-        f"Outdoor runs found: {len(runs)}"
-    )
+print(
+    f"LifeMap GPS activities found: "
+    f"{len(lifemap_activities)}"
+)
 
-    for activity in runs:
+for activity in lifemap_activities:
         activity_id = activity["id"]
         activity_name = activity.get(
             "name",
-            "Unnamed Run"
+            "Unnamed Activity"
         )
 
         points = get_latlng_stream(
