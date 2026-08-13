@@ -2546,9 +2546,14 @@ solveRES();
     }
 
     if (best) {
-      startnode = best;
-      currentnode = startnode;
-		precomputeDistToStart();
+  startnode = best;
+  currentnode = startnode;
+
+  // Immediately remove road clusters that cannot be
+  // reached from the selected start node.
+  removeOrphans();
+
+  precomputeDistToStart();
 
 
       if (typeof Route === "function") {
