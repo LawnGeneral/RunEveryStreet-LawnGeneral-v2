@@ -283,7 +283,8 @@ var openlayersmap = new ol.Map({
 
   // ✅ OpenLayers v7 legacy build: defaults.defaults(...)
   controls: ol.control.defaults.defaults({
-    attributionOptions: {
+  zoom: false,
+  attributionOptions: {
       collapsible: true,
       collapsed: true
     }
