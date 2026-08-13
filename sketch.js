@@ -2311,9 +2311,7 @@ if (mode === downloadGPXmode) {
     }
   }
 
-  // 1) UI GUARD: Don't click through the top toolbar area
-  // (We already handled undo above.)
-  if (mouseY < 60) return;
+
 	if (mode === connectorMode) return handleConnectorNodeClick();
 
   // 2) START/STOP BUTTON (Bottom Left)
