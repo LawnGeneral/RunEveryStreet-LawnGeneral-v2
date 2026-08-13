@@ -288,7 +288,7 @@ controls: [],
   layers: [
     new ol.layer.Tile({
       source: new ol.source.OSM(),
-      opacity: 0.8
+      opacity: 1.0
     })
   ],
 
