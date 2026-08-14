@@ -3513,63 +3513,7 @@ function runOverpassQuery(query, onSuccess, onError) {
   tryNext();
 }
 
-  let idx = 0;
-
-  function tryNext() {
-    if (idx >= endpoints.length) {
-      onError(new Error("All Overpass endpoints failed"));
-      return;
-    }
-
-    const url = endpoints[idx++];
-    const controller = new AbortController();
-
-    // Stop waiting after 15 seconds and try the next server
-    const timeoutId = setTimeout(() => {
-      controller.abort();
-    }, 15000);
-
-    console.log("Trying Overpass:", url);
-
-    fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded;charset=UTF-8"
-      },
-      body: "data=" + encodeURIComponent(query),
-      signal: controller.signal
-    })
-      .then(response => {
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(
-            `HTTP ${response.status} from ${url}`
-          );
-        }
-
-        return response.text();
-      })
-      .then(responseText => {
-        onSuccess(responseText);
-      })
-      .catch(error => {
-        clearTimeout(timeoutId);
-
-        console.warn(
-          "Overpass endpoint failed:",
-          url,
-          error
-        );
-
-        showMessage("Trying another OSM server...");
-        tryNext();
-      });
-  }
-
-  tryNext();
-}
+ 
 function triggerIngest() {
   // keep the visible button from leaving the map in a weird state
   getOverpassData();
