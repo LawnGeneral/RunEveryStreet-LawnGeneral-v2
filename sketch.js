@@ -3413,11 +3413,105 @@ function logDegreeHistogram(label) {
 }
 
 function runOverpassQuery(query, onSuccess, onError) {
-  const endpoints = [
+  let endpoints = [
+    "https://overpass.private.coffee/api/interpreter",
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter"
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
   ];
+
+  // Try the server that worked last time first.
+  try {
+    const preferred =
+      localStorage.getItem("preferredOverpassEndpoint");
+
+    if (preferred && endpoints.includes(preferred)) {
+      endpoints = [
+        preferred,
+        ...endpoints.filter(url => url !== preferred)
+      ];
+    }
+  } catch (error) {
+    console.warn(
+      "Could not read preferred OSM server:",
+      error
+    );
+  }
+
+  let idx = 0;
+
+  function tryNext() {
+    if (idx >= endpoints.length) {
+      onError(
+        new Error("All Overpass endpoints failed")
+      );
+      return;
+    }
+
+    const url = endpoints[idx++];
+    const controller = new AbortController();
+
+    // Move to another server sooner if this one stalls.
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 10000);
+
+    console.log("Trying Overpass:", url);
+
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/x-www-form-urlencoded;charset=UTF-8"
+      },
+      body: "data=" + encodeURIComponent(query),
+      signal: controller.signal
+    })
+      .then(response => {
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status} from ${url}`
+          );
+        }
+
+        return response.text();
+      })
+      .then(responseText => {
+        // Remember the successful server for next time.
+        try {
+          localStorage.setItem(
+            "preferredOverpassEndpoint",
+            url
+          );
+        } catch (error) {
+          console.warn(
+            "Could not remember OSM server:",
+            error
+          );
+        }
+
+        onSuccess(responseText);
+      })
+      .catch(error => {
+        clearTimeout(timeoutId);
+
+        console.warn(
+          "Overpass endpoint failed:",
+          url,
+          error
+        );
+
+        showMessage(
+          "OSM server is slow. Trying another..."
+        );
+
+        tryNext();
+      });
+  }
+
+  tryNext();
+}
 
   let idx = 0;
 
