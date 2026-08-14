@@ -2812,7 +2812,7 @@ function showReportOut() {
     let x = width / 2 - boxW / 2;
     let y = height / 2 - boxH / 2;
 
-    fill(45, 40, 35); // Dark chocolate brown to match your theme
+    fill(20, 27, 36); // Modern slate to match the header
     stroke(255, 50);
     strokeWeight(2);
     rect(x, y, boxW, boxH, 15);
