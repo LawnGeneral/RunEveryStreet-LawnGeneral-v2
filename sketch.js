@@ -3451,10 +3451,10 @@ function runOverpassQuery(query, onSuccess, onError) {
     const url = endpoints[idx++];
     const controller = new AbortController();
 
-    // Move to another server sooner if this one stalls.
+    // Give a busy server enough time to complete the road query.
     const timeoutId = setTimeout(() => {
       controller.abort();
-    }, 10000);
+    }, 25000);
 
     console.log("Trying Overpass:", url);
 
