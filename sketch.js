@@ -2800,6 +2800,7 @@ function returnToEditMode() {
 
 function showReportOut() {
     push();
+    colorMode(RGB);
     resetMatrix(); // Keep the UI fixed on screen while the map is behind it
 
     // 1. DIM THE BACKGROUND
