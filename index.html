@@ -16,7 +16,8 @@
   <script src="https://unpkg.com/ol-mapbox-style@13.4.2/dist/olms.js"></script>
 
   <style>
-    html, body {
+    html, 
+      width: 100body {
       margin: 0;
       padding: 0;
       width: 100vw;
@@ -25,111 +26,171 @@
     }
 
     body {
-      position: relative;
-      background-color: black;
-      font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif;
-    }
+  position: relative;
+  background-color: #0f1720;
+  color: #f8fafc;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
 
-    .header-bar {
-      background-color: #380702;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 12px;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      z-index: 1000;
-      height: 40px;
-      box-sizing: border-box;
-      gap: 10px;
-    }
-/* Let map clicks pass through any invisible part of the header layer. */
 .header-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  gap: 12px;
+
+  background: rgba(20, 27, 36, 0.98);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.24);
+
   pointer-events: none;
 }
 
-/* Keep the visible header controls clickable. */
 .header-bar button,
 .header-bar a {
   pointer-events: auto;
 }
-    .left-group, .center-group, .right-group {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
 
-    .center-group {
-      flex: 1;
-      justify-content: center;
-    }
+.left-group,
+.center-group,
+.right-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
-    .right-group a {
-      color: white;
-      text-decoration: none;
-      font-size: 13px;
-      white-space: nowrap;
-    }
-    .right-group a:hover { text-decoration: underline; }
+.left-group img {
+  display: block;
+}
 
-    #mode-toggle {
-      background: #222;
-      color: white;
-      border: 1px solid rgba(255,255,255,0.5);
-      border-radius: 6px;
-      padding: 6px 10px;
-      font-weight: bold;
-      cursor: pointer;
-      white-space: nowrap;
-      font-size: 12px;
-    }
-    #mode-toggle:hover { background: #333; }
+.center-group {
+  flex: 1;
+  justify-content: center;
+}
 
-    #draw-area-btn, #ingest-btn, #undo-btn {
-      padding: 6px 10px;
-      color: white;
-      border: 1px solid rgba(255,255,255,0.85);
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: bold;
-      font-size: 12px;
-      white-space: nowrap;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-    }
+.right-group {
+  justify-content: flex-end;
+}
 
-    #draw-area-btn {
-  background: #087c8c;
+.header-bar button {
+  appearance: none;
+  height: 30px;
+  padding: 0 13px;
+
+  color: #ffffff;
+  border: 1px solid transparent;
+  border-radius: 8px;
+
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.header-bar button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+}
+
+.header-bar button:active {
+  transform: translateY(0);
+}
+
+.header-bar button:focus-visible,
+.right-group > a:focus-visible {
+  outline: 2px solid #67e8f9;
+  outline-offset: 2px;
+}
+
+#mode-toggle {
+  background: #293544;
+  border-color: #465569;
+}
+
+#mode-toggle:hover {
+  background: #364559;
+  border-color: #607089;
+}
+
+#draw-area-btn {
+  background: #0f766e;
+  border-color: #159487;
 }
 
 #draw-area-btn:hover {
-  background: #0aa0b5;
+  background: #118b80;
 }
-    #ingest-btn {
-      background: #7a0f05;
-    }
-    #ingest-btn:hover { background: #a31407; }
 
-    #undo-btn {
-      background: #4b0b7a;
-      display: none; /* shown only in trim mode */
-    }
-    #undo-btn:hover { background: #5f1096; }
+#ingest-btn {
+  background: #2563eb;
+  border-color: #4b7ff0;
+}
 
-    #export-btn {
-  padding: 6px 10px;
-  color: white;
-  border: 1px solid rgba(255,255,255,0.85);
+#ingest-btn:hover {
+  background: #3474f3;
+}
+
+#undo-btn {
+  display: none;
+  background: #7c3aed;
+  border-color: #9564ee;
+}
+
+#undo-btn:hover {
+  background: #8b4df0;
+}
+
+.right-group > a {
+  padding: 5px 8px;
+
+  color: #d6dee8;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 6px;
-  cursor: pointer;
-  font-weight: bold;
-  font-size: 12px;
+
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
   white-space: nowrap;
-  background: #0b5e7a;   /* blue-green so it stands out */
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease;
 }
-#export-btn:hover { background: #0e7396; }
+
+.right-group > a:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.20);
+}
 
 
     .osm-attrib {
