@@ -3141,11 +3141,26 @@ solveRES();
   startnode = best;
   currentnode = startnode;
 
-  // Immediately remove road clusters that cannot be
-  // reached from the selected start node.
-  removeOrphans();
+const startTouchesRequiredRoad =
+  Array.isArray(startnode.edges) &&
+  startnode.edges.some(
+    edge =>
+      edge &&
+      !edge.isOptionalConnector
+  );
 
-  precomputeDistToStart();
+// Normal road starts can use the usual immediate cleanup.
+// Path-only starts must keep the road graph intact until
+// the solver activates the access path.
+if (startTouchesRequiredRoad) {
+  removeOrphans();
+} else {
+  console.log(
+    "Path-only start selected. Delaying orphan cleanup."
+  );
+}
+
+precomputeDistToStart();
 
 
       if (typeof Route === "function") {
