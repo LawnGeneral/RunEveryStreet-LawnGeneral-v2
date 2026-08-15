@@ -982,8 +982,26 @@ function getOverpassData() {
   nodes = [];
   edges = [];
 
-  // 2. Build Overpass query (POST)
-  let overpassquery = `
+// 2. Build Overpass query (POST)
+const includePathsCheckbox =
+  document.getElementById("include-paths-checkbox");
+
+const includePaths =
+  includePathsCheckbox &&
+  includePathsCheckbox.checked;
+
+// Paths and footways usually have no name, so they need
+// their own query without the ["name"] requirement.
+const optionalPathQuery = includePaths
+  ? `
+  way(${dataminlat},${dataminlon},${datamaxlat},${datamaxlon})
+    ["highway"~"^(path|footway)$"]
+    ["access"!~"^(no|private)$"]
+    ["foot"!~"no"]
+    ["area"!~"yes"];`
+  : "";
+
+let overpassquery = `
 [out:xml][timeout:180];
 (
   way(${dataminlat},${dataminlon},${datamaxlat},${datamaxlon})
@@ -997,6 +1015,8 @@ function getOverpassData() {
     ["area"!~"yes"]
     ["motorroad"!~"yes"]
     ["toll"!~"yes"];
+
+  ${optionalPathQuery}
 );
 (._;>;);
 out;
