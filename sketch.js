@@ -1617,80 +1617,108 @@ function showEdges() {
 
 
 function resetEdges() {
-    // 0) Ensure every node has a clean adjacency list
-    for (let i = 0; i < nodes.length; i++) {
-        nodes[i].edges = [];
+  // Ensure every node has a clean adjacency list.
+  for (let i = 0; i < nodes.length; i++) {
+    nodes[i].edges = [];
+  }
+
+  // Rebuild adjacency from the master edge list.
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+
+    if (
+      !edge ||
+      !edge.from ||
+      !edge.to
+    ) {
+      continue;
     }
 
-    // 1) Rebuild adjacency from the master edges list
-    for (let i = 0; i < edges.length; i++) {
-        let e = edges[i];
-
-        // Guard: skip broken edges
-        if (!e || !e.from || !e.to) continue;
-
-        // Ensure node.edges exists
-        if (!Array.isArray(e.from.edges)) e.from.edges = [];
-        if (!Array.isArray(e.to.edges)) e.to.edges = [];
-
-        e.from.edges.push(e);
-        e.to.edges.push(e);
-
-        // Reset solver counter
-        e.travels = 0;
+    if (!Array.isArray(edge.from.edges)) {
+      edge.from.edges = [];
     }
 
-    // 2) Reset remaining edge count
-    remainingedges = edges.filter(e => e && e.distance > 0).length;
+    if (!Array.isArray(edge.to.edges)) {
+      edge.to.edges = [];
+    }
 
-    // 3) Reset the current position
-    currentnode = startnode;
+    edge.from.edges.push(edge);
+    edge.to.edges.push(edge);
+
+    edge.travels = 0;
+  }
+
+  // Optional paths are not required remaining roads.
+  remainingedges =
+    edges.filter(
+      edge =>
+        edge &&
+        edge.distance > 0 &&
+        !edge.isOptionalConnector
+    ).length;
+
+  currentnode = startnode;
 }
 
-function removeOrphans() { 
-    // 1. SAFETY: If there's no start node, we can't define what an "orphan" is
-    if (!startnode) {
-        showMessage("Set a Start Node first!");
-        return;
+function removeOrphans() {
+  if (!startnode) {
+    showMessage("Set a Start Node first!");
+    return;
+  }
+
+  showMessage("Cleaning map...");
+  resetEdges();
+
+  // Reachability includes optional paths because they
+  // may connect the start or separate road sections.
+  floodfill(startnode);
+
+  const newedges = [];
+  const reachableNodesSet = new Set();
+
+  totaledgedistance = 0;
+
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+
+    if (edge.travels <= 0) {
+      continue;
     }
 
-    showMessage("Cleaning map...");
-    resetEdges();
-    
-    // 2. MARK REACHABLE EDGES
-    // Start at your chosen point and "walk" everything connected to it
-    floodfill(startnode); 
+    newedges.push(edge);
+    reachableNodesSet.add(edge.from);
+    reachableNodesSet.add(edge.to);
 
-    let newedges = [];
-    let reachableNodesSet = new Set(); // Using a Set prevents duplicates automatically
-    totaledgedistance = 0;
-
-    // 3. FILTER
-    for (let i = 0; i < edges.length; i++) {
-        // If travels > 0, it means the floodfill reached this edge
-        if (edges[i].travels > 0) {
-            newedges.push(edges[i]);
-            totaledgedistance += edges[i].distance;
-            
-            // Add nodes to the Set (much faster than .includes)
-            reachableNodesSet.add(edges[i].from);
-            reachableNodesSet.add(edges[i].to);
-        }
+    // Only normal roads count toward required mileage.
+    if (!edge.isOptionalConnector) {
+      totaledgedistance += edge.distance;
     }
+  }
 
-    // 4. APPLY CHANGES
-    edges = newedges;
-    nodes = Array.from(reachableNodesSet); // Convert Set back to array
-    
-    // 5. CLEAN UP
-    totaluniqueroads = edges.length;
-    totalRoadsDist = totaledgedistance; // Update your efficiency target
-    resetEdges(); 
+  edges = newedges;
+  nodes = Array.from(reachableNodesSet);
 
-    // 🔎 DIAGNOSTIC #2: graph degrees after orphan removal
-    logDegreeHistogram("after removeOrphans");
-    
-    showMessage("Map Cleaned: " + edges.length + " roads remaining.");
+  const requiredRoadCount =
+    edges.filter(
+      edge => !edge.isOptionalConnector
+    ).length;
+
+  const optionalPathCount =
+    edges.length - requiredRoadCount;
+
+  totaluniqueroads = requiredRoadCount;
+  totalRoadsDist = totaledgedistance;
+
+  resetEdges();
+
+  logDegreeHistogram(
+    "after removeOrphans"
+  );
+
+  showMessage(
+    `Map Cleaned: ${requiredRoadCount} road segments and ` +
+    `${optionalPathCount} optional path segments.`
+  );
 }
 
 
