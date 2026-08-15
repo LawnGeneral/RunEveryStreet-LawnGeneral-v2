@@ -509,11 +509,34 @@ let nodeByOsmId = new Map();
 let edgeByNodeKey = new Map(); // "u|v" (undirected) -> Edge
 
 function getWayTag(wayEl, key) {
-  const tags = wayEl.getElementsByTagName("tag");
+  const tags =
+    wayEl.getElementsByTagName("tag");
+
   for (let i = 0; i < tags.length; i++) {
-    if (tags[i].getAttribute("k") === key) return tags[i].getAttribute("v") || "";
+    if (
+      tags[i].getAttribute("k") === key
+    ) {
+      return (
+        tags[i].getAttribute("v") || ""
+      );
+    }
   }
+
   return "";
+}
+
+function getNodeId(node) {
+  if (!node) return null;
+
+  if (node.id != null) {
+    return String(node.id);
+  }
+
+  if (node.nodeId != null) {
+    return String(node.nodeId);
+  }
+
+  return null;
 }
 
 function getNodebyId(osmId) {
@@ -531,43 +554,57 @@ function getNodebyId(osmId) {
 }
 
 function nodeKey(a, b) {
-  // Accept Node objects OR raw ids
-  const A = (typeof a === "object") ? getNodeId(a) : (a != null ? String(a) : null);
-  const B = (typeof b === "object") ? getNodeId(b) : (b != null ? String(b) : null);
-  if (!A || !B) return null;
-  return (A < B) ? `${A}|${B}` : `${B}|${A}`;
+  const first =
+    typeof a === "object"
+      ? getNodeId(a)
+      : a != null
+        ? String(a)
+        : null;
+
+  const second =
+    typeof b === "object"
+      ? getNodeId(b)
+      : b != null
+        ? String(b)
+        : null;
+
+  if (!first || !second) {
+    return null;
+  }
+
+  return first < second
+    ? `${first}|${second}`
+    : `${second}|${first}`;
 }
 
 function rebuildEdgeLookup() {
   edgeByNodeKey = new Map();
-  for (const e of edges) {
-    if (!e || !e.from || !e.to) continue;
 
-    const key = nodeKey(e.from, e.to);
+  for (const edge of edges) {
+    if (
+      !edge ||
+      !edge.from ||
+      !edge.to
+    ) {
+      continue;
+    }
+
+    const key =
+      nodeKey(edge.from, edge.to);
+
     if (!key) continue;
 
-    // If multiple edges share the same node pair, keep the first
-    // (or choose shortest). This avoids random overwrites.
     if (!edgeByNodeKey.has(key)) {
-      edgeByNodeKey.set(key, e);
+      edgeByNodeKey.set(key, edge);
     } else {
-      // Optional: keep the shorter edge if duplicates exist
-      const cur = edgeByNodeKey.get(key);
-      if (e.distance < cur.distance) edgeByNodeKey.set(key, e);
+      const current =
+        edgeByNodeKey.get(key);
+
+      if (edge.distance < current.distance) {
+        edgeByNodeKey.set(key, edge);
+      }
     }
   }
-}
-function getNodebyId(osmId) {
-  if (osmId === undefined || osmId === null) return null;
-  const key = String(osmId);
-
-  // "nodes" is your global array of Node objects created during Overpass ingest
-  for (let i = 0; i < nodes.length; i++) {
-    const n = nodes[i];
-    const nid = (n && (n.id ?? n.nodeId)) ? String(n.id ?? n.nodeId) : null;
-    if (nid === key) return n;
-  }
-  return null;
 }
 
 function setup() {
@@ -4243,24 +4280,6 @@ function handleTrimming() {
   openlayersmap.render();
 }
 
-  // 4) Anything that existed before but is gone now = orphan-removed
-  for (const e of edgesBefore) {
-    if (!edges.includes(e)) {
-      undoBatch.push(e);
-    }
-
-
-  // 5) Push the WHOLE batch as one undo step
-  deletedEdgesStack.push(undoBatch);
-
-  // Reset hover index
-  closestedgetomouse = -1;
-
-  showMessage(`Road removed. ${undoBatch.length} segment(s) affected. Undo available.`);
-
-  redraw();
-  openlayersmap.render();
-}
 
 function precomputeDistToStart() {
   if (!startnode || typeof dijkstra !== "function") return;
