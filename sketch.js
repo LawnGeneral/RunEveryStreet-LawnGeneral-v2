@@ -2086,9 +2086,32 @@ function solveRES() {
   navMode = false;
   solverRunning = false;
 
-  // Clean graph & rebuild adjacency
-  removeOrphans();
-  resetEdges();
+// Clean graph and rebuild adjacency.
+removeOrphans();
+resetEdges();
+
+// Decide which optional paths are needed for start access
+// or to connect otherwise separated required-road sections.
+const optionalPreparation =
+  prepareOptionalConnectorBase();
+
+if (!optionalPreparation.ok) {
+  console.error(
+    "Optional path preparation failed:",
+    optionalPreparation.message
+  );
+
+  showMessage(
+    optionalPreparation.message
+  );
+
+  return;
+}
+
+console.log(
+  "Optional path segments activated:",
+  optionalPreparation.activatedPathSegments
+);
 
   // -----------------------------
   // 1) Odd-degree nodes
@@ -2096,14 +2119,51 @@ function solveRES() {
   const oddNodes = [];
   let deadEnds = 0;
 
-  for (let i = 0; i < nodes.length; i++) {
-    const deg = nodes[i].edges ? nodes[i].edges.length : 0;
-    if (deg === 1) deadEnds++;
-    if (deg % 2 !== 0) oddNodes.push(nodes[i]);
+const activeBaseNodes = new Set();
+let activeBaseTraversalCount = 0;
+
+for (let i = 0; i < nodes.length; i++) {
+  const node = nodes[i];
+
+  const degree =
+    Array.isArray(node.edges)
+      ? node.edges.reduce(
+          (sum, edge) =>
+            sum +
+            (edge.baseTraversals || 0),
+          0
+        )
+      : 0;
+
+  if (degree > 0) {
+    activeBaseNodes.add(node);
   }
 
-  // Graph "tree-ishness" signal: low => repeats unavoidable
-  const cycleSignal = edges.length - nodes.length + 1;
+  if (degree === 1) {
+    deadEnds++;
+  }
+
+  if (degree % 2 !== 0) {
+    oddNodes.push(node);
+  }
+}
+
+for (const edge of edges) {
+  const baseCount =
+    edge.baseTraversals || 0;
+
+  if (baseCount > 0) {
+    activeBaseTraversalCount += baseCount;
+    activeBaseNodes.add(edge.from);
+    activeBaseNodes.add(edge.to);
+  }
+}
+
+// Graph tree-ishness signal using only activated edges.
+const cycleSignal =
+  activeBaseTraversalCount -
+  activeBaseNodes.size +
+  1;
 
   // Reset multiplicity counters (NOT boolean)
   for (let e of edges) e.extraTraversals = 0;
@@ -2471,10 +2531,16 @@ if (nOdd > 0) {
   // -----------------------------
   const usedCount = new Map();
 
-  function requiredTraversals(edge) {
-    if (!edge || edge.distance <= 0) return 0;
-    return 1 + (edge.extraTraversals || 0);
+function requiredTraversals(edge) {
+  if (!edge || edge.distance <= 0) {
+    return 0;
   }
+
+  return (
+    (edge.baseTraversals || 0) +
+    (edge.extraTraversals || 0)
+  );
+}
 
   function safeOtherNode(edge, node) {
     if (!edge || !node) return null;
@@ -2700,18 +2766,29 @@ if (nOdd > 0) {
   // -----------------------------
   // 7) Stats + “is this unavoidable?” diagnostics
   // -----------------------------
-  let addedDistance = 0;
-  let addedTraversals = 0;
+  let baseRouteDistance = 0;
+let addedDistance = 0;
+let addedTraversals = 0;
 
-  for (const e of edges) {
-    const extra = e.extraTraversals || 0;
-    if (extra > 0) {
-      addedTraversals += extra;
-      addedDistance += extra * e.distance;
-    }
+for (const edge of edges) {
+  const base =
+    edge.baseTraversals || 0;
+
+  const extra =
+    edge.extraTraversals || 0;
+
+  baseRouteDistance +=
+    base * edge.distance;
+
+  if (extra > 0) {
+    addedTraversals += extra;
+    addedDistance +=
+      extra * edge.distance;
   }
+}
 
-  const expectedFinal = totalRoadsDist + addedDistance; // meters
+const expectedFinal =
+  baseRouteDistance + addedDistance;
   const eff = bestdistance && bestdistance > 0 ? (totalRoadsDist / bestdistance) * 100 : 0;
 
   console.log(
