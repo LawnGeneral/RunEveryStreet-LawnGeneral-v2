@@ -44,43 +44,54 @@ class Route {
         }
     }
 
-    show() {
-        if (this.waypoints.length < 2) return;
-        
-        push();
-        noFill();
-        strokeWeight(5);
-        colorMode(HSB); // Ensure HSB is active for the rainbow trail
-        
-        for (let i = 0; i < this.waypoints.length - 1; i++) {
-            let fromNode = this.waypoints[i];
-            let toNode = this.waypoints[i + 1];
+show() {
+    if (this.waypoints.length < 2) return;
 
-            // Use the map to get current pixel locations
-            let p1 = this.getPix(fromNode);
-            let p2 = this.getPix(toNode);
+    push();
+    colorMode(RGB);
+    noFill();
 
-            if (p1 && p2) {
-                let hue = map(i, 0, this.waypoints.length - 1, 0, 155);
-                stroke(hue, 255, 255, 0.6);
-                line(p1.x, p1.y, p2.x, p2.y);
-            }
-        }
-        
-        // Start and End highlights
-        let startPix = this.getPix(this.waypoints[0]);
-        let endPix = this.getPix(this.waypoints[this.waypoints.length - 1]);
+    // One solid blue route line
+    stroke(37, 99, 235, 230);
+    strokeWeight(6);
 
-        if (startPix) {
-            fill(60, 255, 255); 
-            ellipse(startPix.x, startPix.y, 15, 15);
+    for (let i = 0; i < this.waypoints.length - 1; i++) {
+        const fromNode = this.waypoints[i];
+        const toNode = this.waypoints[i + 1];
+
+        const p1 = this.getPix(fromNode);
+        const p2 = this.getPix(toNode);
+
+        if (p1 && p2) {
+            line(p1.x, p1.y, p2.x, p2.y);
         }
-        if (endPix) {
-            fill(180, 255, 255); 
-            ellipse(endPix.x, endPix.y, 10, 10);
-        }
-        pop();
     }
+
+    const startNode = this.waypoints[0];
+    const endNode =
+        this.waypoints[this.waypoints.length - 1];
+
+    const startPix = this.getPix(startNode);
+    const endPix = this.getPix(endNode);
+
+    // Green start marker
+    if (startPix) {
+        fill(34, 197, 94);
+        stroke(255);
+        strokeWeight(2);
+        ellipse(startPix.x, startPix.y, 15, 15);
+    }
+
+    // Orange end marker, only when the route is not closed
+    if (endPix && endNode !== startNode) {
+        fill(249, 115, 22);
+        stroke(255);
+        strokeWeight(2);
+        ellipse(endPix.x, endPix.y, 12, 12);
+    }
+
+    pop();
+}
 
     // Helper to get pixels directly from OpenLayers
     getPix(node) {
