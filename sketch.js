@@ -1080,6 +1080,12 @@ const usedNodes = new Set();
 for (let i = 0; i < numways; i++) {
   let wayid =
     String(XMLways[i].getAttribute("id"));
+	  const highway =
+    getWayTag(XMLways[i], "highway");
+
+  const isOptionalConnector =
+    highway === "path" ||
+    highway === "footway";
 
   let nds =
     XMLways[i].getElementsByTagName("nd");
@@ -1113,14 +1119,25 @@ for (let i = 0; i < numways; i++) {
           meta.ref
         );
 
-      edge.traveled =
-        isLifeMapEdgeVisited(edge);
+          edge.isOptionalConnector =
+        isOptionalConnector;
 
-      edge.newRoadValue =
-        edge.traveled ? 0 : edge.distance;
+      if (isOptionalConnector) {
+        // Paths are available to the solver but are not
+        // required roads and do not affect LifeMap totals.
+        edge.traveled = true;
+        edge.newRoadValue = 0;
+      } else {
+        edge.traveled =
+          isLifeMapEdgeVisited(edge);
+
+        edge.newRoadValue =
+          edge.traveled ? 0 : edge.distance;
+
+        totaledgedistance += edge.distance;
+      }
 
       edges.push(edge);
-      totaledgedistance += edge.distance;
 
       usedNodes.add(from);
       usedNodes.add(to);
@@ -1139,8 +1156,11 @@ if (edges.length === 0) {
   return;
 }
 
+const requiredRoadEdges =
+  edges.filter(e => !e.isOptionalConnector);
+
 totalRoadsDist = totaledgedistance;
-totaluniqueroads = edges.length;
+totaluniqueroads = requiredRoadEdges.length;
 		const traveledCount = edges.filter(e => e.traveled === true).length;
 const untraveledCount = edges.length - traveledCount;
 
@@ -1469,14 +1489,72 @@ function showEdges() {
   for (let i = 0; i < edges.length; i++) {
     const e = edges[i];
 
+    const isOptionalConnector =
+      e.isOptionalConnector === true;
+
+    // Optional paths and footways are green and dashed.
+    if (isOptionalConnector) {
+      const fromCoord =
+        ol.proj.fromLonLat([
+          e.from.lon,
+          e.from.lat
+        ]);
+
+      const toCoord =
+        ol.proj.fromLonLat([
+          e.to.lon,
+          e.to.lat
+        ]);
+
+      const fromPixel =
+        openlayersmap.getPixelFromCoordinate(
+          fromCoord
+        );
+
+      const toPixel =
+        openlayersmap.getPixelFromCoordinate(
+          toCoord
+        );
+
+      if (fromPixel && toPixel) {
+        push();
+        colorMode(RGB);
+        stroke(16, 185, 129, 220);
+        strokeWeight(4);
+        noFill();
+
+        if (
+          drawingContext &&
+          typeof drawingContext.setLineDash === "function"
+        ) {
+          drawingContext.setLineDash([8, 6]);
+        }
+
+        line(
+          fromPixel[0],
+          fromPixel[1],
+          toPixel[0],
+          toPixel[1]
+        );
+
+        if (
+          drawingContext &&
+          typeof drawingContext.setLineDash === "function"
+        ) {
+          drawingContext.setLineDash([]);
+        }
+
+        pop();
+      }
+    }
+
     const isUntraveled =
+      !isOptionalConnector &&
       lifeMapLoaded &&
       e.traveled === false;
 
-    // Traveled roads retain their normal appearance.
-    // Untraveled roads use only the cyan treatment so
-    // yellow does not accumulate beneath the transparency.
-    if (!isUntraveled) {
+    // Normal traveled roads retain their usual appearance.
+    if (!isOptionalConnector && !isUntraveled) {
       e.show();
     }
 
@@ -1506,8 +1584,6 @@ function showEdges() {
       if (fromPixel && toPixel) {
         push();
         colorMode(RGB);
-
-        // Thick but translucent so underlying road names remain readable.
         stroke(0, 230, 255, 115);
         strokeWeight(6);
         noFill();
@@ -1523,12 +1599,12 @@ function showEdges() {
       }
     }
 
-    // Preserve existing trimming behavior.
+    // Preserve trimming behavior for every edge type.
     if (
       mode === trimmodemode &&
       !mapPanZoomMode
     ) {
-      let d =
+      const d =
         e.distanceToPoint(mouseX, mouseY);
 
       if (d < closestedgetomousedist) {
