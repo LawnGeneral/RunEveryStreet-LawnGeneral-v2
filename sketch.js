@@ -4183,7 +4183,7 @@ if (startTouchesRequiredRoad) {
     if (!edges.includes(e)) {
       undoBatch.push(e);
     }
-  }
+
 
   // 5) Push the WHOLE batch as one undo step
   deletedEdgesStack.push(undoBatch);
