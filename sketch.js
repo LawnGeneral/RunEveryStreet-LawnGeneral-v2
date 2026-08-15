@@ -4161,9 +4161,21 @@ function handleTrimming() {
   // 2) Capture current edge set BEFORE orphan cleanup
   const edgesBefore = new Set(edges);
 
-  // 3) Remove orphaned components, same as your original version
-  if (startnode) {
-    removeOrphans();
+// Remove orphaned components immediately only when
+// the start is directly attached to a required road.
+// Path-only starts must delay cleanup until solving.
+const startTouchesRequiredRoad =
+  startnode &&
+  Array.isArray(startnode.edges) &&
+  startnode.edges.some(
+    edge =>
+      edge &&
+      !edge.isOptionalConnector
+  );
+
+if (startTouchesRequiredRoad) {
+  removeOrphans();
+}
   }
 
   // 4) Anything that existed before but is gone now = orphan-removed
