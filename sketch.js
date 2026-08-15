@@ -3451,7 +3451,6 @@ function runOverpassQuery(query, onSuccess, onError) {
     const url = endpoints[idx++];
     const controller = new AbortController();
 
-    // Give a busy server enough time to complete the road query.
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, 25000);
@@ -3479,7 +3478,39 @@ function runOverpassQuery(query, onSuccess, onError) {
         return response.text();
       })
       .then(responseText => {
-        // Remember the successful server for next time.
+        // Overpass sometimes returns HTTP 200 with an
+        // error message or incomplete road data.
+        const parser = new DOMParser();
+
+        const responseXml =
+          parser.parseFromString(
+            responseText,
+            "text/xml"
+          );
+
+        const parseError =
+          responseXml.querySelector("parsererror");
+
+        const overpassError =
+          responseXml.querySelector("remark, error");
+
+        const osmRoot =
+          responseXml.querySelector("osm");
+
+        if (
+          parseError ||
+          overpassError ||
+          !osmRoot
+        ) {
+          const errorMessage =
+            overpassError?.textContent?.trim() ||
+            parseError?.textContent?.trim() ||
+            "Invalid or incomplete Overpass response";
+
+          throw new Error(errorMessage);
+        }
+
+        // Remember only a server that returned valid data.
         try {
           localStorage.setItem(
             "preferredOverpassEndpoint",
@@ -3504,7 +3535,7 @@ function runOverpassQuery(query, onSuccess, onError) {
         );
 
         showMessage(
-          "OSM server is slow. Trying another..."
+          "OSM response was incomplete. Trying another server..."
         );
 
         tryNext();
