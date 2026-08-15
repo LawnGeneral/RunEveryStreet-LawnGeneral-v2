@@ -4135,48 +4135,98 @@ function drawStartNodeHighlight() {
   ellipse(pix[0], pix[1], 15, 15);
   pop();
 }
-function handleTrimming() {
-  if (closestedgetomouse < 0 || closestedgetomouse >= edges.length) return;
 
-  // --- BEGIN UNDO BATCH ---
+function handleTrimming() {
+  if (
+    closestedgetomouse < 0 ||
+    closestedgetomouse >= edges.length
+  ) {
+    return;
+  }
+
   const undoBatch = [];
 
-  // 1) Remove ONLY the explicitly clicked edge.
-  // This restores your original trim behavior.
-  const removedEdge = edges.splice(closestedgetomouse, 1)[0];
+  // Remove only the explicitly clicked edge.
+  const removedEdge =
+    edges.splice(
+      closestedgetomouse,
+      1
+    )[0];
+
   if (!removedEdge) return;
 
   undoBatch.push(removedEdge);
 
-  // Unlink from adjacency
-  if (removedEdge.from && Array.isArray(removedEdge.from.edges)) {
-    const idx = removedEdge.from.edges.indexOf(removedEdge);
-    if (idx !== -1) removedEdge.from.edges.splice(idx, 1);
-  }
-  if (removedEdge.to && Array.isArray(removedEdge.to.edges)) {
-    const idx = removedEdge.to.edges.indexOf(removedEdge);
-    if (idx !== -1) removedEdge.to.edges.splice(idx, 1);
+  // Unlink the removed edge from its nodes.
+  if (
+    removedEdge.from &&
+    Array.isArray(removedEdge.from.edges)
+  ) {
+    const index =
+      removedEdge.from.edges.indexOf(
+        removedEdge
+      );
+
+    if (index !== -1) {
+      removedEdge.from.edges.splice(
+        index,
+        1
+      );
+    }
   }
 
-  // 2) Capture current edge set BEFORE orphan cleanup
+  if (
+    removedEdge.to &&
+    Array.isArray(removedEdge.to.edges)
+  ) {
+    const index =
+      removedEdge.to.edges.indexOf(
+        removedEdge
+      );
+
+    if (index !== -1) {
+      removedEdge.to.edges.splice(
+        index,
+        1
+      );
+    }
+  }
+
+  // Capture the graph before possible orphan cleanup.
   const edgesBefore = new Set(edges);
 
-// Remove orphaned components immediately only when
-// the start is directly attached to a required road.
-// Path-only starts must delay cleanup until solving.
-const startTouchesRequiredRoad =
-  startnode &&
-  Array.isArray(startnode.edges) &&
-  startnode.edges.some(
-    edge =>
-      edge &&
-      !edge.isOptionalConnector
+  const startTouchesRequiredRoad =
+    startnode &&
+    Array.isArray(startnode.edges) &&
+    startnode.edges.some(
+      edge =>
+        edge &&
+        !edge.isOptionalConnector
+    );
+
+  // Delay orphan cleanup for path-only starts.
+  if (startTouchesRequiredRoad) {
+    removeOrphans();
+  }
+
+  // Include automatically removed orphan segments
+  // in the same undo operation.
+  for (const edge of edgesBefore) {
+    if (!edges.includes(edge)) {
+      undoBatch.push(edge);
+    }
+  }
+
+  deletedEdgesStack.push(undoBatch);
+  closestedgetomouse = -1;
+
+  showMessage(
+    `Road removed. ${undoBatch.length} segment(s) affected. Undo available.`
   );
 
-if (startTouchesRequiredRoad) {
-  removeOrphans();
+  redraw();
+  openlayersmap.render();
 }
-  }
 
   // 4) Anything that existed before but is gone now = orphan-removed
   for (const e of edgesBefore) {
