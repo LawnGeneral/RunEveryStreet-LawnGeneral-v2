@@ -505,6 +505,7 @@ var isTouchScreenDevice = false;
 var totaluniqueroads;
 // --- Way metadata + edge lookup (for cues / names) ---
 let wayMetaById = new Map();   // wayid(string) -> { name, ref }
+let nodeByOsmId = new Map();
 let edgeByNodeKey = new Map(); // "u|v" (undirected) -> Edge
 
 function getWayTag(wayEl, key) {
@@ -515,13 +516,18 @@ function getWayTag(wayEl, key) {
   return "";
 }
 
-function getNodeId(n) {
-  // Works with Node objects that use either id or nodeId,
-  // and with plain waypoint objects if they happen to carry an id.
-  if (!n) return null;
-  return (n.id != null) ? String(n.id)
-       : (n.nodeId != null) ? String(n.nodeId)
-       : null;
+function getNodebyId(osmId) {
+  if (
+    osmId === undefined ||
+    osmId === null
+  ) {
+    return null;
+  }
+
+  return (
+    nodeByOsmId.get(String(osmId)) ||
+    null
+  );
 }
 
 function nodeKey(a, b) {
@@ -981,6 +987,7 @@ function getOverpassData() {
   deletedEdgesStack = [];
   nodes = [];
   edges = [];
+  nodeByOsmId = new Map();
 
 // 2. Build Overpass query (POST)
 const includePathsCheckbox =
@@ -1060,7 +1067,15 @@ out;
         minlon = min(minlon, lon);
         maxlon = max(maxlon, lon);
 
-        nodes.push(new Node(id, lat, lon));
+        const node =
+  new Node(id, lat, lon);
+
+nodes.push(node);
+
+nodeByOsmId.set(
+  String(id),
+  node
+);
       }
 
       // --- NEW: build way metadata map (name/ref) ---
