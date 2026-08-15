@@ -191,7 +191,33 @@
   border-color: rgba(255, 255, 255, 0.20);
 }
 
+.path-option {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 
+  height: 30px;
+  padding: 0 10px;
+  box-sizing: border-box;
+
+  color: #dbeafe;
+  background: #293544;
+  border: 1px solid #465569;
+  border-radius: 8px;
+
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.path-option input {
+  margin: 0;
+  accent-color: #10b981;
+  cursor: pointer;
+}
     .osm-attrib {
       font-size: 12px;
       opacity: 0.85;
@@ -240,6 +266,10 @@
       <button id="mode-toggle" onclick="togglePanTrim()">MODE: PAN/ZOOM</button>
       <button id="draw-area-btn" onclick="startRoadAreaDrawing()">DRAW AREA</button>
       <button id="ingest-btn" onclick="triggerIngest()">LOAD ROADS</button>
+      <label id="path-option" class="path-option">
+  <input type="checkbox" id="include-paths-checkbox">
+  INCLUDE PATHS
+</label>
       <button id="undo-btn" onclick="undoTrim()">UNDO TRIM</button>
      
 
