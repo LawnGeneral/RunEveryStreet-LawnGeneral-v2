@@ -1720,6 +1720,331 @@ function floodfill(startNode) {
     }
 }
 
+function prepareOptionalConnectorBase() {
+  // Normal roads begin with one required traversal.
+  // Optional paths begin with zero.
+  for (const edge of edges) {
+    edge.baseTraversals =
+      edge.isOptionalConnector ? 0 : 1;
+
+    edge.extraTraversals = 0;
+  }
+
+  const requiredRoadNodes =
+    nodes.filter(node =>
+      Array.isArray(node.edges) &&
+      node.edges.some(
+        edge =>
+          edge &&
+          !edge.isOptionalConnector &&
+          edge.distance > 0
+      )
+    );
+
+  if (requiredRoadNodes.length === 0) {
+    return {
+      ok: false,
+      message: "No required roads were found."
+    };
+  }
+
+  const requiredRoadNodeSet =
+    new Set(requiredRoadNodes);
+
+  function shortestPathFromSources(
+    sources,
+    isTarget
+  ) {
+    const distances = new Map();
+    const previousEdge = new Map();
+    const sourceSet = new Set(sources);
+    const heap = [];
+
+    function heapPush(item) {
+      heap.push(item);
+
+      let index = heap.length - 1;
+
+      while (index > 0) {
+        const parent =
+          Math.floor((index - 1) / 2);
+
+        if (
+          heap[parent].distance <=
+          heap[index].distance
+        ) {
+          break;
+        }
+
+        [heap[parent], heap[index]] =
+          [heap[index], heap[parent]];
+
+        index = parent;
+      }
+    }
+
+    function heapPop() {
+      if (heap.length === 0) return null;
+
+      const first = heap[0];
+      const last = heap.pop();
+
+      if (heap.length > 0) {
+        heap[0] = last;
+
+        let index = 0;
+
+        while (true) {
+          const left = index * 2 + 1;
+          const right = left + 1;
+          let smallest = index;
+
+          if (
+            left < heap.length &&
+            heap[left].distance <
+              heap[smallest].distance
+          ) {
+            smallest = left;
+          }
+
+          if (
+            right < heap.length &&
+            heap[right].distance <
+              heap[smallest].distance
+          ) {
+            smallest = right;
+          }
+
+          if (smallest === index) break;
+
+          [heap[index], heap[smallest]] =
+            [heap[smallest], heap[index]];
+
+          index = smallest;
+        }
+      }
+
+      return first;
+    }
+
+    for (const source of sources) {
+      distances.set(source, 0);
+
+      heapPush({
+        node: source,
+        distance: 0
+      });
+    }
+
+    while (heap.length > 0) {
+      const item = heapPop();
+      const node = item.node;
+
+      if (
+        item.distance !==
+        distances.get(node)
+      ) {
+        continue;
+      }
+
+      if (isTarget(node)) {
+        const path = [];
+        let current = node;
+
+        while (!sourceSet.has(current)) {
+          const edge =
+            previousEdge.get(current);
+
+          if (!edge) return null;
+
+          path.push(edge);
+          current =
+            edge.OtherNodeofEdge(current);
+        }
+
+        path.reverse();
+
+        return {
+          target: node,
+          path: path,
+          distance: item.distance
+        };
+      }
+
+      if (!Array.isArray(node.edges)) {
+        continue;
+      }
+
+      for (const edge of node.edges) {
+        if (!edge || edge.distance <= 0) {
+          continue;
+        }
+
+        const next =
+          edge.OtherNodeofEdge(node);
+
+        if (!next) continue;
+
+        const nextDistance =
+          item.distance + edge.distance;
+
+        if (
+          nextDistance <
+          (distances.get(next) ?? Infinity)
+        ) {
+          distances.set(
+            next,
+            nextDistance
+          );
+
+          previousEdge.set(next, edge);
+
+          heapPush({
+            node: next,
+            distance: nextDistance
+          });
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function getBaseReachableNodes() {
+    const reached = new Set();
+    const stack = [startnode];
+
+    reached.add(startnode);
+
+    while (stack.length > 0) {
+      const node = stack.pop();
+
+      if (!Array.isArray(node.edges)) {
+        continue;
+      }
+
+      for (const edge of node.edges) {
+        if (
+          !edge ||
+          edge.distance <= 0 ||
+          (edge.baseTraversals || 0) <= 0
+        ) {
+          continue;
+        }
+
+        const next =
+          edge.OtherNodeofEdge(node);
+
+        if (
+          next &&
+          !reached.has(next)
+        ) {
+          reached.add(next);
+          stack.push(next);
+        }
+      }
+    }
+
+    return reached;
+  }
+
+  let activatedPathSegments = 0;
+
+  // If the start is on a path-only node, activate the
+  // shortest path to a required road in both directions.
+  if (!requiredRoadNodeSet.has(startnode)) {
+    const access =
+      shortestPathFromSources(
+        [startnode],
+        node =>
+          requiredRoadNodeSet.has(node)
+      );
+
+    if (!access) {
+      return {
+        ok: false,
+        message:
+          "The selected start cannot reach a required road."
+      };
+    }
+
+    for (const edge of access.path) {
+      if (edge.isOptionalConnector) {
+        if (
+          (edge.baseTraversals || 0) < 2
+        ) {
+          activatedPathSegments++;
+        }
+
+        edge.baseTraversals =
+          Math.max(
+            edge.baseTraversals || 0,
+            2
+          );
+      }
+    }
+  }
+
+  // Connect any required-road sections that can only
+  // reach each other through optional paths.
+  while (true) {
+    const reached =
+      getBaseReachableNodes();
+
+    const allRequiredRoadsReached =
+      requiredRoadNodes.every(
+        node => reached.has(node)
+      );
+
+    if (allRequiredRoadsReached) {
+      break;
+    }
+
+    const bridge =
+      shortestPathFromSources(
+        Array.from(reached),
+        node =>
+          requiredRoadNodeSet.has(node) &&
+          !reached.has(node)
+      );
+
+    if (!bridge) {
+      return {
+        ok: false,
+        message:
+          "Some required roads cannot be reached."
+      };
+    }
+
+    let newlyActivated = 0;
+
+    for (const edge of bridge.path) {
+      if (
+        edge.isOptionalConnector &&
+        (edge.baseTraversals || 0) < 1
+      ) {
+        edge.baseTraversals = 1;
+        newlyActivated++;
+        activatedPathSegments++;
+      }
+    }
+
+    if (newlyActivated === 0) {
+      return {
+        ok: false,
+        message:
+          "Could not connect all required roads."
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    activatedPathSegments:
+      activatedPathSegments
+  };
+}
+
 function solveRES() {
   if (!startnode) {
     showMessage("Error: No start node selected.");
