@@ -3992,13 +3992,21 @@ function undoTrim() {
 }
 
 function getLiveTotalDistance() {
-    let total = 0;
-    for (let i = 0; i < edges.length; i++) {
-        // Only count edges that are currently active/visible
-        total += edges[i].distance;
+  let total = 0;
+
+  for (const edge of edges) {
+    if (
+      !edge ||
+      edge.isOptionalConnector ||
+      edge.distance <= 0
+    ) {
+      continue;
     }
-    // Returns distance (assumed to be in km based on your screenshot)
-    return total;
+
+    total += edge.distance;
+  }
+
+  return total;
 }
 function buildRouteCues(route) {
   // -----------------------------
