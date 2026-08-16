@@ -1519,7 +1519,10 @@ if (edges.length === 0) {
   setMode(choosemapmode);
   return;
 }
-
+// Connect loose path endpoints to nearby roads.
+if (includePaths) {
+  addAutomaticPathRoadHops(12);
+}
 const requiredRoadEdges =
   edges.filter(e => !e.isOptionalConnector);
 
