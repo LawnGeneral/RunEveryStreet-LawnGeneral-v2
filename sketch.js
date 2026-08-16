@@ -4243,7 +4243,16 @@ function handleTrimming() {
       );
     }
   }
-
+  // Remove red nodes left with no attached segments.
+  // Preserve the selected start node if its final edge is trimmed.
+  nodes = nodes.filter(
+    node =>
+      node === startnode ||
+      (
+        Array.isArray(node.edges) &&
+        node.edges.length > 0
+      )
+  );
   // Capture the graph before possible orphan cleanup.
   const edgesBefore = new Set(edges);
 
