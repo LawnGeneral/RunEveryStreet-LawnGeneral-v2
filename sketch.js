@@ -959,7 +959,319 @@ function drawToolbar() {
   pop();
 }
 
+function addAutomaticPathRoadHops(
+  maxDistanceMeters = 12
+) {
+  const activeEdgeSet = new Set(edges);
 
+  // Only loose path endpoints are eligible.
+  // This prevents a parallel path from connecting
+  // repeatedly along the same road.
+  const pathEndpoints = nodes.filter(node => {
+    if (
+      !node ||
+      !Array.isArray(node.edges)
+    ) {
+      return false;
+    }
+
+    let optionalCount = 0;
+    let requiredCount = 0;
+
+    for (const edge of node.edges) {
+      if (
+        !edge ||
+        !activeEdgeSet.has(edge)
+      ) {
+        continue;
+      }
+
+      if (edge.isOptionalConnector) {
+        optionalCount++;
+      } else {
+        requiredCount++;
+      }
+    }
+
+    return (
+      optionalCount === 1 &&
+      requiredCount === 0
+    );
+  });
+
+  function closestPointOnRoad(
+    pathNode,
+    roadEdge
+  ) {
+    const metersPerDegreeLat = 111320;
+
+    const metersPerDegreeLon =
+      111320 *
+      Math.max(
+        0.2,
+        Math.cos(
+          pathNode.lat *
+          Math.PI /
+          180
+        )
+      );
+
+    const ax =
+      (roadEdge.from.lon - pathNode.lon) *
+      metersPerDegreeLon;
+
+    const ay =
+      (roadEdge.from.lat - pathNode.lat) *
+      metersPerDegreeLat;
+
+    const bx =
+      (roadEdge.to.lon - pathNode.lon) *
+      metersPerDegreeLon;
+
+    const by =
+      (roadEdge.to.lat - pathNode.lat) *
+      metersPerDegreeLat;
+
+    const dx = bx - ax;
+    const dy = by - ay;
+
+    const lengthSquared =
+      dx * dx + dy * dy;
+
+    let fraction = 0;
+
+    if (lengthSquared > 0) {
+      fraction =
+        -(ax * dx + ay * dy) /
+        lengthSquared;
+
+      fraction = Math.max(
+        0,
+        Math.min(1, fraction)
+      );
+    }
+
+    const closestX =
+      ax + fraction * dx;
+
+    const closestY =
+      ay + fraction * dy;
+
+    return {
+      distance: Math.hypot(
+        closestX,
+        closestY
+      ),
+
+      lat:
+        pathNode.lat +
+        closestY / metersPerDegreeLat,
+
+      lon:
+        pathNode.lon +
+        closestX / metersPerDegreeLon,
+
+      distanceFromStart:
+        Math.hypot(
+          closestX - ax,
+          closestY - ay
+        ),
+
+      distanceFromEnd:
+        Math.hypot(
+          closestX - bx,
+          closestY - by
+        )
+    };
+  }
+
+  function unlinkEdge(edge) {
+    for (const node of [
+      edge.from,
+      edge.to
+    ]) {
+      if (
+        !node ||
+        !Array.isArray(node.edges)
+      ) {
+        continue;
+      }
+
+      const index =
+        node.edges.indexOf(edge);
+
+      if (index !== -1) {
+        node.edges.splice(index, 1);
+      }
+    }
+  }
+
+  function copyRoadProperties(
+    original,
+    replacement
+  ) {
+    replacement.isOptionalConnector = false;
+    replacement.traveled =
+      original.traveled;
+
+    replacement.newRoadValue =
+      original.traveled
+        ? 0
+        : replacement.distance;
+  }
+
+  let hopCount = 0;
+  let splitCount = 0;
+
+  for (const pathNode of pathEndpoints) {
+    let best = null;
+
+    // Find the nearest point on any normal road.
+    for (const roadEdge of edges) {
+      if (
+        !roadEdge ||
+        roadEdge.isOptionalConnector ||
+        !roadEdge.from ||
+        !roadEdge.to
+      ) {
+        continue;
+      }
+
+      const candidate =
+        closestPointOnRoad(
+          pathNode,
+          roadEdge
+        );
+
+      if (
+        !best ||
+        candidate.distance <
+          best.distance
+      ) {
+        best = {
+          ...candidate,
+          roadEdge
+        };
+      }
+    }
+
+    if (
+      !best ||
+      best.distance >
+        maxDistanceMeters
+    ) {
+      continue;
+    }
+
+    const roadEdge = best.roadEdge;
+    let roadNode = null;
+
+    // Use an existing road node when the
+    // connection is near its endpoint.
+    if (best.distanceFromStart <= 1) {
+      roadNode = roadEdge.from;
+    } else if (
+      best.distanceFromEnd <= 1
+    ) {
+      roadNode = roadEdge.to;
+    } else {
+      // The connection lands between road nodes,
+      // so split the road at that exact location.
+      const originalIndex =
+        edges.indexOf(roadEdge);
+
+      if (originalIndex === -1) {
+        continue;
+      }
+
+      edges.splice(originalIndex, 1);
+      unlinkEdge(roadEdge);
+
+      roadNode = new Node(
+        `auto-hop-node-${Date.now()}-${splitCount}`,
+        best.lat,
+        best.lon
+      );
+
+      nodes.push(roadNode);
+
+      nodeByOsmId.set(
+        String(roadNode.nodeId),
+        roadNode
+      );
+
+      const firstHalf = new Edge(
+        roadEdge.from,
+        roadNode,
+        roadEdge.wayid,
+        roadEdge.name,
+        roadEdge.ref
+      );
+
+      const secondHalf = new Edge(
+        roadNode,
+        roadEdge.to,
+        roadEdge.wayid,
+        roadEdge.name,
+        roadEdge.ref
+      );
+
+      copyRoadProperties(
+        roadEdge,
+        firstHalf
+      );
+
+      copyRoadProperties(
+        roadEdge,
+        secondHalf
+      );
+
+      edges.push(
+        firstHalf,
+        secondHalf
+      );
+
+      totaledgedistance +=
+        firstHalf.distance +
+        secondHalf.distance -
+        roadEdge.distance;
+
+      splitCount++;
+    }
+
+    const shortHop = new Edge(
+      pathNode,
+      roadNode,
+      `auto-path-hop-${Date.now()}-${hopCount}`,
+      "Automatic path connection",
+      ""
+    );
+
+    shortHop.isOptionalConnector = true;
+    shortHop.isProximityConnector = true;
+    shortHop.traveled = true;
+    shortHop.newRoadValue = 0;
+
+    // Ensure coincident-but-separate OSM nodes
+    // still form a usable graph connection.
+    shortHop.distance =
+      Math.max(
+        shortHop.distance,
+        0.01
+      );
+
+    edges.push(shortHop);
+    hopCount++;
+  }
+
+  resetEdges();
+
+  console.log(
+    `Automatic path connections: ${hopCount}`
+  );
+
+  return hopCount;
+}
 
 function getOverpassData() {
   // Require a completed polygon.
