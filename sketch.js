@@ -4198,7 +4198,7 @@ function handleTrimming() {
 
   const undoBatch = [];
 
-  // Remove only the explicitly clicked edge.
+  // Remove the explicitly clicked segment.
   const removedEdge =
     edges.splice(
       closestedgetomouse,
@@ -4209,7 +4209,7 @@ function handleTrimming() {
 
   undoBatch.push(removedEdge);
 
-  // Unlink the removed edge from its nodes.
+  // Unlink the segment from both endpoint nodes.
   if (
     removedEdge.from &&
     Array.isArray(removedEdge.from.edges)
@@ -4243,8 +4243,9 @@ function handleTrimming() {
       );
     }
   }
-  // Remove red nodes left with no attached segments.
-  // Preserve the selected start node if its final edge is trimmed.
+
+  // Remove nodes that no longer have any segments.
+  // Preserve the selected start node.
   nodes = nodes.filter(
     node =>
       node === startnode ||
@@ -4253,25 +4254,69 @@ function handleTrimming() {
         node.edges.length > 0
       )
   );
-  // Capture the graph before possible orphan cleanup.
+
+  // Save the remaining edges before automatic cleanup
+  // so Undo can restore the entire removed branch.
   const edgesBefore = new Set(edges);
 
-  const startTouchesRequiredRoad =
-    startnode &&
-    Array.isArray(startnode.edges) &&
-    startnode.edges.some(
-      edge =>
-        edge &&
-        !edge.isOptionalConnector
-    );
+  // Follow the green path from the start to determine
+  // whether it eventually reaches a normal road.
+  let startCanReachRequiredRoad = false;
 
-  // Delay orphan cleanup for path-only starts.
-  if (startTouchesRequiredRoad) {
+  if (startnode) {
+    const visitedNodes =
+      new Set([startnode]);
+
+    const stack = [startnode];
+
+    while (
+      stack.length > 0 &&
+      !startCanReachRequiredRoad
+    ) {
+      const node = stack.pop();
+
+      if (!Array.isArray(node.edges)) {
+        continue;
+      }
+
+      for (const edge of node.edges) {
+        if (
+          !edge ||
+          !edges.includes(edge)
+        ) {
+          continue;
+        }
+
+        if (!edge.isOptionalConnector) {
+          startCanReachRequiredRoad = true;
+          break;
+        }
+
+        const nextNode =
+          edge.OtherNodeofEdge(node);
+
+        if (
+          nextNode &&
+          !visitedNodes.has(nextNode)
+        ) {
+          visitedNodes.add(nextNode);
+          stack.push(nextNode);
+        }
+      }
+    }
+  }
+
+  // Run the normal orphan cleanup when the selected
+  // path genuinely connects to the road network.
+  //
+  // If the path only comes close without intersecting,
+  // skip this to prevent all roads from disappearing.
+  if (startCanReachRequiredRoad) {
     removeOrphans();
   }
 
-  // Include automatically removed orphan segments
-  // in the same undo operation.
+  // Add automatically removed orphan segments to
+  // the same Undo operation.
   for (const edge of edgesBefore) {
     if (!edges.includes(edge)) {
       undoBatch.push(edge);
