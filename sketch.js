@@ -4330,119 +4330,125 @@ function logDegreeHistogram(label) {
 }
 
 function runOverpassQuery(query, onSuccess, onError) {
-  let endpoints = [
-    "https://overpass.private.coffee/api/interpreter",
+  const endpoints = [
     "https://overpass-api.de/api/interpreter",
-    "https://maps.mail.ru/osm/tools/overpass/api/interpreter"
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
   ];
 
-  // Try the server that worked last time first.
-  try {
-    const preferred =
-      localStorage.getItem("preferredOverpassEndpoint");
+  const requestTimeoutMs = 15000;
 
-    if (preferred && endpoints.includes(preferred)) {
-      endpoints = [
-        preferred,
-        ...endpoints.filter(url => url !== preferred)
-      ];
-    }
+  // Remove the old saved preference. A server that worked
+  // once can be slow or unavailable the next time the app opens.
+  try {
+    localStorage.removeItem(
+      "preferredOverpassEndpoint"
+    );
   } catch (error) {
     console.warn(
-      "Could not read preferred OSM server:",
+      "Could not clear preferred OSM server:",
       error
     );
   }
 
-  let idx = 0;
-
-  function tryNext() {
-    if (idx >= endpoints.length) {
-      onError(
-        new Error("All Overpass endpoints failed")
-      );
-      return;
-    }
-
-    const url = endpoints[idx++];
+  async function loadFromEndpoint(url) {
     const controller = new AbortController();
+    let timedOut = false;
 
     const timeoutId = setTimeout(() => {
+      timedOut = true;
       controller.abort();
-    }, 25000);
+    }, requestTimeoutMs);
 
-    console.log("Trying Overpass:", url);
+    try {
+      console.log("Trying Overpass:", url);
 
-    fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          "application/x-www-form-urlencoded;charset=UTF-8"
-      },
-      body: "data=" + encodeURIComponent(query),
-      signal: controller.signal
-    })
-      .then(response => {
-        clearTimeout(timeoutId);
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded;charset=UTF-8"
+        },
+        body: "data=" + encodeURIComponent(query),
+        signal: controller.signal
+      });
 
-        if (!response.ok) {
-          throw new Error(
-            `HTTP ${response.status} from ${url}`
-          );
-        }
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status} from ${url}`
+        );
+      }
 
-        return response.text();
-      })
-      .then(responseText => {
-        // Overpass sometimes returns HTTP 200 with an
-        // error message or incomplete road data.
-        const parser = new DOMParser();
+      const responseText = await response.text();
+      const parser = new DOMParser();
 
-        const responseXml =
-          parser.parseFromString(
-            responseText,
-            "text/xml"
-          );
+      const responseXml =
+        parser.parseFromString(
+          responseText,
+          "text/xml"
+        );
 
-        const parseError =
-          responseXml.querySelector("parsererror");
+      const parseError =
+        responseXml.querySelector("parsererror");
 
-        const overpassError =
-          responseXml.querySelector("remark, error");
+      const overpassError =
+        responseXml.querySelector("remark, error");
 
-        const osmRoot =
-          responseXml.querySelector("osm");
+      const osmRoot =
+        responseXml.querySelector("osm");
 
-        if (
-          parseError ||
-          overpassError ||
-          !osmRoot
-        ) {
-          const errorMessage =
-            overpassError?.textContent?.trim() ||
-            parseError?.textContent?.trim() ||
-            "Invalid or incomplete Overpass response";
+      if (
+        parseError ||
+        overpassError ||
+        !osmRoot
+      ) {
+        const errorMessage =
+          overpassError?.textContent?.trim() ||
+          parseError?.textContent?.trim() ||
+          "Invalid or incomplete Overpass response";
 
-          throw new Error(errorMessage);
-        }
+        throw new Error(errorMessage);
+      }
 
-        // Remember only a server that returned valid data.
+      return responseText;
+    } catch (error) {
+      if (timedOut) {
+        throw new Error(
+          `Timed out after ${requestTimeoutMs / 1000} seconds`
+        );
+      }
+
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function tryEndpoints() {
+    let lastError = null;
+
+    for (const url of endpoints) {
+      try {
+        const responseText =
+          await loadFromEndpoint(url);
+
+        // Keep road parsing outside the request catch.
+        // A local JavaScript bug must not be mislabeled
+        // as another OSM server failure.
         try {
-          localStorage.setItem(
-            "preferredOverpassEndpoint",
-            url
+          onSuccess(responseText);
+        } catch (processingError) {
+          console.error(
+            "Road processing failed:",
+            processingError
           );
-        } catch (error) {
-          console.warn(
-            "Could not remember OSM server:",
-            error
-          );
+
+          onError(processingError);
         }
 
-        onSuccess(responseText);
-      })
-      .catch(error => {
-        clearTimeout(timeoutId);
+        return;
+      } catch (error) {
+        lastError = error;
 
         console.warn(
           "Overpass endpoint failed:",
@@ -4451,14 +4457,18 @@ function runOverpassQuery(query, onSuccess, onError) {
         );
 
         showMessage(
-          "OSM response was incomplete. Trying another server..."
+          "OSM server did not respond. Trying a backup..."
         );
+      }
+    }
 
-        tryNext();
-      });
+    onError(
+      lastError ||
+      new Error("All Overpass endpoints failed")
+    );
   }
 
-  tryNext();
+  tryEndpoints();
 }
 
  
