@@ -1358,7 +1358,7 @@ const optionalPathQuery = includePaths
   : "";
 
 let overpassquery = `
-[out:xml][timeout:180];
+[out:xml][timeout:30];
 (
   way(${dataminlat},${dataminlon},${datamaxlat},${datamaxlon})
     ["highway"]
@@ -4336,7 +4336,7 @@ function runOverpassQuery(query, onSuccess, onError) {
     "https://overpass.private.coffee/api/interpreter"
   ];
 
-  const requestTimeoutMs = 15000;
+  const requestTimeoutMs = 60000;
 
   // Remove the old saved preference. A server that worked
   // once can be slow or unavailable the next time the app opens.
